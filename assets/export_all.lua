@@ -19,6 +19,30 @@
 
 assert(IsInCM(), "Script must be executed in career mode")
 
+-- ============================================================
+-- FC 27 COMPAT (Live Editor v27.1.2) — see assets/inspect_fc27_*.lua
+-- probes for the evidence behind each line below.
+--
+-- GetPlayersStats / GetCompetitionNameByObjID are native v1 functions
+-- that FC 27's Live Editor doesn't provide (yet). Stubbed so every
+-- caller degrades to "no data" instead of an "attempt to call a nil
+-- value" error that would abort the whole F10 export.
+--
+-- FC27_MEMORY_OFFSETS_VERIFIED gates the raw-memory reads carried over
+-- from FC 26 (FCEDataManager fixtures +0x60 / standings +0x88, and
+-- TransferManager +0x1DD0). The FC 27 memory probe showed those offsets
+-- are wrong (nonsense list bounds). Flip to true only once new offsets
+-- are confirmed standalone, per feedback_live_editor_data_safety.
+-- ============================================================
+FC27_MEMORY_OFFSETS_VERIFIED = false
+
+if type(GetPlayersStats) ~= "function" then
+    GetPlayersStats = function() return {} end
+end
+if type(GetCompetitionNameByObjID) ~= "function" then
+    GetCompetitionNameByObjID = function() return nil end
+end
+
 -- Persistent per-career identifier (documented Live Editor function,
 -- generates one on first call if the save doesn't have one yet) — lets
 -- the companion app tell different saves apart instead of assuming
@@ -69,33 +93,55 @@ do
     end
 
     -- ============================================================
-    -- TRAITS / PLAYSTYLES — best-effort, unconfirmed table/field names
-    -- ("playertraits"/"playerplaystyles" with playerid+traitid/playstyleid
-    -- columns). If these tables don't exist in your Live Editor build,
-    -- the lookups below just come back empty and traits/play_styles ship
-    -- as empty arrays — no crash, but no data either.
-    --
-    -- We also don't have a real ID -> name mapping, so until you fill in
-    -- TRAIT_NAMES / PLAYSTYLE_NAMES below (check Live Editor's own trait
-    -- picker UI for the real names against each ID), this exports
-    -- "Trait #<id>" / "PlayStyle #<id>" placeholders. Real IDs beat no
-    -- data — swap in real names here once confirmed.
+    -- PLAYSTYLES / TRAITS — FC 27 stores these as bitmasks on the
+    -- players row itself (trait1/trait2 = base, icontrait1/icontrait2 =
+    -- PlayStyle+), not in the FC 26 playertraits/playerplaystyles tables
+    -- (gone in FC 27). Bit values match Live Editor's own
+    -- lua/libs/v2/imports/other/playstyles_enum.lua; names match the
+    -- ones app.js's PLAYSTYLE_ICON_SLUG_BY_NAME expects. Verified live
+    -- 2026-10-15: player 20801 trait1=8388836 decodes to Trickster,
+    -- Game Changer, Low Driven Shot, Acrobatic, Power Shot.
     -- ============================================================
-    local TRAIT_NAMES = {
-        -- [1] = "Flair",
-        -- [2] = "Long Throw-in",
+    local PLAYSTYLE_BITS_1 = {
+        {1, "Finesse Shot"}, {2, "Chip Shot"}, {4, "Power Shot"}, {8, "Dead Ball"},
+        {16, "Precision Header"}, {32, "Acrobatic"}, {64, "Low Driven Shot"}, {128, "Game Changer"},
+        {256, "Incisive Pass"}, {512, "Pinged Pass"}, {1024, "Long Ball Pass"}, {2048, "Tiki Taka"},
+        {4096, "Whipped Pass"}, {8192, "Inventive"}, {16384, "Jockey"}, {32768, "Block"},
+        {65536, "Intercept"}, {131072, "Anticipate"}, {262144, "Slide Tackle"}, {524288, "Aerial Fortress"},
+        {1048576, "Technical"}, {2097152, "Rapid"}, {4194304, "First Touch"}, {8388608, "Trickster"},
+        {16777216, "Press Proven"}, {33554432, "Quick Step"}, {67108864, "Relentless"},
+        {134217728, "Long Throw"}, {268435456, "Bruiser"}, {536870912, "Enforcer"},
     }
-    local PLAYSTYLE_NAMES = {
-        -- [1] = "Trivela",
-        -- [2] = "Power Shot",
+    local PLAYSTYLE_BITS_2 = {
+        {1, "Far Throw"}, {2, "Footwork"}, {4, "Cross Claimer"}, {8, "Rush Out"},
+        {16, "Far Reach"}, {32, "Deflector"},
+    }
+    -- Non-PlayStyle bits in trait2 (AI behaviour + career-mode personality).
+    local TRAIT_BITS_2 = {
+        {64, "Long Shot Taker (AI)"}, {128, "Early Crosser (AI)"}, {256, "Solid Player"},
+        {512, "Team Player"}, {1024, "One Club Player"}, {2048, "Injury Prone"},
+        {4096, "Leadership"}, {8192, "Super Sub"},
     }
 
-    local function trait_label(id)
-        return TRAIT_NAMES[id] or ("Trait #" .. tostring(id))
+    -- A set icon bit means the PlayStyle+ version; otherwise a set base bit
+    -- means the plain one. Never both, so a style can't be listed twice.
+    local function decode_playstyles(base_mask, icon_mask, bits, out)
+        base_mask, icon_mask = base_mask or 0, icon_mask or 0
+        for _, entry in ipairs(bits) do
+            local bit, name = entry[1], entry[2]
+            if (icon_mask & bit) ~= 0 then
+                table.insert(out, name .. "+")
+            elseif (base_mask & bit) ~= 0 then
+                table.insert(out, name)
+            end
+        end
     end
 
-    local function playstyle_label(id)
-        return PLAYSTYLE_NAMES[id] or ("PlayStyle #" .. tostring(id))
+    local function decode_traits(mask, bits, out)
+        mask = mask or 0
+        for _, entry in ipairs(bits) do
+            if (mask & entry[1]) ~= 0 then table.insert(out, entry[2]) end
+        end
     end
 
     local function get_squad_data()
@@ -104,38 +150,7 @@ do
 
         local players_table = LE.db:GetTable("players")
         local loans_table = LE.db:GetTable("playerloans")
-        local contracts_table = LE.db:GetTable("career_playercontract")
         local teamplayerlinks_table = LE.db:GetTable("teamplayerlinks")
-        local traits_table = LE.db:GetTable("playertraits")
-        local playstyles_table = LE.db:GetTable("playerplaystyles")
-
-        local traits_lookup = {}
-        if traits_table then
-            local rec = traits_table:GetFirstRecord()
-            while rec > 0 do
-                local pid = traits_table:GetRecordFieldValue(rec, "playerid")
-                local trait_id = traits_table:GetRecordFieldValue(rec, "traitid")
-                if pid and pid > 0 and trait_id and trait_id > 0 then
-                    traits_lookup[pid] = traits_lookup[pid] or {}
-                    table.insert(traits_lookup[pid], trait_id)
-                end
-                rec = traits_table:GetNextValidRecord()
-            end
-        end
-
-        local playstyles_lookup = {}
-        if playstyles_table then
-            local rec = playstyles_table:GetFirstRecord()
-            while rec > 0 do
-                local pid = playstyles_table:GetRecordFieldValue(rec, "playerid")
-                local playstyle_id = playstyles_table:GetRecordFieldValue(rec, "playstyleid")
-                if pid and pid > 0 and playstyle_id and playstyle_id > 0 then
-                    playstyles_lookup[pid] = playstyles_lookup[pid] or {}
-                    table.insert(playstyles_lookup[pid], playstyle_id)
-                end
-                rec = playstyles_table:GetNextValidRecord()
-            end
-        end
 
         local loan_lookup = {}
         if loans_table then
@@ -153,30 +168,16 @@ do
             end
         end
 
-        local contract_lookup = {}
-        if contracts_table then
-            local contract_record = contracts_table:GetFirstRecord()
-            while contract_record > 0 do
-                local contract_player_id = contracts_table:GetRecordFieldValue(contract_record, "playerid")
-                if contract_player_id and contract_player_id > 0 then
-                    contract_lookup[contract_player_id] = {
-                        wage = contracts_table:GetRecordFieldValue(contract_record, "wage") or 0,
-                        duration_months = contracts_table:GetRecordFieldValue(contract_record, "duration_months") or 0,
-                        contract_date = contracts_table:GetRecordFieldValue(contract_record, "contract_date") or "",
-                        player_role_ = contracts_table:GetRecordFieldValue(contract_record, "playerrole") or 0,
-                        last_status_change_date = contracts_table:GetRecordFieldValue(contract_record, "last_status_change_date") or ""
-                    }
-                end
-                contract_record = contracts_table:GetNextValidRecord()
-            end
-        end
-
         local tpl_lookup = {}
         if teamplayerlinks_table then
             local tpl_record = teamplayerlinks_table:GetFirstRecord()
             while tpl_record > 0 do
                 local tpl_player_id = teamplayerlinks_table:GetRecordFieldValue(tpl_record, "playerid")
-                if tpl_player_id and tpl_player_id > 0 then
+                -- A player can have several rows (club + national team); once
+                -- we've seen his row for the user's team, keep it.
+                local already_user_row = tpl_player_id and tpl_lookup[tpl_player_id]
+                    and tpl_lookup[tpl_player_id].team_id == user_team_id
+                if tpl_player_id and tpl_player_id > 0 and not already_user_row then
                     tpl_lookup[tpl_player_id] = {
                         is_among_top_scorers = teamplayerlinks_table:GetRecordFieldValue(tpl_record, "isamongtopscorers") or 0,
                         jersey_number = teamplayerlinks_table:GetRecordFieldValue(tpl_record, "jerseynumber") or 0,
@@ -207,6 +208,15 @@ do
             end
         end
 
+        -- FC 27's Live Editor has no GetTeamIdFromPlayerId (nil, confirmed
+        -- 2026-10-05). teamplayerlinks.teamid is the registered club; the
+        -- tpl_lookup loop above makes the user's team win over any
+        -- national-team row.
+        local function GetTeamIdFromPlayerId(pid)
+            local info = tpl_lookup[pid]
+            return info and info.team_id or 0
+        end
+
         local current_record = players_table:GetFirstRecord()
 
         while current_record > 0 do
@@ -215,7 +225,6 @@ do
             if playerid and playerid > 0 then
                 local team_id = GetTeamIdFromPlayerId(playerid)
                 local loan_info = loan_lookup[playerid]
-                local contract_info = contract_lookup[playerid]
                 local tpl_info = tpl_lookup[playerid]
                 local is_user_team = (team_id == user_team_id)
                 local is_loaned_out = (loan_info and team_id ~= user_team_id and loan_info.team_loaned_from == user_team_id)
@@ -332,11 +341,16 @@ do
                     player.loan_date_end = loan_info and convertFifaDate(loan_info.loan_date_end) or ""
                     player.is_loan_to_buy = loan_info and (loan_info.is_loan_to_buy == 1) or false
 
-                    player.wage = contract_info and contract_info.wage or 0
-                    player.duration_months = contract_info and contract_info.duration_months or 0
-                    player.contract_date = contract_info and tostring(contract_info.contract_date) or ""
-                    player.player_role_ = contract_info and contract_info.player_role_ or 0
-                    player.last_status_change_date = contract_info and tostring(contract_info.last_status_change_date) or ""
+                    -- FC 27 dropped career_playercontract: wage now lives on the
+                    -- players row. duration_months / contract_date / playerrole /
+                    -- last_status_change_date have no FC 27 source yet (contract
+                    -- end is still exported as contract_expiry), so they ship
+                    -- as empty defaults to keep the JSON/DB shape unchanged.
+                    player.wage = players_table:GetRecordFieldValue(current_record, "wage") or 0
+                    player.duration_months = 0
+                    player.contract_date = ""
+                    player.player_role_ = 0
+                    player.last_status_change_date = ""
 
                     player.is_among_top_scorers = tpl_info and (tpl_info.is_among_top_scorers == 1) or false
                     player.jersey_number = tpl_info and tpl_info.jersey_number or 0
@@ -369,15 +383,17 @@ do
                     player.avg_rating = 0.0
                     player.competitions = {}
 
+                    local trait1 = players_table:GetRecordFieldValue(current_record, "trait1") or 0
+                    local trait2 = players_table:GetRecordFieldValue(current_record, "trait2") or 0
+                    local icontrait1 = players_table:GetRecordFieldValue(current_record, "icontrait1") or 0
+                    local icontrait2 = players_table:GetRecordFieldValue(current_record, "icontrait2") or 0
+
                     player.traits = {}
-                    for _, trait_id in ipairs(traits_lookup[playerid] or {}) do
-                        table.insert(player.traits, trait_label(trait_id))
-                    end
+                    decode_traits(trait2, TRAIT_BITS_2, player.traits)
 
                     player.play_styles = {}
-                    for _, playstyle_id in ipairs(playstyles_lookup[playerid] or {}) do
-                        table.insert(player.play_styles, playstyle_label(playstyle_id))
-                    end
+                    decode_playstyles(trait1, icontrait1, PLAYSTYLE_BITS_1, player.play_styles)
+                    decode_playstyles(trait2, icontrait2, PLAYSTYLE_BITS_2, player.play_styles)
 
                     result[playerid] = player
                 end
@@ -547,6 +563,25 @@ do
     if watch_count > 0 then
         local results = {}
         local players_table = LE.db:GetTable("players")
+
+        -- FC 27 has no GetTeamIdFromPlayerId; resolve the watched players'
+        -- clubs from teamplayerlinks in one pass instead (first row per
+        -- player wins — club display only, so a national-team row at worst
+        -- shows that team's name).
+        local watch_team_by_player = {}
+        local wtpl = LE.db:GetTable("teamplayerlinks")
+        if wtpl then
+            local wrec = wtpl:GetFirstRecord()
+            while wrec > 0 do
+                local wpid = wtpl:GetRecordFieldValue(wrec, "playerid")
+                if wpid and watch_ids[wpid] and not watch_team_by_player[wpid] then
+                    watch_team_by_player[wpid] = wtpl:GetRecordFieldValue(wrec, "teamid") or 0
+                end
+                wrec = wtpl:GetNextValidRecord()
+            end
+        end
+        local function GetTeamIdFromPlayerId(pid) return watch_team_by_player[pid] or 0 end
+
         local record = players_table:GetFirstRecord()
         while record > 0 do
             local playerid = players_table:GetRecordFieldValue(record, "playerid")
@@ -1035,6 +1070,11 @@ do
         local result = {}
         local user_team_id = GetUserTeamID()
 
+        if not FC27_MEMORY_OFFSETS_VERIFIED then
+            print("[CompanionApp] Transfers export skipped: FC 27 negotiation-storage offset not verified yet.")
+            return result
+        end
+
         local ok, transfer_mgr = pcall(GetManagerObjByTypeId, ENUM_FCEGameModesFCECareerModeTransferManager)
         if not ok or not transfer_mgr or transfer_mgr == 0 then
             print("[CompanionApp] WARNING: Transfer Manager object not found — transfers export skipped this sync.")
@@ -1148,6 +1188,7 @@ do
 
     local function GetStandingsByIndex(idx)
         local StandingsData = {}
+        if not FC27_MEMORY_OFFSETS_VERIFIED then return StandingsData end
         local FCEDataManager = GetFCEDataManager()
         local StandingsDataList = MEMORY:ReadPointer(FCEDataManager + 0x88)
         local itemSize = 0x18
@@ -1160,6 +1201,7 @@ do
 
     local function GetActiveCareerFixtures()
         local result = {}
+        if not FC27_MEMORY_OFFSETS_VERIFIED then return result end
         local FCEDataManager = GetFCEDataManager()
         local FixtureDataList = MEMORY:ReadPointer(FCEDataManager + 0x60)
         if not FixtureDataList or FixtureDataList == 0 then return result end

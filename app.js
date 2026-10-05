@@ -2935,8 +2935,21 @@ let currentCalendar = [];
       // the same manualPlayStyles list with no corresponding suggestion.
       const playstyleDetectedAtByName = Object.fromEntries(playstyleSuggestions.map(s => [s.name, s.detectedAt]));
       const manualPlayStylesHtml = manualPlayStyles.map(ps => buildPlaystyleBadge(ps.name, ps.plus, isPlaystyleRecentlyEarned(playstyleDetectedAtByName[ps.name]))).join('');
+      // Live Editor's own PlayStyles (FC 27 trait1/trait2 bitmasks, exported
+      // as "Name" or "Name+" for the PlayStyle+ version) get the same icon
+      // badge as the manual ones. A style the user already recorded by hand
+      // is skipped so it isn't listed twice; a name this app has no icon
+      // for falls back to the plain blue text badge.
+      const manualPlayStyleNames = new Set(manualPlayStyles.map(ps => ps.name));
       const autoPlayStylesHtml = (player.play_styles && player.play_styles.length > 0)
-        ? player.play_styles.map(ps => `<span class="trait-badge" style="color: #58a6ff;">${ps}</span>`).join('')
+        ? player.play_styles.map(raw => {
+            const plus = raw.endsWith('+');
+            const name = plus ? raw.slice(0, -1) : raw;
+            if (manualPlayStyleNames.has(name)) return '';
+            return PLAYSTYLE_CATEGORY_BY_NAME[name]
+              ? buildPlaystyleBadge(name, plus, false)
+              : `<span class="trait-badge" style="color: #58a6ff;">${raw}</span>`;
+          }).join('')
         : '';
       const playStylesHtml = (manualPlayStylesHtml || autoPlayStylesHtml)
         ? `${manualPlayStylesHtml}${autoPlayStylesHtml}`

@@ -5833,7 +5833,7 @@ function deletePlayer(playerId) {
 // whenever the game ISN'T already focused, rather than forcing a switch
 // — the one case this can't cover is refreshing while you're tabbed
 // away from the game, which simply has to wait until you tab back.
-const GAME_WINDOW_TITLE = 'EA SPORTS FC 26';
+const GAME_WINDOW_TITLE = 'EA SPORTS FC 27';
 
 function triggerLiveEditorRefresh(isManual) {
   return new Promise(resolve => {

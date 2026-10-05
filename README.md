@@ -1,6 +1,6 @@
 # FIFA Analytics
 
-A companion app for EA Sports FC 26 Career Mode. It reads data out of your save via a Live Editor Lua script bound to a hotkey, and turns it into a Home dashboard, season history, transfer tracking, league stats, and an end-of-season summary — all local, all offline, nothing sent anywhere.
+A companion app for EA Sports FC 27 Career Mode. It reads data out of your save via a Live Editor Lua script bound to a hotkey, and turns it into a Home dashboard, season history, transfer tracking, league stats, and an end-of-season summary — all local, all offline, nothing sent anywhere.
 
 This app depends on a specific combination of game version + Live Editor version, because Live Editor works by reading the game's memory at fixed offsets that change with every game patch. **If the versions below don't match, none of this will work**, so read the version-pinning section before installing anything.
 
@@ -8,31 +8,31 @@ This app depends on a specific combination of game version + Live Editor version
 
 | Component | Version |
 |---|---|
-| EA Sports FC 26 (Steam) | Build `1.0.139.20381` |
-| FC 26 Live Editor | `v26.3.6` |
-| FIFA Analytics | `1.7.0` |
+| EA Sports FC 27 (Steam) | Build `TODO: fill in once confirmed` |
+| FC 27 Live Editor | `v27.1.2` |
+| FIFA Analytics | `1.9.2` |
 
 
 ## 1. Pin your game version (do this FIRST)
 
-Live Editor's ability to read the game's memory depends on exact byte offsets for the specific game build it was compiled against (`1.0.139.20381` above). A routine Steam update to FC 26 will silently break Live Editor — it may fail to load, crash the game, or worse, read the wrong offsets and corrupt data without any error at all.
+Live Editor's ability to read the game's memory depends on exact byte offsets for the specific game build it was compiled against. A routine Steam update to FC 27 will silently break Live Editor — it may fail to load, crash the game, or worse, read the wrong offsets and corrupt data without any error at all.
 
 **Before installing anything else:**
 
-1. Open Steam → right-click **EA Sports FC 26** → **Properties** → **Updates** tab.
+1. Open Steam → right-click **EA Sports FC 27** → **Properties** → **Updates** tab.
 2. Set **Automatic Updates** to **"Only update this game when I launch it."** This stops Steam from silently patching the game in the background.
 3. From now on, **launch the game through Live Editor's launcher, not directly through Steam** (see step 3 below) — Steam only checks for/applies an update when *it* launches the game, so routing your launch through Live Editor's launcher instead avoids triggering that check.
 4. As an extra safeguard before any session, you can put Steam in **Offline Mode** (Steam menu → "Go Offline") — this guarantees no update check happens at all for that session, at the cost of Steam's other online features being unavailable while offline.
 
-If your game has *already* auto-updated past `1.0.139.20381`, Steam's client doesn't offer a simple built-in way to roll back to an older build for most titles. The FC 26 modding community generally handles this with a depot-download tool (e.g. DepotDownloader) pointed at the specific old manifest ID for build `1.0.139.20381`, using your own Steam credentials — that's beyond the scope of this README; search the Live Editor community's own docs/Discord for the current recommended method, since manifest IDs and tooling change over time.
+If your game has *already* auto-updated past the pinned build, Steam's client doesn't offer a simple built-in way to roll back to an older build for most titles. The FC 27 modding community generally handles this with a depot-download tool (e.g. DepotDownloader) pointed at the specific old manifest ID, using your own Steam credentials — that's beyond the scope of this README; search the Live Editor community's own docs/Discord for the current recommended method, since manifest IDs and tooling change over time.
 
 ---
 
 ## 2. Install Live Editor
 
-1. Download **FC 26 Live Editor v26.3.6** from [(Patreon/official site — not linked here since it changes over time; get it from the current official source)](https://www.patreon.com/xAranaktu/posts/fc-26-live-v26-3-166271704).
-2. Extract it to a folder (e.g. `D:\Mods\fc26\FC 26 LE v26.3.6\`) 
-3. Confirm the extracted folder's `le_offsets.json` has `"GAME_VER": "1.0.139.20381"` — if it says a different build number, this Live Editor version doesn't match your game and you need a different LE build (or a different game build — see section 1).
+1. Download **FC 27 Live Editor v27.1.2** from [(Patreon/official site — not linked here since it changes over time; get it from the current official source)](https://www.patreon.com/xAranaktu/posts/fc-26-live-v26-3-166271704).
+2. Extract it to a folder (e.g. `D:\Mods\fc27\FC 27 LE v27.1.2\`)
+3. Confirm the extracted folder's `le_offsets.json` has a `GAME_VER` matching your actual installed game build — if it says a different build number, this Live Editor version doesn't match your game and you need a different LE build (or a different game build — see section 1).
 
 ## 5. Install FIFA Analytics
 1. Navigate to the releases page and download the .exe from the latest release. You will only need to do this once, future updated will auto sycn to your app.
@@ -48,7 +48,7 @@ If your game has *already* auto-updated past `1.0.139.20381`, Steam's client doe
 Live Editor ships its own launcher (`Launcher.exe`) that starts the game through a stand-in EA Anti-Cheat service so external memory reads aren't blocked — this is required for Live Editor (and this companion app) to work at all, and is why you should always start your Career Mode session through this launcher rather than double-clicking the game directly in Steam.
 
 1. Run `Launcher.exe` from the Live Editor folder.
-2. Let it launch FC 26 and load into your save as normal.
+2. Let it launch FC 27 and load into your save as normal.
 3. Once you're in-game, open Live Editor's own overlay/UI by pressing F9.
 
 ## 4. Bind the export script to F10
@@ -75,4 +75,5 @@ This companion app gets all its data from `assets/export_all.lua`
 - **Game crashes or won't load after pressing F10** — almost always a game-version mismatch (section 1). Confirm `le_offsets.json`'s `GAME_VER` matches your actual game build before doing anything else.
 - **App shows no data at all** — confirm the five export JSON files actually exist and have recent timestamps in `C:\Users\Public\`. If they're missing, F10 isn't reaching the script (check the hotkey binding in Live Editor).
 - **App was working, then a Steam update landed and it broke** — see section 1; you'll need to either pin an older manifest or wait for a matching Live Editor update, then update the versions table at the top of this file once confirmed.
+- **FC 27 limitations (Live Editor v27.1.2)** — squad, youth, manager, playstyle and contract data work (plain DB table reads). **Not available yet:** current-season goals/assists/appearances/cards/ratings, league standings, fixtures/calendar results, transfer history, and dynamic overall — Live Editor's native `GetPlayersStats` isn't ported to FC 27 and the FC 26 memory offsets for the rest are wrong, so those parts of the app stay empty. The `overall` shown is the player's **base** overall, not the in-game dynamic overall. See `assets/fc27_probes/README.md` for the test findings and how to re-test after a Live Editor update.
 - **Data looks wrong right around a promotion/relegation or season rollover** — restart the companion app fully (not just close the window — confirm no `electron.exe` processes are left) before syncing again. The app self-heals some season-labeling data on every full startup, but a still-running old session can otherwise overwrite a fix with stale in-memory data.
