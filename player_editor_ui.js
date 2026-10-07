@@ -48,9 +48,10 @@
     [1024, 'One Club Player'], [2048, 'Injury Prone'], [4096, 'Leadership'], [8192, 'Super Sub']
   ];
 
-  // Codes actually seen in FC 27 data (probe reports), so only known-good values are offered.
-  const HAIR_COLORS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27];
-  const FACIAL_COLORS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 26, 27];
+  // Colour codes offered. Codes the game has no name for (15+) are filtered out at render time; the named ones 10 (Green),
+  // 11 (Blue) and 14 (Pink) are kept even though no player in the data uses them yet.
+  const HAIR_COLORS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27];
+  const FACIAL_COLORS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 26, 27];
   const ACCESSORY_IDS = [0, 6, 7, 8, 9, 16, 22, 23, 24, 25, 26, 27];
   const ACCESSORY_COLORS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 99];
   const BODY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11];
