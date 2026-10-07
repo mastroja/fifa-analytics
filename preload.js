@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('api', {
   undoPlayerEdit: (editId) => ipcRenderer.invoke('undo-player-edit', editId),
   getCustomizationCatalog: () => ipcRenderer.invoke('get-customization-catalog'),
   getPlayerEditorStatic: () => ipcRenderer.invoke('get-player-editor-static'),
+  getBootLinks: () => ipcRenderer.invoke('get-boot-links'),
+  setBootLink: (key, shoeId) => ipcRenderer.invoke('set-boot-link', key, shoeId),
   triggerEditorSync: () => ipcRenderer.invoke('trigger-editor-sync'),
   releaseLoanedPlayers: (playerIds) => ipcRenderer.invoke('release-loaned-players', playerIds),
   onPlayerEditorUpdated: (cb) => ipcRenderer.on('player-editor-updated', (_e, payload) => cb(payload)),

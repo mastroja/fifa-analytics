@@ -63,32 +63,77 @@ function facialSources() {
 const hair = collect(hairSources());
 const facial = collect(facialSources());
 
-// Boots: every boot the game defines (assets/data/boots_data.json, from the FC 27 boots probe) merged with
-// whatever images exist in assets/player_customization/boots/. Images are named boot_id_NNNN.png where NNNN is
-// the game's shoetypecode (the playerboots.shoetype id); boots without an image still appear, as a numbered tile.
-function buildBoots() {
-  const dataPath = path.join(__dirname, '..', 'assets', 'data', 'boots_data.json');
-  if (!fs.existsSync(dataPath)) return [];
-  const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-  const bootsDir = path.join(ROOT, 'boots');
-  const files = new Map();
-  for (const f of fs.existsSync(bootsDir) ? fs.readdirSync(bootsDir) : []) {
-    const m = f.match(/^boot_?(?:id_)?(\d+)\.(png|jpg|jpeg|webp)$/i);
-    if (m) files.set(parseInt(m[1], 10), `${REL_BASE}/boots/${f}`);
+// Boots: the user's boot screenshots in assets/player_customization/boots/<brand>/boot_NNN_<name>.png, named from
+// boots_index.csv when present. These pictures are NOT tied to game ids on their own: the editor links a picture to the
+// game's shoetypecode (see boot links in player_editor.js). gameBoots is what the game defines, used for the link UI.
+const BRAND_LABELS = { adidas: 'adidas', generic: 'Generic', lotto: 'Lotto', mizuno: 'Mizuno', new_balance: 'New Balance',
+  nike: 'Nike', puma: 'Puma', skechers: 'Skechers', sokito: 'Sokito', umbro: 'Umbro', under_armor: 'Under Armour' };
+
+function parseCsvLine(line) {
+  const out = []; let cur = ''; let q = false;
+  for (const ch of line) {
+    if (ch === '"') q = !q;
+    else if (ch === ',' && !q) { out.push(cur); cur = ''; }
+    else cur += ch;
   }
-  return data.boots.map(b => Object.assign({}, b, {
-    file: files.get(b.id) || null,
-    usedBy: (data.usage && data.usage[String(b.id)]) || 0
-  }));
+  out.push(cur);
+  return out;
 }
-const boots = buildBoots();
+
+function buildBoots() {
+  const bootsDir = path.join(ROOT, 'boots');
+  if (!fs.existsSync(bootsDir)) return { images: [], warnings: [] };
+  const names = new Map();
+  const csvPath = path.join(bootsDir, 'boots_index.csv');
+  if (fs.existsSync(csvPath)) {
+    fs.readFileSync(csvPath, 'utf8').split(/\r?\n/).slice(1).forEach(line => {
+      if (!line.trim()) return;
+      const cols = parseCsvLine(line);
+      if (cols[0] && cols[4]) names.set(cols[0], cols[4]);
+    });
+  }
+  const images = [];
+  const warnings = [];
+  for (const dir of fs.readdirSync(bootsDir)) {
+    const full = path.join(bootsDir, dir);
+    if (!fs.statSync(full).isDirectory()) continue;
+    for (const f of fs.readdirSync(full)) {
+      if (!/\.(png|jpe?g|webp)$/i.test(f)) continue;
+      const m = f.match(/^boot_(\d+)_/);
+      const pretty = f.replace(/\.[^.]+$/, '').replace(/^boot_(id_|\d+_)/, '').replace(/_/g, ' ');
+      let name = names.get(f) || pretty;
+      const label = BRAND_LABELS[dir] || dir.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+      const first = name.toLowerCase().replace(/[^a-z]/g, '');
+      const want = dir.replace(/[^a-z]/g, '').slice(0, 5);
+      // The folder is the source of truth for the brand. A few file/CSV names carry another brand's model name (the
+      // pictures were filed by what they really are); show brand + colourway rather than the wrong model name.
+      if (dir !== 'generic' && !first.startsWith(want)) {
+        const colours = (name.match(/\(([^)]*)\)/) || [])[1];
+        warnings.push(`${dir}/${f}: file name says "${name}", shown as ${label}${colours ? ` (${colours})` : ''}`);
+        name = colours ? `${label} (${colours})` : `${label} boot`;
+      }
+      images.push({ key: `${dir}/${f}`, n: m ? parseInt(m[1], 10) : null, name, brand: dir, brandLabel: label, file: `${REL_BASE}/boots/${dir}/${f}` });
+    }
+  }
+  images.sort((a, b) => a.brandLabel.localeCompare(b.brandLabel) || ((a.n ?? 9999) - (b.n ?? 9999)) || a.name.localeCompare(b.name));
+  return { images, warnings };
+}
+const bootBuild = buildBoots();
+const boots = bootBuild.images;
+
+function loadGameBoots() {
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'data', 'boots_data.json'), 'utf8'));
+    return data.boots.map(b => Object.assign({}, b, { usedBy: (data.usage && data.usage[String(b.id)]) || 0 }));
+  } catch (e) { return []; }
+}
 
 const catalog = {
   generated: new Date().toISOString(),
   hair: hair.list,
   facialHair: facial.list,
   boots,
-  bootsRgb: (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'data', 'boots_data.json'), 'utf8')).shoeColorRgb; } catch (e) { return {}; } })()
+  gameBoots: loadGameBoots()
 };
 fs.writeFileSync(OUT, JSON.stringify(catalog));
 
@@ -96,7 +141,8 @@ const byCat = {};
 hair.list.forEach(h => { const k = h.cat === null ? 'uncategorised' : 'cat' + h.cat; byCat[k] = (byCat[k] || 0) + 1; });
 console.log(`hair: ${hair.list.length} ids`, byCat);
 console.log(`facial hair: ${facial.list.length} ids`);
-console.log(`boots: ${boots.length} defined, ${boots.filter(b => b.file).length} with an image`);
+console.log(`boots: ${boots.length} pictures in ${new Set(boots.map(x => x.brand)).size} brands`);
+if (bootBuild.warnings.length) console.log(`  ${bootBuild.warnings.length} boot names did not match their brand folder and were shown as brand + colours (folder wins)`);
 [['hair', hair], ['facial hair', facial]].forEach(([label, r]) => {
   if (r.duplicates.length) console.log(`${label}: ${r.duplicates.length} duplicate ids resolved (kept the categorised copy):`, r.duplicates.slice(0, 5));
 });

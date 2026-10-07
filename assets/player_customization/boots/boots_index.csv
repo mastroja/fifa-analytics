@@ -1,0 +1,209 @@
+file,boot_number,grid_row,grid_col,name,was_selected_in_screenshot,name_taken_from_shot
+boot_001_Puma_Future_7_Ultimate_Silver-Black-Pink.png,1,1,1,Puma Future 7 Ultimate (Silver/Black/Pink),,1
+boot_002_adidas_F50_Elite_White-Solar_Red-Lucid_Blue.png,2,1,2,adidas F50 Elite (White/Solar Red/Lucid Blue),,1
+boot_003_adidas_Predator_Elite_Fold-Over_Tongue_White-Red-Solar_Red.png,3,1,3,adidas Predator Elite Fold-Over Tongue (White/Red/Solar Red),,1
+boot_004_adidas_Predator_Elite_Bright_Red-White-Black.png,4,1,4,adidas Predator Elite (Bright Red/White/Black),yes,1
+boot_005_Mizuno_Morelia_Neo_IV_Beta_Silver-Blue.png,5,2,1,Mizuno Morelia Neo IV Beta (Silver/Blue),,1
+boot_006_Nike_Mercurial_Superfly_10_Volt-Black.png,6,2,2,Nike Mercurial Superfly 10 (Volt/Black),,1
+boot_007_Mizuno_Morelia_II_Made_in_Japan_White-Blue.png,7,2,3,Mizuno Morelia II Made in Japan (White/Blue),,1
+boot_008_New_Balance_Furon_v7plus_Pro_Orange-Black.png,8,2,4,New Balance Furon v7+ Pro (Orange/Black),,1
+boot_009_Puma_Future_7_Ultimate_Teal-Pink-White.png,9,3,1,Puma Future 7 Ultimate (Teal/Pink/White),,1
+boot_010_Nike_Mercurial_Vapor_16_Hot_Pink-Cyan-Black.png,10,3,2,Nike Mercurial Vapor 16 (Hot Pink/Cyan/Black),,1
+boot_011_Mizuno_Alpha_Red-White.png,11,3,3,Mizuno Alpha (Red/White),,1
+boot_012_Puma_King_Ultimate_Matte_Black-Anthracite.png,12,3,4,Puma King Ultimate (Matte Black/Anthracite),,1
+boot_013_Mizuno_Morelia_II_Made_in_Japan_White-Blue.png,13,4,1,Mizuno Morelia II Made in Japan (White/Blue),,2
+boot_014_adidas_F50_Elite_White-Cyan-Black.png,14,4,2,adidas F50 Elite (White/Cyan/Black),,2
+boot_015_Mizuno_Morelia_Neo_IV_Beta_Ice_Blue-White.png,15,4,3,Mizuno Morelia Neo IV Beta (Ice Blue/White),,2
+boot_016_Skechers_SKX_01_Dark_Charcoal-Grey.png,16,4,4,Skechers SKX_01 (Dark Charcoal/Grey),yes,2
+boot_017_Nike_Mercurial_Superfly_10_Volt-Black.png,17,5,1,Nike Mercurial Superfly 10 (Volt/Black),,2
+boot_018_adidas_Predator_Elite_Red-White-Black.png,18,5,2,adidas Predator Elite (Red/White/Black),,2
+boot_019_adidas_Predator_Elite_Fold-Over_Tongue_Pink-White-Red.png,19,5,3,adidas Predator Elite Fold-Over Tongue (Pink/White/Red),,2
+boot_020_Skechers_SKX_01_Neon_Yellow-Black.png,20,5,4,Skechers SKX_01 (Neon Yellow/Black),,2
+boot_021_adidas_F50_Elite_Bright_Red-White.png,21,6,1,adidas F50 Elite (Bright Red/White),,3
+boot_022_adidas_F50_Elite_Laceless_White-Blue-Pink.png,22,6,2,adidas F50 Elite Laceless (White/Blue/Pink),,3
+boot_023_Nike_Mercurial_Superfly_10_Hot_Pink-Cyan.png,23,6,3,Nike Mercurial Superfly 10 (Hot Pink/Cyan),,3
+boot_024_Nike_Phantom_GX_2_Elite_Mint_Green-White-Pink.png,24,6,4,Nike Phantom GX 2 Elite (Mint Green/White/Pink),,3
+boot_025_Nike_Phantom_GX_2_Elite_Mint_Green-White-Pink_Alternate_angle.png,25,7,1,Nike Phantom GX 2 Elite (Mint Green/White/Pink - Alternate angle),,3
+boot_026_Nike_Tiempo_Legend_10_Elite_Red-White-Silver.png,26,7,2,Nike Tiempo Legend 10 Elite (Red/White/Silver),,3
+boot_027_Nike_Phantom_GX_2_Elite_Grey-Purple-Volt.png,27,7,3,Nike Phantom GX 2 Elite (Grey/Purple/Volt),,3
+boot_028_Nike_Phantom_6_High_SE_EA_Sports_FC_Special_Edition_White-Red-Iridescent.png,28,7,4,Nike Phantom 6 High SE (EA Sports FC Special Edition) (White/Red/Iridescent),yes,3
+boot_029_adidas_Predator_Elite_Fold-Over_Tongue_White-Black-Red.png,29,8,1,adidas Predator Elite Fold-Over Tongue (White/Black/Red),,3
+boot_030_adidas_Copa_Pure_2_Elite_White-Navy-Gold.png,30,8,2,adidas Copa Pure 2 Elite (White/Navy/Gold),,3
+boot_031_Nike_Mercurial_Vapor_16_Purple-Volt-Grey.png,31,8,3,Nike Mercurial Vapor 16 (Purple/Volt/Grey),,3
+boot_032_Mizuno_Morelia_Neo_IV_Beta_White-Black-Red.png,32,8,4,Mizuno Morelia Neo IV Beta (White/Black/Red),,3
+boot_033_Mizuno_Alpha_Blue-White.png,33,9,1,Mizuno Alpha (Blue/White),,4
+boot_034_Mizuno_Morelia_Neo_IV_Beta_White-Lime_Green.png,34,9,2,Mizuno Morelia Neo IV Beta (White/Lime Green),,4
+boot_035_Puma_Future_7_Ultimate_Multi-Artistic_Graphic.png,35,9,3,Puma Future 7 Ultimate (Multi/Artistic Graphic),,4
+boot_036_adidas_F50_Elite_Laceless_Ice_Blue-White-Silver.png,36,9,4,adidas F50 Elite Laceless (Ice Blue/White/Silver),yes,4
+boot_037_Puma_King_Ultimate_Black-Green.png,37,10,1,Puma King Ultimate (Black/Green),,4
+boot_038_adidas_Predator_Elite_Cyan-Orange-White.png,38,10,2,adidas Predator Elite (Cyan/Orange/White),,4
+boot_039_Puma_Future_7_Ultimate_White-Black-Red.png,39,10,3,Puma Future 7 Ultimate (White/Black/Red),,4
+boot_040_Puma_Future_7_Ultimate_Royal_Blue-White.png,40,10,4,Puma Future 7 Ultimate (Royal Blue/White),,4
+boot_041_Puma_Future_7_Ultimate_White-Red-Silver.png,41,11,1,Puma Future 7 Ultimate (White/Red/Silver),,4
+boot_042_Puma_Future_7_Ultimate_Silver-White.png,42,11,2,Puma Future 7 Ultimate (Silver/White),,4
+boot_043_Puma_Future_7_Ultimate_Solid_White-Grey.png,43,11,3,Puma Future 7 Ultimate (Solid White/Grey),,4
+boot_044_Puma_Future_7_Ultimate_Clean_White-Silver.png,44,11,4,Puma Future 7 Ultimate (Clean White/Silver),,4
+boot_045_Puma_Future_7_Ultimate_Black-Neon_Green.png,45,12,1,Puma Future 7 Ultimate (Black/Neon Green),,5
+boot_046_Puma_Future_7_Ultimate_Pitch_Black-Silver.png,46,12,2,Puma Future 7 Ultimate (Pitch Black/Silver),,5
+boot_047_adidas_F50_Elite_Orange-Black-Pink.png,47,12,3,adidas F50 Elite (Orange/Black/Pink),,5
+boot_048_adidas_F50_Elite_Orange-Black-White.png,48,12,4,adidas F50 Elite (Orange/Black/White),yes,5
+boot_049_adidas_Predator_Elite_Fold-Over_Tongue_Pink-White-Red.png,49,13,1,adidas Predator Elite Fold-Over Tongue (Pink/White/Red),,5
+boot_050_adidas_Predator_Elite_Grey-Yellow-White.png,50,13,2,adidas Predator Elite (Grey/Yellow/White),,5
+boot_051_adidas_Predator_Elite_Fold-Over_Tongue_Grey-Red-White.png,51,13,3,adidas Predator Elite Fold-Over Tongue (Grey/Red/White),,5
+boot_052_Nike_Mercurial_Vapor_16_Royal_Blue-Volt.png,52,13,4,Nike Mercurial Vapor 16 (Royal Blue/Volt),,5
+boot_053_Nike_Tiempo_Legend_10_Elite_White-Gold.png,53,14,1,Nike Tiempo Legend 10 Elite (White/Gold),,6
+boot_054_adidas_Predator_Elite_Black-Neon_Green.png,54,14,2,adidas Predator Elite (Black/Neon Green),,6
+boot_055_Puma_Future_7_Ultimate_Teal-Green-Red.png,55,14,3,Puma Future 7 Ultimate (Teal/Green/Red),,6
+boot_056_Nike_Phantom_GX_2_Elite_Blue-White-Pink.png,56,14,4,Nike Phantom GX 2 Elite (Blue/White/Pink),,6
+boot_057_adidas_Predator_Elite_Fold-Over_Tongue_Pink-White-Red.png,57,15,1,adidas Predator Elite Fold-Over Tongue (Pink/White/Red),,6
+boot_058_adidas_Predator_Elite_Silver-White-Gold.png,58,15,2,adidas Predator Elite (Silver/White/Gold),,6
+boot_059_adidas_Predator_Elite_Black-White_Graphic_Pattern.png,59,15,3,adidas Predator Elite (Black/White Graphic Pattern),,6
+boot_060_adidas_F50_Elite_Red-Black.png,60,15,4,adidas F50 Elite (Red/Black),yes,6
+boot_061_adidas_F50_Elite_Bright_Red.png,61,16,1,adidas F50 Elite (Bright Red),,6
+boot_062_New_Balance_Furon_v7plus_Pro_Orange-Gold-Black.png,62,16,2,New Balance Furon v7+ Pro (Orange/Gold/Black),,6
+boot_063_New_Balance_Furon_v7plus_Pro_Royal_Blue-Gold-Black.png,63,16,3,New Balance Furon v7+ Pro (Royal Blue/Gold/Black),,6
+boot_064_New_Balance_Furon_v7plus_Pro_Neon_Yellow-Red-Black.png,64,16,4,New Balance Furon v7+ Pro (Neon Yellow/Red/Black),,6
+boot_065_adidas_Copa_Mundial_Classic_White-Blue-Black.png,65,17,1,adidas Copa Mundial / Classic (White/Blue/Black),,7
+boot_066_adidas_Predator_Elite_Black-Green.png,66,17,2,adidas Predator Elite (Black/Green),,7
+boot_067_adidas_F50_Elite_Orange-Red.png,67,17,3,adidas F50 Elite (Orange/Red),,7
+boot_068_Nike_Phantom_GX_2_Elite_Red-Green-Black.png,68,17,4,Nike Phantom GX 2 Elite (Red/Green/Black),yes,7
+boot_069_Mizuno_Alpha_Ice_Blue-White.png,69,18,1,Mizuno Alpha (Ice Blue/White),,7
+boot_070_Puma_King_Ultimate_Bronze-Brown-Black.png,70,18,2,Puma King Ultimate (Bronze/Brown/Black),,7
+boot_071_Nike_Tiempo_Legend_10_Elite_White-Blue-Multi.png,71,18,3,Nike Tiempo Legend 10 Elite (White/Blue/Multi),,7
+boot_072_Nike_Phantom_GX_2_Elite_Red-Gold-Blue.png,72,18,4,Nike Phantom GX 2 Elite (Red/Gold/Blue),,7
+boot_073_Nike_Mercurial_Superfly_10_Volt-Black.png,73,19,1,Nike Mercurial Superfly 10 (Volt/Black),,8
+boot_074_adidas_F50_Elite_Laceless_White-Pink-Orange.png,74,19,2,adidas F50 Elite Laceless (White/Pink/Orange),,8
+boot_075_Nike_Mercurial_Vapor_16_Hot_Pink-Black.png,75,19,3,Nike Mercurial Vapor 16 (Hot Pink/Black),,8
+boot_076_Nike_Mercurial_Superfly_10_Hot_Pink-Black.png,76,19,4,Nike Mercurial Superfly 10 (Hot Pink/Black),,8
+boot_077_Nike_Mercurial_Vapor_16_Hot_Pink-White.png,77,20,1,Nike Mercurial Vapor 16 (Hot Pink/White),,8
+boot_078_Nike_Phantom_GX_2_Elite_Hot_Pink-Black.png,78,20,2,Nike Phantom GX 2 Elite (Hot Pink/Black),,8
+boot_079_New_Balance_Furon_v7plus_Pro_Yellow-Black.png,79,20,3,New Balance Furon v7+ Pro (Yellow/Black),,8
+boot_080_New_Balance_Furon_v7plus_Pro_Hot_Pink-Silver.png,80,20,4,New Balance Furon v7+ Pro (Hot Pink/Silver),yes,8
+boot_081_New_Balance_Furon_v7plus_Pro_Hot_Pink-White-Silver_sole.png,81,21,1,New Balance Furon v7+ Pro (Hot Pink/White/Silver sole),,8
+boot_082_adidas_Predator_Elite_White-Pink-Black.png,82,21,2,adidas Predator Elite (White/Pink/Black),,8
+boot_083_Skechers_SKX_01_Silver-Grey.png,83,21,3,Skechers SKX_01 (Silver/Grey),,8
+boot_084_Skechers_SKX_01_White-Gold_ornate_special_edition.png,84,21,4,Skechers SKX_01 (White/Gold ornate special edition),,8
+boot_085_Umbro_Velocita_Red-Black.png,85,22,1,Umbro Velocita (Red/Black),,9
+boot_086_adidas_F50_Elite_White-Neon_Yellow.png,86,22,2,adidas F50 Elite (White/Neon Yellow),,9
+boot_087_adidas_F50_Elite_Laceless_White-Neon_Yellow.png,87,22,3,adidas F50 Elite Laceless (White/Neon Yellow),,9
+boot_088_adidas_F50_Elite_Blue-Yellow-Green.png,88,22,4,adidas F50 Elite (Blue/Yellow/Green),yes,9
+boot_089_adidas_F50_Elite_Blue-Yellow.png,89,23,1,adidas F50 Elite (Blue/Yellow),,9
+boot_090_Mizuno_Morelia_Neo_IV_Beta_White-Yellow.png,90,23,2,Mizuno Morelia Neo IV Beta (White/Yellow),,9
+boot_091_Nike_Phantom_GX_2_Elite_White-Red-Cyan.png,91,23,3,Nike Phantom GX 2 Elite (White/Red/Cyan),,9
+boot_092_Mizuno_Morelia_II_Made_in_Japan_White-Navy.png,92,23,4,Mizuno Morelia II Made in Japan (White/Navy),,9
+boot_093_Skechers_SKX_01_White-Light_Blue.png,93,24,1,Skechers SKX_01 (White/Light Blue),,10
+boot_094_Skechers_SKX_01_Hot_Pink-Dark.png,94,24,2,Skechers SKX_01 (Hot Pink/Dark),,10
+boot_095_Skechers_SKX_01_Hot_Pink-Multi.png,95,24,3,Skechers SKX_01 (Hot Pink/Multi),,10
+boot_096_Puma_King_Ultimate_Black-Gold.png,96,24,4,Puma King Ultimate (Black/Gold),,10
+boot_097_Under_Armour_Magnetico_Elite_Black-Orange.png,97,25,1,Under Armour Magnetico Elite (Black/Orange),,10
+boot_098_Under_Armour_Magnetico_Elite_Red-Black.png,98,25,2,Under Armour Magnetico Elite (Red/Black),,10
+boot_099_Under_Armour_Magnetico_Elite_Red-Dark.png,99,25,3,Under Armour Magnetico Elite (Red/Dark),,10
+boot_100_Umbro_Speciali_Classic_Black-White.png,100,25,4,Umbro Speciali (Classic Black/White),yes,10
+boot_101_Nike_Mercurial_Superfly_10_Red-Orange.png,101,26,1,Nike Mercurial Superfly 10 (Red/Orange),,10
+boot_102_New_Balance_Furon_v7plus_Pro_Volt-Black.png,102,26,2,New Balance Furon v7+ Pro (Volt/Black),,10
+boot_103_Nike_Mercurial_Vapor_16_White-Black.png,103,26,3,Nike Mercurial Vapor 16 (White/Black),,10
+boot_104_Nike_Mercurial_Superfly_10_Red-White.png,104,26,4,Nike Mercurial Superfly 10 (Red/White),,10
+boot_105_Nike_Mercurial_Superfly_10_Red-Orange.png,105,27,1,Nike Mercurial Superfly 10 (Red/Orange),,11
+boot_106_Nike_Mercurial_Vapor_16_White-Black-Green.png,106,27,2,Nike Mercurial Vapor 16 (White/Black/Green),,11
+boot_107_Generic_Black-Anthracite.png,107,27,3,Generic (Black/Anthracite),,11
+boot_108_Puma_Future_7_Ultimate_Pink-Blue-White.png,108,27,4,Puma Future 7 Ultimate (Pink/Blue/White),,11
+boot_109_Nike_Mercurial_Superfly_10_Red-Orange.png,109,28,1,Nike Mercurial Superfly 10 (Red/Orange),,11
+boot_110_Nike_Tiempo_Legend_10_Elite_White-Red-Silver.png,110,28,2,Nike Tiempo Legend 10 Elite (White/Red/Silver),,11
+boot_111_Nike_Mercurial_Superfly_10_Black-Volt-Grey.png,111,28,3,Nike Mercurial Superfly 10 (Black/Volt/Grey),,11
+boot_112_adidas_F50_Elite_Laceless_Black-White_Graphic.png,112,28,4,adidas F50 Elite Laceless (Black/White Graphic),yes,11
+boot_113_adidas_F50_Elite_Neon_Yellow-Green.png,113,29,1,adidas F50 Elite (Neon Yellow/Green),,11
+boot_114_adidas_F50_Elite_Purple-White-Black.png,114,29,2,adidas F50 Elite (Purple/White/Black),,11
+boot_115_adidas_F50_Elite_Silver-Gold.png,115,29,3,adidas F50 Elite (Silver/Gold),,11
+boot_116_Generic_Black-White-Yellow.png,116,29,4,Generic (Black/White/Yellow),,11
+boot_117_Generic_Black-White-Cleat_Pattern.png,117,30,1,Generic (Black/White/Cleat Pattern),,12
+boot_118_Nike_Tiempo_Legend_10_Elite_White-Red.png,118,30,2,Nike Tiempo Legend 10 Elite (White/Red),,12
+boot_119_adidas_Copa_Pure_2_Elite_White-Black-Gold.png,119,30,3,adidas Copa Pure 2 Elite (White/Black/Gold),,12
+boot_120_Under_Armour_Magnetico_Elite_Black-Orange.png,120,30,4,Under Armour Magnetico Elite (Black/Orange),yes,12
+boot_121_Mizuno_Alpha_Blue-Silver.png,121,31,1,Mizuno Alpha (Blue/Silver),,12
+boot_122_Nike_Tiempo_Legend_10_Elite_Red-White.png,122,31,2,Nike Tiempo Legend 10 Elite (Red/White),,12
+boot_123_Generic_Black-White.png,123,31,3,Generic (Black/White),,12
+boot_124_Puma_King_Ultimate_Yellow-Black.png,124,31,4,Puma King Ultimate (Yellow/Black),,12
+boot_125_Puma_Future_7_Ultimate_Bright_Red-White.png,125,32,1,Puma Future 7 Ultimate (Bright Red/White),,13
+boot_126_adidas_Predator_Elite_Fold-Over_Tongue_White-Red-Silver.png,126,32,2,adidas Predator Elite Fold-Over Tongue (White/Red/Silver),,13
+boot_127_adidas_F50_Elite_White-Neon_Yellow-Black.png,127,32,3,adidas F50 Elite (White/Neon Yellow/Black),,13
+boot_128_adidas_F50_Elite_White-Red-Blue.png,128,32,4,adidas F50 Elite (White/Red/Blue),,13
+boot_129_Puma_King_Ultimate_Black-Gold.png,129,33,1,Puma King Ultimate (Black/Gold),,13
+boot_130_adidas_F50_Elite_White-Purple.png,130,33,2,adidas F50 Elite (White/Purple),,13
+boot_131_New_Balance_Furon_v7plus_Pro_Orange-Gold-Black.png,131,33,3,New Balance Furon v7+ Pro (Orange/Gold/Black),,13
+boot_132_Nike_Phantom_GX_2_Elite_Grey-Silver-Blue.png,132,33,4,Nike Phantom GX 2 Elite (Grey/Silver/Blue),yes,13
+boot_133_New_Balance_Furon_v7plus_Pro_White-Blue-Gold.png,133,34,1,New Balance Furon v7+ Pro (White/Blue/Gold),,13
+boot_134_adidas_Predator_Elite_Fold-Over_Tongue_White-Red-Blue.png,134,34,2,adidas Predator Elite Fold-Over Tongue (White/Red/Blue),,13
+boot_135_Nike_Tiempo_Legend_10_Elite_White-Black-Gold.png,135,34,3,Nike Tiempo Legend 10 Elite (White/Black/Gold),,13
+boot_136_Mizuno_Morelia_Neo_IV_Beta_Black-White-Red.png,136,34,4,Mizuno Morelia Neo IV Beta (Black/White/Red),,13
+boot_137_Nike_Tiempo_Legend_10_Elite_White-Silver-Orange.png,137,35,1,Nike Tiempo Legend 10 Elite (White/Silver/Orange),,14
+boot_138_adidas_F50_Elite_Orange-Red-Blue.png,138,35,2,adidas F50 Elite (Orange/Red/Blue),,14
+boot_139_Nike_Phantom_GX_2_Elite_White-Red.png,139,35,3,Nike Phantom GX 2 Elite (White/Red),,14
+boot_140_Nike_Phantom_6_High_SE_EA_Sports_FC_Special_Edition_Red-White.png,140,35,4,Nike Phantom 6 High SE (EA Sports FC Special Edition) (Red/White),yes,14
+boot_141_Mizuno_Alpha_Silver-White-Pink.png,141,36,1,Mizuno Alpha (Silver/White/Pink),,14
+boot_142_New_Balance_Furon_v7plus_Pro_Neon_Yellow-Black.png,142,36,2,New Balance Furon v7+ Pro (Neon Yellow/Black),,14
+boot_143_New_Balance_Furon_v7plus_Pro_White-Black-Green.png,143,36,3,New Balance Furon v7+ Pro (White/Black/Green),,14
+boot_144_New_Balance_Furon_v7plus_Pro_White-Pink-Purple.png,144,36,4,New Balance Furon v7+ Pro (White/Pink/Purple),,14
+boot_145_Nike_Mercurial_Superfly_10_Hot_Pink-Orange.png,145,37,1,Nike Mercurial Superfly 10 (Hot Pink/Orange),,15
+boot_146_Nike_Mercurial_Superfly_10_Hot_Pink-Orange_Alternate.png,146,37,2,Nike Mercurial Superfly 10 (Hot Pink/Orange - Alternate),,15
+boot_147_Nike_Phantom_GX_2_Elite_Beige-Pink-Black.png,147,37,3,Nike Phantom GX 2 Elite (Beige/Pink/Black),,15
+boot_148_Nike_Phantom_GX_2_Elite_Purple-Gold-Red.png,148,37,4,Nike Phantom GX 2 Elite (Purple/Gold/Red),,15
+boot_149_Nike_Phantom_GX_2_Elite_Neon_Yellow-Black.png,149,38,1,Nike Phantom GX 2 Elite (Neon Yellow/Black),,15
+boot_150_Nike_Phantom_GX_2_Elite_Neon_Yellow-Black_Alternate_1.png,150,38,2,Nike Phantom GX 2 Elite (Neon Yellow/Black - Alternate 1),,15
+boot_151_Nike_Phantom_GX_2_Elite_Neon_Yellow-Black_Alternate_2.png,151,38,3,Nike Phantom GX 2 Elite (Neon Yellow/Black - Alternate 2),,15
+boot_152_Nike_Phantom_GX_2_Elite_Neon_Yellow-Black.png,152,38,4,Nike Phantom GX 2 Elite (Neon Yellow/Black),yes,15
+boot_153_Nike_Phantom_GX_2_Elite_Neon_Yellow-Black_Alternate_3.png,153,39,1,Nike Phantom GX 2 Elite (Neon Yellow/Black - Alternate 3),,15
+boot_154_New_Balance_Furon_v7plus_Pro_Orange-Blue-White.png,154,39,2,New Balance Furon v7+ Pro (Orange/Blue/White),,15
+boot_155_Skechers_SKX_01_Hot_Pink-White.png,155,39,3,Skechers SKX_01 (Hot Pink/White),,15
+boot_156_Skechers_SKX_01_Hot_Pink-Black.png,156,39,4,Skechers SKX_01 (Hot Pink/Black),,15
+boot_157_Generic_Dark_Grey-Black.png,157,40,1,Generic (Dark Grey/Black),,16
+boot_158_Generic_Light_Grey-Blue.png,158,40,2,Generic (Light Grey/Blue),,16
+boot_159_New_Balance_Furon_v7plus_Pro_Blue-Dark.png,159,40,3,New Balance Furon v7+ Pro (Blue/Dark),,16
+boot_160_adidas_F50_Elite_Bright_Red-Blue-Pink.png,160,40,4,adidas F50 Elite (Bright Red/Blue/Pink),yes,16
+boot_161_New_Balance_Furon_v7plus_Pro_White-Lime_Green.png,161,41,1,New Balance Furon v7+ Pro (White/Lime Green),,16
+boot_162_New_Balance_Furon_v7plus_Pro_Grey-Orange-Black.png,162,41,2,New Balance Furon v7+ Pro (Grey/Orange/Black),,16
+boot_163_Puma_Future_7_Ultimate_White-Red.png,163,41,3,Puma Future 7 Ultimate (White/Red),,16
+boot_164_Puma_Future_7_Ultimate_White-Red_Alternate.png,164,41,4,Puma Future 7 Ultimate (White/Red - Alternate),,16
+boot_165_Nike_Phantom_GX_2_Elite_Mint_Green-Blue.png,165,42,1,Nike Phantom GX 2 Elite (Mint Green/Blue),,16
+boot_166_Nike_Phantom_GX_2_Elite_Cyan-Blue.png,166,42,2,Nike Phantom GX 2 Elite (Cyan/Blue),,16
+boot_167_adidas_Predator_Elite_Grey-Neon_Green.png,167,42,3,adidas Predator Elite (Grey/Neon Green),,16
+boot_168_Puma_Future_7_Ultimate_White-Beige.png,168,42,4,Puma Future 7 Ultimate (White/Beige),,16
+boot_169_adidas_Predator_Elite_White-Red-Black.png,169,43,1,adidas Predator Elite (White/Red/Black),,17
+boot_170_Nike_Phantom_GX_2_Elite_Mint_Green-Teal.png,170,43,2,Nike Phantom GX 2 Elite (Mint Green/Teal),,17
+boot_171_Nike_Phantom_GX_2_Elite_Mint_Green-Teal_Alternate.png,171,43,3,Nike Phantom GX 2 Elite (Mint Green/Teal - Alternate),,17
+boot_172_Nike_Phantom_GX_2_Elite_Beige-Pink-Black.png,172,43,4,Nike Phantom GX 2 Elite (Beige/Pink/Black),yes,17
+boot_173_adidas_F50_Elite_Purple-Yellow-Blue.png,173,44,1,adidas F50 Elite (Purple/Yellow/Blue),,17
+boot_174_adidas_Predator_Elite_White-Pink-Yellow.png,174,44,2,adidas Predator Elite (White/Pink/Yellow),,17
+boot_175_Nike_Phantom_GX_2_Elite_Purple-Orange.png,175,44,3,Nike Phantom GX 2 Elite (Purple/Orange),,17
+boot_176_Under_Armour_Magnetico_Elite_Neon_Green-Pink.png,176,44,4,Under Armour Magnetico Elite (Neon Green/Pink),,17
+boot_177_Puma_Future_7_Ultimate_Orange-Silver.png,177,45,1,Puma Future 7 Ultimate (Orange/Silver),,18
+boot_178_Mizuno_Morelia_Neo_IV_Beta_White-Red-Gold.png,178,45,2,Mizuno Morelia Neo IV Beta (White/Red/Gold),,18
+boot_179_Nike_Phantom_GX_2_Elite_Grey-Pink-Orange.png,179,45,3,Nike Phantom GX 2 Elite (Grey/Pink/Orange),,18
+boot_180_Skechers_SKX_01_Light_Blue-Red.png,180,45,4,Skechers SKX_01 (Light Blue/Red),,18
+boot_181_Puma_Future_7_Ultimate_Matte_Black-Purple.png,181,46,1,Puma Future 7 Ultimate (Matte Black/Purple),,18
+boot_182_adidas_Predator_Elite_White-Red-Black.png,182,46,2,adidas Predator Elite (White/Red/Black),,18
+boot_183_Puma_Future_7_Ultimate_Red-White.png,183,46,3,Puma Future 7 Ultimate (Red/White),,18
+boot_184_Puma_Future_7_Ultimate_Black-Neon_Yellow.png,184,46,4,Puma Future 7 Ultimate (Black/Neon Yellow),yes,18
+boot_185_Generic_Neon_Yellow-Black.png,185,47,1,Generic (Neon Yellow/Black),,18
+boot_186_Generic_Black-Green.png,186,47,2,Generic (Black/Green),,18
+boot_187_Generic_Brown-Gold.png,187,47,3,Generic (Brown/Gold),,18
+boot_188_Generic_White-Black.png,188,47,4,Generic (White/Black),,18
+boot_189_Generic_White-Blue.png,189,48,1,Generic (White/Blue),,19
+boot_190_Generic_White-Blue_Alternate.png,190,48,2,Generic (White/Blue - Alternate),,19
+boot_191_Generic_Solid_Black.png,191,48,3,Generic (Solid Black),,19
+boot_192_Generic_Yellow-Black.png,192,48,4,Generic (Yellow/Black),yes,19
+boot_193_Generic_Dark_Red-Black.png,193,49,1,Generic (Dark Red/Black),,19
+boot_194_Generic_White-Black.png,194,49,2,Generic (White/Black),,19
+boot_195_Generic_Solid_Green.png,195,49,3,Generic (Solid Green),,19
+boot_196_Generic_Yellow-Gold.png,196,49,4,Generic (Yellow/Gold),,19
+boot_197_Generic_Dark_Red-Black.png,197,50,1,Generic (Dark Red/Black),,20
+boot_198_Generic_Solid_Red.png,198,50,2,Generic (Solid Red),,20
+boot_199_Generic_Red-White.png,199,50,3,Generic (Red/White),,20
+boot_200_Generic_Deep_Purple-Maroon.png,200,50,4,Generic (Deep Purple/Maroon),,20
+boot_201_Generic_Cyan-Blue.png,201,51,1,Generic (Cyan/Blue),,20
+boot_202_Generic_Neon_Yellow-Green.png,202,51,2,Generic (Neon Yellow/Green),,20
+boot_203_Generic_White-Black-Red.png,203,51,3,Generic (White/Black/Red),,20
+boot_204_Generic_Hot_Pink.png,204,51,4,Generic (Hot Pink),yes,20
+boot_205_Generic_White-Black-Silver.png,205,52,1,Generic (White/Black/Silver),,20
+boot_206_Generic_Red-White.png,206,52,2,Generic (Red/White),,20
+boot_207_Generic_Purple.png,207,52,3,Generic (Purple),,20
+boot_208_Generic_Orange.png,208,52,4,Generic (Orange),,20

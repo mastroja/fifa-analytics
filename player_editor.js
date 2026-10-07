@@ -249,6 +249,30 @@ function handleWriteLog(payload) {
   return n;
 }
 
+// Boot pictures are not tied to game ids on their own. A link maps a picture (its catalog key, e.g.
+// "nike/boot_006_....png") to the game's shoetypecode. User links live in boot_links.json in the app's data folder;
+// assets/data/boots_id_map.json can ship defaults. A user value of null removes a shipped link.
+function bootLinksPath() { return path.join(ctx.userDataPath || __dirname, 'boot_links.json'); }
+function readJsonObject(file) {
+  try { const v = JSON.parse(fs.readFileSync(file, 'utf8')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+}
+function getBootLinks() {
+  const shipped = readJsonObject(path.join(__dirname, 'assets', 'data', 'boots_id_map.json'));
+  const user = readJsonObject(bootLinksPath());
+  const merged = Object.assign({}, shipped, user);
+  Object.keys(merged).forEach(k => { if (merged[k] === null) delete merged[k]; });
+  return merged;
+}
+function setBootLink(key, shoeId) {
+  if (typeof key !== 'string' || !key || key.includes('..')) return { success: false, error: 'Bad picture key.' };
+  const lim = FIELD_LIMITS.shoetypecode;
+  if (shoeId !== null && (!Number.isInteger(shoeId) || shoeId < lim[0] || shoeId > lim[1])) return { success: false, error: 'Bad boot id.' };
+  const user = readJsonObject(bootLinksPath());
+  user[key] = shoeId; // null = unlink (also hides a shipped link)
+  fs.writeFileSync(bootLinksPath(), JSON.stringify(user, null, 1));
+  return { success: true, links: getBootLinks() };
+}
+
 function getCatalog() {
   try {
     return JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
@@ -266,6 +290,8 @@ function register(ipcMain) {
   ipcMain.handle('queue-player-edit', (_e, playerId, changes) => queueEdit(playerId, changes));
   ipcMain.handle('undo-player-edit', (_e, editId) => undoEdit(editId));
   ipcMain.handle('get-customization-catalog', () => getCatalog());
+  ipcMain.handle('get-boot-links', () => getBootLinks());
+  ipcMain.handle('set-boot-link', (_e, key, shoeId) => setBootLink(key, shoeId));
   ipcMain.handle('get-player-editor-static', () => {
     try {
       return {

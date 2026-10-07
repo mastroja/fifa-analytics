@@ -6171,7 +6171,7 @@ ipcMain.handle('delete-player', (_event, playerId) => deletePlayer(playerId));
 ipcMain.handle('get-season-competition-results', (_event, seasonId) => getSeasonCompetitionResults(seasonId));
 ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
-playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk });
+playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
 playerEditor.register(ipcMain);
 ipcMain.handle('enable-youth-mode', (_event, saveId) => enableYouthMode(saveId));
 ipcMain.handle('clear-former-players', (_event, saveId) => clearFormerPlayers(saveId));

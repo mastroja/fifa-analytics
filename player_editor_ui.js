@@ -182,7 +182,14 @@
       .pe-chip:hover { border-color: var(--accent-color); }
       .pe-chip.on { background: var(--accent-color); color: #0d1117; border-color: var(--accent-color); font-weight: 600; }
       .pe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-height: 560px; overflow-y: auto; padding: 4px 6px 4px 0; }
-      .pe-grid.boots { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); max-height: 480px; }
+      .pe-grid.boots { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); max-height: 620px; }
+      .pe-tile.boot img { aspect-ratio: 260 / 230; object-fit: contain; background: #0006; }
+      .pe-boot-name { font-size: 12px; color: var(--text-main, #e6edf3); line-height: 1.25; min-height: 30px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .pe-boot-tag { font-size: 11px; margin-top: 3px; color: var(--text-dim); }
+      .pe-boot-tag.ok { color: #3fb950; font-weight: 700; }
+      .pe-unlink { cursor: pointer; color: #f85149; margin-left: 6px; }
+      .pe-search { background: var(--expand-bg); color: var(--text-main, #e6edf3); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 12px; font-size: 14px; min-width: 220px; }
+      .pe-search:focus { outline: none; border-color: var(--accent-color); }
       .pe-tile { border: 2px solid transparent; border-radius: 12px; background: var(--expand-bg); padding: 5px; cursor: pointer; text-align: center; font-size: 12px; color: var(--text-dim); }
       .pe-tile:hover { border-color: var(--border-color); }
       .pe-tile img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 9px; display: block; margin-bottom: 3px; }
@@ -370,49 +377,64 @@
   }
 
   // ---------- boots ----------
-  // shoetypecode picks the boot model. (shoecolorcode1/2 were tried and have no visible effect, so they are not offered.)
-  // Boot names are not in the game data: tiles show the id and an image when
-  // assets/player_customization/boots/boot_id_NNNN.png exists.
+  // The boot screenshots (assets/player_customization/boots/<brand>/) are not tied to game ids yet. A boot is
+  // "linked" once a picture has been matched to the game's shoetypecode: turn on Link mode, then click the picture of
+  // the boot this player wears in the game and it is remembered for every player. Only linked boots can be applied.
+  function bootLinkOf(img) { const id = (ed.bootLinks || {})[img.key]; return Number.isInteger(id) ? id : null; }
+
   function tabBoots() {
-    const boots = (catalog && catalog.boots) || [];
+    const imgs = (catalog && catalog.boots) || [];
     const f = ed.filters.boots;
-    const cur = ed.cur.shoetypecode, origId = ed.orig.shoetypecode;
-    const known = new Set(boots.map(b => b.id));
+    const cur = ed.cur.shoetypecode, gameId = ed.orig.shoetypecode;
+    const gameBoots = (catalog && catalog.gameBoots) || [];
+    const gb = gameBoots.find(b => b.id === gameId);
+    const linkedHere = imgs.filter(i => bootLinkOf(i) === gameId);
 
-    // "Show" filter (like the hair length chips): only options that actually have boots
-    const views = [
-      ['used', 'Worn in game', boots.filter(b => b.usedBy > 0)],
-      ['all', 'All boots', boots],
-      ['images', 'With images', boots.filter(b => b.file)]
-    ].filter(v => v[2].length > 0);
-    if (!views.some(v => v[0] === f.view)) f.view = views.length ? views[0][0] : 'all';
-    const inView = (views.find(v => v[0] === f.view) || ['all', '', boots])[2];
+    const q = (f.q || '').trim().toLowerCase();
+    let inScope = imgs.filter(i => !q || i.name.toLowerCase().includes(q) || i.brandLabel.toLowerCase().includes(q));
+    const linkedCount = inScope.filter(i => bootLinkOf(i) !== null).length;
+    const views = [['all', 'All', inScope.length], ['linked', 'Linked', linkedCount], ['unlinked', 'Not linked', inScope.length - linkedCount]].filter(v => v[0] === 'all' || v[2] > 0);
+    if (!views.some(v => v[0] === f.link)) f.link = 'all';
+    if (f.link === 'linked') inScope = inScope.filter(i => bootLinkOf(i) !== null);
+    else if (f.link === 'unlinked') inScope = inScope.filter(i => bootLinkOf(i) === null);
 
-    // Brand dropdown (like the hair category dropdown): only brands that have boots in this view.
-    // Brand names are not in the game data, so they are numbered.
-    const brandCounts = {};
-    inView.forEach(b => { brandCounts[b.m] = (brandCounts[b.m] || 0) + 1; });
+    // brand dropdown: only brands that have pictures in the current scope
+    const brandCounts = {}, brandLabels = {};
+    inScope.forEach(i => { brandCounts[i.brand] = (brandCounts[i.brand] || 0) + 1; brandLabels[i.brand] = i.brandLabel; });
     if (f.brand !== 'all' && !brandCounts[f.brand]) f.brand = 'all';
-    const brandOptions = [{ value: 'all', label: `All brands (${inView.length})` }].concat(
-      Object.keys(brandCounts).map(Number).sort((x, y) => brandCounts[y] - brandCounts[x] || x - y)
-        .map(m => ({ value: m, label: `Brand ${m} (${brandCounts[m]})` })));
+    const brandOptions = [{ value: 'all', label: `All brands (${inScope.length})` }].concat(
+      Object.keys(brandCounts).sort((x, y) => brandLabels[x].localeCompare(brandLabels[y]))
+        .map(b => ({ value: b, label: `${brandLabels[b]} (${brandCounts[b]})` })));
+    const shown = f.brand === 'all' ? inScope : inScope.filter(i => i.brand === f.brand);
 
-    let shown = f.brand === 'all' ? inView : inView.filter(b => b.m === Number(f.brand));
-    shown = shown.slice().sort((x, y) => (y.usedBy - x.usedBy) || (x.id - y.id));
-
-    const viewChip = (v, label, n) => `<button class="pe-chip${f.view === v ? ' on' : ''}" data-filter="boots:view:${v}">${label} (${n})</button>`;
-    const tile = b => `<div class="pe-tile${b.id === cur ? ' sel' : ''}${b.id === origId ? ' orig' : ''}" data-set="shoetypecode:${b.id}" title="Boot #${b.id} · brand ${b.m}${b.usedBy ? ` · worn by ${b.usedBy} players` : ''}${b.store ? '' : ' · not sold in store'}">${
-      b.file ? `<img loading="lazy" src="${esc(b.file)}" alt="">` : `<div class="pe-noimg">Boot<br>#${b.id}</div>`}#${b.id}${b.usedBy ? ` · ${b.usedBy}` : ''}</div>`;
-    const tiles = (known.has(cur) ? '' : tile({ id: cur, m: '?', usedBy: 0, store: 1, file: null })) + shown.map(tile).join('');
-    const bar = `<div class="pe-row" style="align-items:center;gap:12px;margin-bottom:12px">
-        <div class="pe-field" style="flex-direction:row;align-items:center;gap:8px">Brand ${filterDropdown('boots', 'brand', brandOptions, f.brand)}</div>
-        <div class="pe-chips" style="margin:0">${views.map(v => viewChip(v[0], v[1], v[2].length)).join('')}</div>
+    const linkChip = (v, label, n) => `<button class="pe-chip${f.link === v ? ' on' : ''}" data-filter="boots:link:${v}">${label} (${n})</button>`;
+    const tile = i => {
+      const link = bootLinkOf(i);
+      const isCur = link !== null && link === cur;
+      return `<div class="pe-tile boot${isCur ? ' sel' : ''}${link !== null && link === gameId ? ' orig' : ''}" data-boot="${esc(i.key)}" title="${esc(i.name)}${link !== null ? ` · game boot #${link}` : ' · not linked to a game id yet'}">
+        <img loading="lazy" src="${esc(i.file)}" alt="">
+        <div class="pe-boot-name">${esc(i.name)}</div>
+        <div class="pe-boot-tag${link !== null ? ' ok' : ''}">${link !== null ? `#${link}` : 'not linked'}${ed.linkMode && link !== null ? ` <span class="pe-unlink" data-unlink="${esc(i.key)}" title="Remove this link">✕</span>` : ''}</div>
       </div>`;
+    };
+    const status = linkedHere.length
+      ? `Current game boot <b>#${esc(gameId)}</b> matches ${linkedHere.length} picture${linkedHere.length > 1 ? 's' : ''} (outlined in the grid).`
+      : `Current game boot <b>#${esc(gameId)}</b>${gb && gb.usedBy ? ` (worn by ${gb.usedBy} players)` : ''} has no picture linked yet.`;
+    const linkBox = ed.linkMode
+      ? `<div class="pe-banner" style="margin-bottom:12px">Link mode is on. Click the picture of the boot this player wears in the game, and it will be linked to game boot <b>#${esc(gameId)}</b>. Click a linked picture's ✕ to remove its link.
+          <button class="pe-chip" data-link-mode="off" style="margin-left:10px">Done linking</button></div>`
+      : '';
     return `<div class="pe-card"><h3>Boot model</h3>
-        <p>Boot names are not stored in the game, so boots are shown by id; the number after the id is how many players wear it. Add images to assets/player_customization/boots/ (boot_id_NNNN.png).</p>
-        ${bar}
-        <div class="pe-grid">${tiles}</div>
-        <div class="pe-picked">Boot <b>#${esc(cur)}</b>${cur !== origId ? ` <span class="pe-hint">(was #${esc(origId)})</span>` : ''} <span class="pe-hint">- ${shown.length} shown</span></div></div>`;
+        <p>${status} Pictures that are not linked to a game id cannot be applied yet.</p>
+        ${linkBox}
+        <div class="pe-row" style="align-items:center;gap:12px;margin-bottom:12px">
+          <div class="pe-field" style="flex-direction:row;align-items:center;gap:8px">Brand ${filterDropdown('boots', 'brand', brandOptions, f.brand)}</div>
+          <input class="pe-search" type="search" placeholder="Search boots…" data-boot-q value="${esc(f.q || '')}">
+          <div class="pe-chips" style="margin:0">${views.map(v => linkChip(v[0], v[1], v[2])).join('')}</div>
+          ${ed.linkMode ? '' : `<button class="pe-chip" data-link-mode="on" title="Match pictures to the game's boot ids">Link pictures to game ids</button>`}
+        </div>
+        <div class="pe-grid boots">${shown.map(tile).join('') || '<div class="pe-hint">No boots match.</div>'}</div>
+        <div class="pe-picked">${shown.length} shown · ${imgs.filter(i => bootLinkOf(i) !== null).length} of ${imgs.length} pictures linked</div></div>`;
   }
 
   function tabRatings() {
@@ -515,6 +537,11 @@
       </div></div>`;
     const np = dlg.querySelector('.pe-panel');
     if (np && prevTab === ed.tab) np.scrollTop = prevScroll;
+    if (ed.focusBootQ) {
+      ed.focusBootQ = false;
+      const qi = dlg.querySelector('[data-boot-q]');
+      if (qi) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
+    }
   }
 
   // ---------- state changes ----------
@@ -605,10 +632,27 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.dataset.unlink) {
+        const r = await api().setBootLink(t.dataset.unlink, null);
+        if (r && r.success) ed.bootLinks = r.links;
+        render(); return;
+      }
+      if (t.dataset.linkMode) { ed.linkMode = t.dataset.linkMode === 'on'; ed.msg = ''; render(); return; }
+      if (t.dataset.boot) {
+        const key = t.dataset.boot;
+        const link = Number.isInteger(ed.bootLinks[key]) ? ed.bootLinks[key] : null;
+        if (ed.linkMode) {
+          const r = await api().setBootLink(key, ed.orig.shoetypecode);
+          if (r && r.success) { ed.bootLinks = r.links; ed.msg = `Linked this picture to game boot #${ed.orig.shoetypecode}.`; ed.msgKind = 'ok'; }
+          else { ed.msg = (r && r.error) || 'Could not save the link.'; ed.msgKind = 'err'; }
+        } else if (link !== null) { ed.cur.shoetypecode = link; ed.msg = ''; ed.msgKind = ''; }
+        else { ed.msg = 'That boot is not linked to a game id yet. Use "Link pictures to game ids", then click the picture of the boot this player wears in the game.'; ed.msgKind = 'err'; }
+        render(); return;
+      }
       if (t.hasAttribute('data-close')) { dlg.close(); return; }
       if (t.hasAttribute('data-save')) { await save(); return; }
       if (t.hasAttribute('data-toggle-gk')) { ed.showGk = !ed.showGk; render(); return; }
@@ -617,7 +661,7 @@
       if (t.dataset.set) { const [k, v] = t.dataset.set.split(':'); ed.openDd = null; setValue(k, v); return; }
       if (t.dataset.filter) {
         const [kind, group, val] = t.dataset.filter.split(':');
-        ed.filters[kind][group] = (['all', 'suggested', 'other'].includes(val) || group === 'length' || group === 'view') ? val : Number(val);
+        ed.filters[kind][group] = (['all', 'suggested', 'other'].includes(val) || group === 'length' || group === 'view' || kind === 'boots') ? val : Number(val);
         ed.openDd = null;
         render(); return;
       }
@@ -633,6 +677,12 @@
         } else { ed.msg = (res && res.error) || 'Undo failed.'; ed.msgKind = 'err'; }
         render();
       }
+    });
+    dlg.addEventListener('input', (e) => {
+      if (!ed || !e.target.hasAttribute('data-boot-q')) return;
+      ed.filters.boots.q = e.target.value;
+      ed.focusBootQ = true;
+      render();
     });
     dlg.addEventListener('change', (e) => {
       if (!ed) return;
@@ -677,7 +727,8 @@
         catalog ? Promise.resolve(catalog) : api().getCustomizationCatalog(),
         staticData ? Promise.resolve(staticData) : api().getPlayerEditorStatic()
       ]);
-      catalog = cat || { hair: [], facialHair: [] };
+      catalog = cat || { hair: [], facialHair: [], boots: [], gameBoots: [] };
+      const bootLinks = api().getBootLinks ? await api().getBootLinks() : {};
       staticData = stat;
       labels = (stat && stat.labels) || {};
       if (staticData && !staticData.bootsRgb && catalog && catalog.bootsRgb) staticData.bootsRgb = catalog.bootsRgb;
@@ -687,8 +738,8 @@
         playerId, name: stateRes.state.name || '', source: stateRes.state.source,
         orig: Object.assign({}, s), baseline: Object.assign({}, s), cur: Object.assign({}, s),
         limits: stateRes.limits || {}, edits: stateRes.edits || [], overallTouched: false, msg: '', msgKind: '', saving: false,
-        tab: 'look', showGk: false, stale,
-        filters: { hair: { cat: 'suggested', length: 'all' }, facial: { cat: 'all', length: 'all' }, boots: { view: 'used', brand: 'all' } }
+        tab: 'look', showGk: false, stale, linkMode: false, bootLinks: bootLinks || {},
+        filters: { hair: { cat: 'suggested', length: 'all' }, facial: { cat: 'all', length: 'all' }, boots: { brand: 'all', link: 'all', q: '' } }
       };
       const dlg = ensureDialog();
       render();
