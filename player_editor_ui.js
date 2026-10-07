@@ -65,7 +65,7 @@
   const EYE_SWATCH = { 1: '#3b7dd8', 2: '#86bdea', 3: '#7a4a21', 4: '#a8743a', 5: '#8a6a2f', 6: '#3f8f4f', 7: '#93d093', 8: '#4a86cf', 9: '#3a2314', 10: '#1fa845' };
   const SKIN_SWATCH = { 10: '#f6d9c5', 20: '#efc7a8', 30: '#e2b08a', 40: '#d19a6b', 50: '#bf8456', 60: '#a46f46', 70: '#8a5a38', 80: '#6e4529', 90: '#573520', 100: '#3f2616' };
 
-  const TABS = [['look', 'Look'], ['body', 'Body'], ['boots', 'Boots'], ['ratings', 'Ratings'], ['pos', 'Positions'], ['play', 'Playstyles'], ['hist', 'History']];
+  const TABS = [['look', 'Head'], ['body', 'Body'], ['kit', 'Kit & accessories'], ['boots', 'Boots'], ['ratings', 'Ratings'], ['pos', 'Positions'], ['play', 'Playstyles'], ['hist', 'History']];
 
   let ed = null; // open editor session
   let staticData = null;
@@ -180,6 +180,7 @@
       .pe-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
       .pe-chip { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--expand-bg); color: inherit; font-size: 12px; cursor: pointer; }
       .pe-chip:hover { border-color: var(--accent-color); }
+      .pe-chip.was { border-style: dashed; }
       .pe-chip.on { background: var(--accent-color); color: #0d1117; border-color: var(--accent-color); font-weight: 600; }
       .pe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-height: 560px; overflow-y: auto; padding: 4px 6px 4px 0; }
       .pe-grid.boots { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); max-height: 620px; }
@@ -333,9 +334,6 @@
 
   // ---------- tabs ----------
   function tabLook() {
-    const acc = [1, 2, 3, 4].map(n => `<div class="pe-acc"><span class="pe-hint">Slot ${n}</span>
-        ${selectField('', 'accessorycode' + n, ACCESSORY_IDS, accName)}
-        ${selectField('', 'accessorycolourcode' + n, ACCESSORY_COLORS, accColorName)}</div>`).join('');
     return `
       <div class="pe-card"><h3>Skin</h3><p>Tone follows the game's ten-step scale; complexion and type fine-tune it.</p>
         ${swatchPicker('skintonecode', SKIN_TONES, skinName, SKIN_SWATCH, 'Skin tone')}
@@ -349,8 +347,38 @@
       <div class="pe-card"><h3>Hair colour</h3>${swatchPicker('haircolorcode', HAIR_COLORS, hairName, HAIR_SWATCH, 'Hair colour')}
         <div class="pe-hint" style="margin-top:6px">Striped swatches are game-internal colours without a name.</div></div>
       <div class="pe-card"><h3>Facial hair style</h3>${hairGrid('facial', 'facialhairtypecode')}</div>
-      <div class="pe-card"><h3>Facial hair colour</h3>${swatchPicker('facialhaircolorcode', FACIAL_COLORS, facialName, HAIR_SWATCH, 'Facial hair colour')}</div>
-      <div class="pe-card"><h3>Accessories</h3><p>Only accessories seen in the game's data are offered. Some can only be white.</p>${acc}</div>`;
+      <div class="pe-card"><h3>Facial hair colour</h3>${swatchPicker('facialhaircolorcode', FACIAL_COLORS, facialName, HAIR_SWATCH, 'Facial hair colour')}</div>`;
+  }
+
+  // ---------- kit & accessories ----------
+  // Option names come from Live Editor's own localisation (jerseyfit_*, jerseysleevelengthcode_*, jerseystylecode_*,
+  // socklengthcode_*, sockstylecode_*). Unnamed values are not offered.
+  const KIT_OPTIONS = {
+    jerseysleevelengthcode: [[0, 'Short'], [1, 'Long'], [2, 'Long + turtleneck'], [3, 'Seasonal undershirt'], [4, 'Seasonal undershirt + turtleneck']],
+    jerseyfit: [[0, 'Normal'], [1, 'Tight'], [2, 'Team kit fit']],
+    jerseystylecode: [[0, 'Tucked in'], [1, 'Untucked']],
+    socklengthcode: [[1, 'Short'], [3, 'Low'], [0, 'Medium'], [2, 'Long']],
+    sockstylecode: [[0, 'No shin pad'], [1, 'Regular'], [2, 'Small shin pad'], [3, 'Micro shin pad'], [5, 'One hole'], [6, 'Two holes'], [7, 'Three holes'], [8, 'Multi holes']]
+  };
+  function kitChips(key) {
+    const cur = ed.cur[key], orig = ed.orig[key];
+    const opts = KIT_OPTIONS[key].slice();
+    if (!opts.some(o => o[0] === cur)) opts.unshift([cur, `Value ${cur}`]);
+    return `<div class="pe-chips">${opts.map(([v, label]) => `<button class="pe-chip${v === cur ? ' on' : ''}${v === orig && v !== cur ? ' was' : ''}" data-set="${key}:${v}">${esc(label)}</button>`).join('')}</div>`;
+  }
+  function tabKit() {
+    const acc = [1, 2, 3, 4].map(n => `<div class="pe-acc"><span class="pe-hint">Slot ${n}</span>
+        ${selectField('', 'accessorycode' + n, ACCESSORY_IDS, accName)}
+        ${selectField('', 'accessorycolourcode' + n, ACCESSORY_COLORS, accColorName)}</div>`).join('');
+    return `
+      <div class="pe-card"><h3>Shirt</h3><p>How the kit is worn. Applies to this player only.</p>
+        <div class="pe-hint">Sleeves</div>${kitChips('jerseysleevelengthcode')}
+        <div class="pe-hint" style="margin-top:10px">Kit fit</div>${kitChips('jerseyfit')}
+        <div class="pe-hint" style="margin-top:10px">Tucking</div>${kitChips('jerseystylecode')}</div>
+      <div class="pe-card"><h3>Socks</h3>
+        <div class="pe-hint">Sock length</div>${kitChips('socklengthcode')}
+        <div class="pe-hint" style="margin-top:10px">Shin pads</div>${kitChips('sockstylecode')}</div>
+      <div class="pe-card"><h3>Accessories</h3><p>Hand tape, wristbands, gloves and the like. Only accessories seen in the game's data are offered; some can only be white.</p>${acc}</div>`;
   }
 
   function tabBody() {
@@ -502,7 +530,8 @@
   function tabHasChanges(tab) {
     const keys = changedKeys();
     const sets = {
-      look: k => /^(skin|hair|facialhair|eye|accessory|sideburns)/.test(k),
+      look: k => /^(skin|hair|facialhair|eye|sideburns)/.test(k),
+      kit: k => /^(jersey|sock|accessory)/.test(k),
       body: k => k === 'height' || k === 'weight' || k === 'bodytypecode',
       boots: k => /^shoe/.test(k),
       ratings: k => k === 'overallrating' || k === 'potential' || ATTR_KEYS.includes(k),
@@ -518,7 +547,7 @@
     const prevScroll = panel ? panel.scrollTop : 0;
     const prevTab = panel ? panel.dataset.tab : null;
     const changes = changedKeys();
-    const body = { look: tabLook, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, hist: tabHistory }[ed.tab]();
+    const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, hist: tabHistory }[ed.tab]();
     const staleBanner = ed.stale ? `<div class="pe-banner">${esc(ed.stale)}</div>` : '';
     dlg.innerHTML = `<div class="pe-shell">
       <div class="pe-top">
