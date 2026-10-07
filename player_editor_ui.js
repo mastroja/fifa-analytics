@@ -344,10 +344,10 @@
         <div class="pe-row" style="margin-top:14px">${selectField('Eye detail', 'eyedetail', [0, 1, 2, 3, 4, 5, 6])}${numberField('Eyebrow code', 'eyebrowcode', 0, 3000000)}</div>
         <div class="pe-hint">Eyebrows are a packed code (e.g. 240302); copy one from another generic player rather than inventing one.</div></div>
       <div class="pe-card"><h3>Hair style</h3>${hairGrid('hair', 'hairtypecode')}</div>
-      <div class="pe-card"><h3>Hair colour</h3>${swatchPicker('haircolorcode', HAIR_COLORS, hairName, HAIR_SWATCH, 'Hair colour')}
-        <div class="pe-hint" style="margin-top:6px">Striped swatches are game-internal colours without a name.</div></div>
+      <div class="pe-card"><h3>Hair colour</h3>${swatchPicker('haircolorcode', HAIR_COLORS.filter(id => L('hairColor', id, null)), hairName, HAIR_SWATCH, 'Hair colour')}
+        <div class="pe-hint" style="margin-top:6px">Only colours with a name are offered. A striped swatch is the player's current colour when it has no name.</div></div>
       <div class="pe-card"><h3>Facial hair style</h3>${hairGrid('facial', 'facialhairtypecode')}</div>
-      <div class="pe-card"><h3>Facial hair colour</h3>${swatchPicker('facialhaircolorcode', FACIAL_COLORS, facialName, HAIR_SWATCH, 'Facial hair colour')}</div>`;
+      <div class="pe-card"><h3>Facial hair colour</h3>${swatchPicker('facialhaircolorcode', FACIAL_COLORS.filter(id => L('facialHairColor', id, null)), facialName, HAIR_SWATCH, 'Facial hair colour')}</div>`;
   }
 
   // ---------- kit & accessories ----------

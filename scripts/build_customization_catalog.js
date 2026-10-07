@@ -60,7 +60,11 @@ function facialSources() {
   return sources;
 }
 
+// Styles whose picture is blank/unusable; kept out of the picker (a player who already has one still shows it as the
+// current style, see hairGrid in player_editor_ui.js).
+const HIDDEN_HAIR_IDS = new Set([157]);
 const hair = collect(hairSources());
+hair.list = hair.list.filter(h => !HIDDEN_HAIR_IDS.has(h.id));
 const facial = collect(facialSources());
 
 // Boots: the user's boot screenshots in assets/player_customization/boots/<brand>/boot_NNN_<name>.png, named from
