@@ -183,6 +183,8 @@
       .pe-chip:hover { border-color: var(--accent-color); }
       .pe-chip.was { border-style: dashed; }
       .pe-dyn-feat { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border-color); cursor: pointer; }
+      .pe-dyn-players { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; max-height: 320px; overflow-y: auto; padding: 4px; border: 1px solid var(--border-color); border-radius: 8px; }
+      .pe-dyn-player { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 4px; cursor: pointer; }
       .pe-dyn-switch { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
       .pe-randbar { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
       .pe-randbar .pe-chip { padding: 7px 16px; font-size: 13px; }
@@ -533,21 +535,37 @@
   function tabDynamic() {
     const d = ed.dyn;
     if (!d) return `<div class="pe-card"><h3>Dynamic look</h3><p>Loading…</p></div>`;
-    const s = d.settings || { enabled: false, features: {}, lastMonth: null };
-    const feats = DYN_FEATURES.map(([k, label, hint]) => `<label class="pe-dyn-feat"><input type="checkbox" data-dyn-feature="${k}"${s.features[k] !== false ? ' checked' : ''}${s.enabled ? '' : ' disabled'}>
+    if (d.error) return `<div class="pe-card"><h3>Dynamic look</h3><div class="pe-banner">${esc(d.error)}</div></div>`;
+    const s = d.settings || { enabled: false, features: {}, scope: 'all', lastMonth: null };
+    const feats = DYN_FEATURES.map(([k, label, hint]) => `<label class="pe-dyn-feat"><input type="checkbox" data-dyn-feature="${k}"${s.features[k] !== false ? ' checked' : ''}>
       <span><b>${esc(label)}</b><br><span class="pe-hint">${esc(hint)}</span></span></label>`).join('');
     const log = (d.log || []).length
       ? d.log.map(l => `<div class="pe-hist-row"><span><b>${esc(l.player_name)}</b> · ${esc(l.summary)} <span class="pe-hint">(${esc(l.game_month)})</span></span>
           <span class="pe-st ${esc(l.status || 'queued')}">${esc(l.status || 'queued')}</span></div>`).join('')
       : '<div class="pe-hint">Nothing has changed yet.</div>';
+    const players = d.players || [];
+    const q = (d.q || '').toLowerCase();
+    const shownPlayers = players.filter(p => !q || String(p.name).toLowerCase().includes(q));
+    const pickedCount = players.filter(p => p.selected).length;
+    const list = s.scope === 'selected' ? `
+      <div class="pe-row" style="align-items:center;gap:10px;margin-bottom:8px">
+        <input class="pe-search" type="search" placeholder="Search players…" data-dyn-q value="${esc(d.q || '')}">
+        <button class="pe-chip" data-dyn-pick="all">Select shown</button>
+        <button class="pe-chip" data-dyn-pick="none">Clear shown</button>
+        <span class="pe-hint">${pickedCount} of ${players.length} selected</span></div>
+      <div class="pe-dyn-players">${shownPlayers.map(p => `<label class="pe-dyn-player"><input type="checkbox" data-dyn-player="${p.player_id}"${p.selected ? ' checked' : ''}> ${esc(p.name)} <span class="pe-hint">${p.source === 'academy' ? 'academy' : 'squad'}</span></label>`).join('') || '<div class="pe-hint">No players match.</div>'}</div>` : '';
     return `<div class="pe-card"><h3>Dynamic player look</h3>
-        <p>Every in-game month, each editable player (your squad and academy generics) may change a little. Changes are queued as normal edits and applied automatically through the F11 hotkey, so the game window comes forward briefly once a month. This applies to the whole save, not just this player.</p>
+        <p>Every in-game month, the players below may change a little. Changes are queued as normal edits and applied automatically through the F11 hotkey, so the game window comes forward briefly once a month. This applies to the whole save, not just this player.</p>
         <label class="pe-dyn-switch"><input type="checkbox" data-dyn-enabled${s.enabled ? ' checked' : ''}> <b>Update looks automatically each month</b></label>
         <div class="pe-hint" style="margin:6px 0 14px">${s.lastMonth ? `Last month played out: ${esc(s.lastMonth)}.` : 'Starts counting from the next in-game month after you turn it on.'}</div>
-        ${feats}
-        <div class="pe-row" style="margin-top:14px"><button class="pe-btn" data-dyn-run${s.enabled || true ? '' : ' disabled'}>Run this month now</button>
-          <span class="pe-hint" style="align-self:center">Plays the current in-game month with fresh randomness and applies it to the game now. Useful for trying it out.</span></div>
         ${d.msg ? `<div class="pe-msg ${d.msgKind || ''}" style="margin-bottom:10px">${esc(d.msg)}</div>` : ''}</div>
+      <div class="pe-card"><h3>What can change</h3>${feats}</div>
+      <div class="pe-card"><h3>Which players</h3>
+        <div class="pe-chips"><button class="pe-chip${s.scope === 'all' ? ' on' : ''}" data-dyn-scope="all">All editable players (${players.length})</button>
+          <button class="pe-chip${s.scope === 'selected' ? ' on' : ''}" data-dyn-scope="selected">Only players I pick</button></div>
+        ${list}
+        <div class="pe-row" style="margin-top:14px"><button class="pe-btn" data-dyn-run>Run this month now</button>
+          <span class="pe-hint" style="align-self:center">Plays the current in-game month with fresh randomness for the players above and applies it to the game now. Useful for trying it out.</span></div></div>
       <div class="pe-card"><h3>Recent changes</h3>${log}</div>`;
   }
 
@@ -603,6 +621,11 @@
       </div></div>`;
     const np = dlg.querySelector('.pe-panel');
     if (np && prevTab === ed.tab) np.scrollTop = prevScroll;
+    if (ed.focusDynQ) {
+      ed.focusDynQ = false;
+      const di = dlg.querySelector('[data-dyn-q]');
+      if (di) { di.focus(); di.setSelectionRange(di.value.length, di.value.length); }
+    }
     if (ed.focusBootQ) {
       ed.focusBootQ = false;
       const qi = dlg.querySelector('[data-boot-q]');
@@ -772,20 +795,47 @@
   }
 
   async function loadDynamic() {
-    if (!api().getDynamicLook) return;
-    const r = await api().getDynamicLook();
-    ed.dyn = Object.assign({}, ed.dyn || {}, r);
+    if (!api().getDynamicLook) {
+      // the page was reloaded against an older app process: the new calls only exist after a full restart
+      ed.dyn = { error: 'This part needs the latest app version. Close the app completely and start it again (npm start), then reopen the editor.' };
+      if (ed.tab === 'dyn') render();
+      return;
+    }
+    try {
+      const r = await api().getDynamicLook();
+      ed.dyn = Object.assign({}, ed.dyn || {}, r, { error: null });
+    } catch (e) {
+      ed.dyn = { error: 'Could not load the dynamic look settings: ' + ((e && e.message) || e) };
+    }
     if (ed && ed.tab === 'dyn') render();
+  }
+  async function saveDynamic(patch) {
+    try {
+      const r = await api().setDynamicLook(patch);
+      if (r && r.success) { ed.dyn.settings = r.settings; ed.dyn.msg = ''; }
+      else { ed.dyn.msg = 'Could not save: no active save yet. Press Refresh in the app once so it knows which career is open.'; ed.dyn.msgKind = 'err'; }
+    } catch (e) {
+      ed.dyn.msg = 'Could not save: ' + ((e && e.message) || e); ed.dyn.msgKind = 'err';
+    }
+    render();
   }
 
   // ---------- events ----------
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.dataset.dynScope) { await saveDynamic({ scope: t.dataset.dynScope }); return; }
+      if (t.dataset.dynPick) {
+        const q = (ed.dyn.q || '').toLowerCase();
+        const ids = (ed.dyn.players || []).filter(p => !q || String(p.name).toLowerCase().includes(q)).map(p => p.player_id);
+        const r = await api().setDynamicLookPlayers(ids, t.dataset.dynPick === 'all');
+        if (r && r.success) ed.dyn.players = r.players;
+        render(); return;
+      }
       if (t.hasAttribute('data-dyn-run')) {
         ed.dyn = Object.assign({}, ed.dyn, { msg: 'Running… the game window will come forward briefly.', msgKind: '' }); render();
         const res = await api().runDynamicLookNow();
@@ -837,7 +887,9 @@
       }
     });
     dlg.addEventListener('input', (e) => {
-      if (!ed || !e.target.hasAttribute('data-boot-q')) return;
+      if (!ed) return;
+      if (e.target.hasAttribute('data-dyn-q')) { ed.dyn.q = e.target.value; ed.focusDynQ = true; render(); return; }
+      if (!e.target.hasAttribute('data-boot-q')) return;
       ed.filters.boots.q = e.target.value;
       ed.focusBootQ = true;
       render();
@@ -845,8 +897,14 @@
     dlg.addEventListener('change', async (e) => {
       if (!ed) return;
       const el = e.target;
-      if (el.hasAttribute('data-dyn-enabled')) { const r = await api().setDynamicLook({ enabled: el.checked }); if (r && r.success) ed.dyn.settings = r.settings; render(); return; }
-      if (el.dataset.dynFeature) { const r = await api().setDynamicLook({ features: { [el.dataset.dynFeature]: el.checked } }); if (r && r.success) ed.dyn.settings = r.settings; render(); return; }
+      if (el.hasAttribute('data-dyn-enabled')) { await saveDynamic({ enabled: el.checked }); return; }
+      if (el.dataset.dynFeature) { await saveDynamic({ features: { [el.dataset.dynFeature]: el.checked } }); return; }
+      if (el.dataset.dynPlayer) {
+        const id = Number(el.dataset.dynPlayer);
+        const r = await api().setDynamicLookPlayers([id], el.checked);
+        if (r && r.success) ed.dyn.players = r.players;
+        render(); return;
+      }
       if (el.dataset.num) setValue(el.dataset.num, el.value);
       else if (el.dataset.sel) setValue(el.dataset.sel, el.value);
       else if (el.dataset.trait2) { ed.cur.trait2 = setBit(ed.cur.trait2, Number(el.dataset.trait2), el.checked); ed.msg = ''; render(); }

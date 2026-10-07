@@ -256,21 +256,45 @@ class DynamicLook {
 
   getSettings(saveId) {
     const r = this.rows('SELECT enabled, features_json, last_month FROM dynamic_look_settings WHERE save_id = ?', [saveId])[0];
+    const stored = r && r.features_json ? JSON.parse(r.features_json) : {};
+    const scope = stored._scope === 'selected' ? 'selected' : 'all';
+    delete stored._scope;
     return {
       enabled: !!(r && r.enabled),
-      features: Object.assign({}, FEATURE_DEFAULTS, r && r.features_json ? JSON.parse(r.features_json) : {}),
+      features: Object.assign({}, FEATURE_DEFAULTS, stored),
+      scope,
       lastMonth: (r && r.last_month) || null
     };
   }
 
-  setSettings(saveId, { enabled, features }) {
+  setSettings(saveId, { enabled, features, scope }) {
     const cur = this.getSettings(saveId);
-    const next = { enabled: enabled === undefined ? cur.enabled : !!enabled, features: Object.assign({}, cur.features, features || {}) };
+    const next = {
+      enabled: enabled === undefined ? cur.enabled : !!enabled,
+      features: Object.assign({}, cur.features, features || {}),
+      scope: scope === 'selected' || scope === 'all' ? scope : cur.scope
+    };
     this.ctx.getDb().run(`INSERT INTO dynamic_look_settings (save_id, enabled, features_json, last_month, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(save_id) DO UPDATE SET enabled = excluded.enabled, features_json = excluded.features_json, updated_at = CURRENT_TIMESTAMP`,
-    [saveId, next.enabled ? 1 : 0, JSON.stringify(next.features), cur.lastMonth]);
+    [saveId, next.enabled ? 1 : 0, JSON.stringify(Object.assign({}, next.features, { _scope: next.scope })), cur.lastMonth]);
     this.ctx.saveDatabaseToDisk();
     return this.getSettings(saveId);
+  }
+
+  // Every editable player with whether they are picked (used when the scope is "selected players only").
+  getPlayerPicks(saveId) {
+    return this.rows(`SELECT s.player_id, s.name, s.source, CASE WHEN d.player_id IS NULL THEN 0 ELSE 1 END AS selected
+      FROM player_editor_state s LEFT JOIN dynamic_look_selected d ON d.save_id = s.save_id AND d.player_id = s.player_id
+      WHERE s.save_id = ? AND s.editable = 1 ORDER BY s.name`, [saveId]);
+  }
+
+  setPlayerPicks(saveId, playerIds, selected) {
+    const db = this.ctx.getDb();
+    (playerIds || []).map(Number).filter(n => Number.isInteger(n) && n > 0).forEach(pid => {
+      if (selected) db.run('INSERT OR IGNORE INTO dynamic_look_selected (save_id, player_id) VALUES (?, ?)', [saveId, pid]);
+      else db.run('DELETE FROM dynamic_look_selected WHERE save_id = ? AND player_id = ?', [saveId, pid]);
+    });
+    this.ctx.saveDatabaseToDisk();
   }
 
   getLog(saveId, limit = 60) {
@@ -333,9 +357,13 @@ class DynamicLook {
 
       const catalog = this.ctx.getCatalog();
       const boots = this.buildBootInfo();
-      const features = this.getSettings(saveId).features;
+      const settings = this.getSettings(saveId);
+      const features = settings.features;
+      const picked = settings.scope === 'selected'
+        ? new Set(this.rows('SELECT player_id FROM dynamic_look_selected WHERE save_id = ?', [saveId]).map(r => r.player_id)) : null;
       const players = this.rows(`SELECT s.player_id, s.name, s.state_json, p.dob FROM player_editor_state s
-        LEFT JOIN players p ON p.player_id = s.player_id WHERE s.save_id = ? AND s.editable = 1`, [saveId]);
+        LEFT JOIN players p ON p.player_id = s.player_id WHERE s.save_id = ? AND s.editable = 1`, [saveId])
+        .filter(r => !picked || picked.has(r.player_id));
       const records = new Map(this.rows('SELECT player_id, natural_haircolor, dyed_until FROM dynamic_look_players WHERE save_id = ?', [saveId])
         .map(r => [r.player_id, { natural_haircolor: r.natural_haircolor, dyed_until_index: r.dyed_until === null || r.dyed_until === undefined ? null : Number(r.dyed_until) }]));
 
@@ -414,7 +442,13 @@ function register(ipcMain) {
   ipcMain.handle('get-dynamic-look', () => {
     const saveId = ctx().getActiveSaveId();
     if (!saveId) return { settings: null, log: [] };
-    return { settings: instance.getSettings(saveId), log: instance.getLog(saveId) };
+    return { settings: instance.getSettings(saveId), log: instance.getLog(saveId), players: instance.getPlayerPicks(saveId) };
+  });
+  ipcMain.handle('set-dynamic-look-players', (_e, ids, selected) => {
+    const saveId = ctx().getActiveSaveId();
+    if (!saveId) return { success: false };
+    instance.setPlayerPicks(saveId, ids, !!selected);
+    return { success: true, players: instance.getPlayerPicks(saveId) };
   });
   ipcMain.handle('set-dynamic-look', (_e, patch) => {
     const saveId = ctx().getActiveSaveId();

@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   triggerEditorSync: () => ipcRenderer.invoke('trigger-editor-sync'),
   getDynamicLook: () => ipcRenderer.invoke('get-dynamic-look'),
   setDynamicLook: (patch) => ipcRenderer.invoke('set-dynamic-look', patch),
+  setDynamicLookPlayers: (ids, selected) => ipcRenderer.invoke('set-dynamic-look-players', ids, selected),
   runDynamicLookNow: () => ipcRenderer.invoke('run-dynamic-look-now'),
   onDynamicLookUpdated: (cb) => ipcRenderer.on('dynamic-look-updated', (_e, payload) => cb(payload)),
   releaseLoanedPlayers: (playerIds) => ipcRenderer.invoke('release-loaned-players', playerIds),

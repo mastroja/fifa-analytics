@@ -858,3 +858,10 @@ CREATE TABLE IF NOT EXISTS dynamic_look_log (
     edit_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Players picked for the dynamic look when its scope is "selected players only" (see dynamic_look.js).
+CREATE TABLE IF NOT EXISTS dynamic_look_selected (
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    PRIMARY KEY (save_id, player_id)
+);
