@@ -377,26 +377,41 @@
     const boots = (catalog && catalog.boots) || [];
     const f = ed.filters.boots;
     const cur = ed.cur.shoetypecode, origId = ed.orig.shoetypecode;
-    const byId = new Map(boots.map(b => [b.id, b]));
-    const curBoot = byId.get(cur);
-    let shown = boots;
-    if (f.view === 'used') shown = shown.filter(b => b.usedBy > 0);
-    else if (f.view === 'images') shown = shown.filter(b => b.file);
-    if (f.brand !== 'all') shown = shown.filter(b => b.m === Number(f.brand));
-    shown = shown.slice().sort((a, b) => (b.usedBy - a.usedBy) || (a.id - b.id));
+    const known = new Set(boots.map(b => b.id));
+
+    // "Show" filter (like the hair length chips): only options that actually have boots
+    const views = [
+      ['used', 'Worn in game', boots.filter(b => b.usedBy > 0)],
+      ['all', 'All boots', boots],
+      ['images', 'With images', boots.filter(b => b.file)]
+    ].filter(v => v[2].length > 0);
+    if (!views.some(v => v[0] === f.view)) f.view = views.length ? views[0][0] : 'all';
+    const inView = (views.find(v => v[0] === f.view) || ['all', '', boots])[2];
+
+    // Brand dropdown (like the hair category dropdown): only brands that have boots in this view.
+    // Brand names are not in the game data, so they are numbered.
     const brandCounts = {};
-    boots.forEach(b => { if (b.usedBy > 0 || f.view !== 'used') brandCounts[b.m] = (brandCounts[b.m] || 0) + 1; });
-    const brandChips = Object.keys(brandCounts).map(Number).sort((a, b) => brandCounts[b] - brandCounts[a]).slice(0, 12)
-      .map(m => `<button class="pe-chip${String(f.brand) === String(m) ? ' on' : ''}" data-filter="boots:brand:${m}">Brand ${m} (${brandCounts[m]})</button>`).join('');
-    const viewChip = (v, label) => `<button class="pe-chip${f.view === v ? ' on' : ''}" data-filter="boots:view:${v}">${label}</button>`;
+    inView.forEach(b => { brandCounts[b.m] = (brandCounts[b.m] || 0) + 1; });
+    if (f.brand !== 'all' && !brandCounts[f.brand]) f.brand = 'all';
+    const brandOptions = [{ value: 'all', label: `All brands (${inView.length})` }].concat(
+      Object.keys(brandCounts).map(Number).sort((x, y) => brandCounts[y] - brandCounts[x] || x - y)
+        .map(m => ({ value: m, label: `Brand ${m} (${brandCounts[m]})` })));
+
+    let shown = f.brand === 'all' ? inView : inView.filter(b => b.m === Number(f.brand));
+    shown = shown.slice().sort((x, y) => (y.usedBy - x.usedBy) || (x.id - y.id));
+
+    const viewChip = (v, label, n) => `<button class="pe-chip${f.view === v ? ' on' : ''}" data-filter="boots:view:${v}">${label} (${n})</button>`;
     const tile = b => `<div class="pe-tile${b.id === cur ? ' sel' : ''}${b.id === origId ? ' orig' : ''}" data-set="shoetypecode:${b.id}" title="Boot #${b.id} · brand ${b.m}${b.usedBy ? ` · worn by ${b.usedBy} players` : ''}${b.store ? '' : ' · not sold in store'}">${
       b.file ? `<img loading="lazy" src="${esc(b.file)}" alt="">` : `<div class="pe-noimg">Boot<br>#${b.id}</div>`}#${b.id}${b.usedBy ? ` · ${b.usedBy}` : ''}</div>`;
-    const tiles = (curBoot ? '' : tile({ id: cur, m: '?', usedBy: 0, store: 1, file: null })) + shown.map(tile).join('');
+    const tiles = (known.has(cur) ? '' : tile({ id: cur, m: '?', usedBy: 0, store: 1, file: null })) + shown.map(tile).join('');
+    const bar = `<div class="pe-row" style="align-items:center;gap:12px;margin-bottom:12px">
+        <div class="pe-field" style="flex-direction:row;align-items:center;gap:8px">Brand ${filterDropdown('boots', 'brand', brandOptions, f.brand)}</div>
+        <div class="pe-chips" style="margin:0">${views.map(v => viewChip(v[0], v[1], v[2].length)).join('')}</div>
+      </div>`;
     return `<div class="pe-card"><h3>Boot model</h3>
-        <p>${boots.length} boots in the game, ${boots.filter(b => b.file).length} with an image. "Used" boots are the ones real players wear. Numbers after # are how many players wear it.</p>
-        <div class="pe-chips">${viewChip('used', 'Worn in game')}${viewChip('all', 'All')}${viewChip('images', 'With images')}</div>
-        <div class="pe-chips"><button class="pe-chip${f.brand === 'all' ? ' on' : ''}" data-filter="boots:brand:all">Any brand</button>${brandChips}</div>
-        <div class="pe-grid boots">${tiles}</div>
+        <p>Boot names are not stored in the game, so boots are shown by id; the number after the id is how many players wear it. Add images to assets/player_customization/boots/ (boot_id_NNNN.png).</p>
+        ${bar}
+        <div class="pe-grid">${tiles}</div>
         <div class="pe-picked">Boot <b>#${esc(cur)}</b>${cur !== origId ? ` <span class="pe-hint">(was #${esc(origId)})</span>` : ''} <span class="pe-hint">- ${shown.length} shown</span></div></div>`;
   }
 
