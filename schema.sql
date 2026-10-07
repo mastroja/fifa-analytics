@@ -865,3 +865,16 @@ CREATE TABLE IF NOT EXISTS dynamic_look_selected (
     player_id INTEGER NOT NULL,
     PRIMARY KEY (save_id, player_id)
 );
+
+-- Height model (dynamic_look.js): each player's own genetic adult height and growth tempo, fixed once drawn, plus the
+-- height the model last wrote so a height changed by hand afterwards is recognised and left alone (locked = 1).
+CREATE TABLE IF NOT EXISTS dynamic_look_height (
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    target_cm INTEGER NOT NULL,
+    tempo REAL NOT NULL,
+    applied_cm INTEGER,
+    prev_cm INTEGER,
+    locked INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (save_id, player_id)
+);

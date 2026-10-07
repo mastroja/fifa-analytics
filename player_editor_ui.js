@@ -185,6 +185,9 @@
       .pe-dyn-feat { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border-color); cursor: pointer; }
       .pe-dyn-players { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; max-height: 320px; overflow-y: auto; padding: 4px; border: 1px solid var(--border-color); border-radius: 8px; }
       .pe-dyn-player { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 4px; cursor: pointer; }
+      .pe-height-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+      .pe-height-table th, .pe-height-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border-color); }
+      .pe-height-table th { color: var(--text-dim); font-weight: 600; }
       .pe-dyn-switch { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
       .pe-randbar { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
       .pe-randbar .pe-chip { padding: 7px 16px; font-size: 13px; }
@@ -530,8 +533,30 @@
     ['beard', 'Beard growth and shaving', 'Adults can grow stubble into a full beard over months, trim it, or shave it off. About a third never grow one.'],
     ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months; veterans from 35 slowly go silver.'],
     ['boots', 'Boots', 'Mostly new-season switches, usually staying with the same brand. Only boots linked to a game id are used.'],
-    ['accessories', 'Accessories', 'Tape, wristbands and gloves come and go.']
+    ['accessories', 'Accessories', 'Tape, wristbands and gloves come and go.'],
+    ['growth', 'Height, weight and growth', 'Youth players keep growing toward their own adult height each month; weight and body type follow. Anyone whose height you edited by hand is left alone.']
   ];
+  const fmtHeight = cm => (typeof formatHeight === 'function' ? formatHeight(String(cm)) : cm + ' cm');
+  function heightCard(d) {
+    const pv = d.heightPreview;
+    const pct = (a, n) => (n ? Math.round(100 * a / n) : 0);
+    let preview = '';
+    if (pv && pv.error) preview = `<div class="pe-banner">${esc(pv.error)}</div>`;
+    else if (pv) {
+      const b = pv.before, a = pv.after;
+      const row = (label, s) => `<tr><td>${label}</td><td>${s.n}</td><td>${esc(fmtHeight(Math.round(s.mean)))}</td><td>${s.under} (${pct(s.under, s.n)}%)</td><td>${s.over}</td></tr>`;
+      preview = `<table class="pe-height-table"><thead><tr><th></th><th>Players</th><th>Average</th><th>Under 5'7"</th><th>Over 6'4"</th></tr></thead>
+          <tbody>${row('Now', b)}${row('After the model', a)}</tbody></table>
+        <div class="pe-hint" style="margin:8px 0 4px">Biggest changes (age, now to after, own adult height):</div>
+        ${pv.sample.map(s => `<div class="pe-hist-row"><span><b>${esc(s.name)}</b> <span class="pe-hint">age ${s.age}</span></span><span>${esc(fmtHeight(s.before))} to ${esc(fmtHeight(s.after))} <span class="pe-hint">(adult ${esc(fmtHeight(s.adult))})</span></span></div>`).join('')}`;
+    }
+    return `<div class="pe-card"><h3>Realistic heights</h3>
+        <p>Each player gets their own genetic adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", taller keepers and centre-backs, shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. Preview first; nothing changes until you press Apply.</p>
+        <div class="pe-row"><button class="pe-btn" data-dyn-height-preview>Preview realistic heights</button>
+          <button class="pe-btn primary" data-dyn-height-apply>Apply to all picked players now</button></div>
+        ${preview}</div>`;
+  }
+
   function tabDynamic() {
     const d = ed.dyn;
     if (!d) return `<div class="pe-card"><h3>Dynamic look</h3><p>Loading…</p></div>`;
@@ -560,6 +585,7 @@
         <div class="pe-hint" style="margin:6px 0 14px">${s.lastMonth ? `Last month played out: ${esc(s.lastMonth)}.` : 'Starts counting from the next in-game month after you turn it on.'}</div>
         ${d.msg ? `<div class="pe-msg ${d.msgKind || ''}" style="margin-bottom:10px">${esc(d.msg)}</div>` : ''}</div>
       <div class="pe-card"><h3>What can change</h3>${feats}</div>
+      ${heightCard(d)}
       <div class="pe-card"><h3>Which players</h3>
         <div class="pe-chips"><button class="pe-chip${s.scope === 'all' ? ' on' : ''}" data-dyn-scope="all">All editable players (${players.length})</button>
           <button class="pe-chip${s.scope === 'selected' ? ' on' : ''}" data-dyn-scope="selected">Only players I pick</button></div>
@@ -824,10 +850,25 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick],[data-dyn-height-preview],[data-dyn-height-apply]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.hasAttribute('data-dyn-height-preview')) {
+        ed.dyn.heightPreview = await api().previewHeightModel();
+        render(); return;
+      }
+      if (t.hasAttribute('data-dyn-height-apply')) {
+        const pv = ed.dyn.heightPreview || await api().previewHeightModel();
+        const n = pv && pv.after ? pv.after.n : 0;
+        if (!confirm(`Set height, weight and body type for ${n} players in the game, using each player's own growth model?\n\nThe game window comes forward briefly. Every change is saved as an edit you can undo from History. Players whose height you changed by hand are skipped.`)) return;
+        ed.dyn.msg = 'Applying heights in the game…'; ed.dyn.msgKind = ''; render();
+        const res = await api().applyHeightModel();
+        ed.dyn.msg = res && res.success ? `Done: ${res.changed} player${res.changed === 1 ? '' : 's'} updated.` : ((res && res.error) || 'Failed.');
+        ed.dyn.msgKind = res && res.success ? 'ok' : 'err';
+        ed.dyn.heightPreview = null;
+        await loadDynamic(); render(); return;
+      }
       if (t.dataset.dynScope) { await saveDynamic({ scope: t.dataset.dynScope }); return; }
       if (t.dataset.dynPick) {
         const q = (ed.dyn.q || '').toLowerCase();

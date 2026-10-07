@@ -72,7 +72,100 @@ const ACCESSORY_REMOVE_RATE = 0.08;
 const ACCESSORY_ADD_RATE = 0.015;
 const MAX_CHANGES_PER_MONTH = 2;      // never a total makeover in one month
 
-const FEATURE_DEFAULTS = { hair: true, beard: true, colour: true, boots: true, accessories: true };
+const FEATURE_DEFAULTS = { hair: true, beard: true, colour: true, boots: true, accessories: true, growth: false };
+
+// ---------------- height, growth and weight ----------------
+// Every player gets their own genetic adult height, drawn once from a normal distribution that depends on position
+// (keepers and centre-backs are taller, wingers shorter) and fixed for good by the player id. Growth then follows a
+// normal adolescent curve, shifted by a personal "tempo" so some players are early or late bloomers. The numbers are
+// tuned so the whole population averages about 5'10.5" with roughly 5% under 5'7" and very few over 6'4".
+const HEIGHT_MEAN = 178.6;            // cm, before the position offset
+const HEIGHT_SD = 4.7;                // cm, spread within a position
+const HEIGHT_MIN = 162, HEIGHT_MAX = 204;
+const POSITION_OFFSET = { gk: 8, cb: 3.5, fb: -1.5, dm: 1, cm: 0, wide: -2.5, fw: -0.5, st: 1.5 };
+// share of adult height reached at a given age (years); linear in between. After 19 everyone is fully grown.
+const GROWTH_CURVE = [[10, 0.78], [12, 0.84], [13, 0.88], [14, 0.92], [15, 0.955], [16, 0.98], [17, 0.99], [18, 0.997], [19, 1]];
+const BMI_BY_BUILD = { lean: 21.8, normal: 23.2, stocky: 24.8 };
+
+function positionGroup(pos) {
+  if (pos === 0) return 'gk';
+  if ([1, 4, 5, 6].includes(pos)) return 'cb';
+  if ([2, 3, 7, 8].includes(pos)) return 'fb';
+  if ([9, 10, 11].includes(pos)) return 'dm';
+  if ([13, 14, 15].includes(pos)) return 'cm';
+  if ([12, 16, 17, 18, 19, 23, 24].includes(pos)) return 'wide';
+  if ([20, 21, 22].includes(pos)) return 'fw';
+  return 'st';
+}
+function gaussian(playerId, tag) { // seeded standard normal
+  const u1 = Math.max(unit(`${playerId}:${tag}a`), 1e-9), u2 = unit(`${playerId}:${tag}b`);
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+function drawAdultHeight(playerId, position) {
+  const h = HEIGHT_MEAN + POSITION_OFFSET[positionGroup(position)] + HEIGHT_SD * gaussian(playerId, 'height');
+  return Math.round(Math.max(HEIGHT_MIN, Math.min(HEIGHT_MAX, h)));
+}
+// -1 (early bloomer) .. +1.5 (late bloomer), in years
+function drawTempo(playerId) { return Math.round((-1 + unit(`${playerId}:tempo`) * 2.5) * 100) / 100; }
+function growthShare(ageYears, tempo) {
+  const a = ageYears - tempo; // a late bloomer behaves like a younger player
+  if (a >= GROWTH_CURVE[GROWTH_CURVE.length - 1][0]) return 1;
+  if (a <= GROWTH_CURVE[0][0]) return GROWTH_CURVE[0][1];
+  for (let i = 1; i < GROWTH_CURVE.length; i++) {
+    const [a1, s1] = GROWTH_CURVE[i];
+    if (a <= a1) { const [a0, s0] = GROWTH_CURVE[i - 1]; return s0 + (s1 - s0) * (a - a0) / (a1 - a0); }
+  }
+  return 1;
+}
+function heightAt(targetCm, ageYears, tempo) { return Math.round(targetCm * growthShare(ageYears, tempo)); }
+
+function buildOf(bodyType) {
+  if ([1, 4, 7, 11].includes(bodyType)) return 'lean';
+  if ([3, 6, 9].includes(bodyType)) return 'stocky';
+  return 'normal';
+}
+// Body type follows height (short / average / tall) and keeps the player's own lean / normal / stocky build.
+function bodyTypeFor(heightCm, bodyType) {
+  if (!(bodyType >= 1 && bodyType <= 11)) return bodyType; // special real-player body types are left alone
+  const build = buildOf(bodyType);
+  if (heightCm <= 171) return { lean: 7, normal: 8, stocky: 9 }[build];
+  if (heightCm <= 186) return { lean: 1, normal: 2, stocky: 3 }[build];
+  if (heightCm <= 195) return { lean: 4, normal: 5, stocky: 6 }[build];
+  return { lean: 11, normal: 5, stocky: 6 }[build];
+}
+// Weight from height and build (a body-mass index), a bit lighter while young.
+function weightFor(playerId, heightCm, bodyType, ageYears, tempo) {
+  const youth = Math.max(0, Math.min(1.6, (19 - (ageYears - tempo)) * 0.3));
+  const bmi = BMI_BY_BUILD[buildOf(bodyType)] + (unit(`${playerId}:bmi`) - 0.5) * 1.6 - youth;
+  const m = heightCm / 100;
+  return Math.round(Math.max(45, Math.min(110, bmi * m * m)));
+}
+
+/**
+ * The height model for one player at one moment.
+ * @returns {{ changes:object, record:object }}  changes use game columns (height, weight, bodytypecode)
+ */
+function planGrowth({ playerId, state, ageYears, record }) {
+  const rec = Object.assign({ target_cm: null, tempo: null, applied_cm: null, prev_cm: null, locked: 0 }, record || {});
+  if (rec.locked) return { changes: {}, record: rec };
+  // The height should be what the model last wrote (applied_cm) or, if that write never reached the game, what it was
+  // before (prev_cm). Anything else means somebody changed it by hand (the editor): respect that for good.
+  if (rec.applied_cm !== null && state.height !== rec.applied_cm && state.height !== rec.prev_cm) { rec.locked = 1; return { changes: {}, record: rec }; }
+  if (rec.target_cm === null) { rec.target_cm = drawAdultHeight(playerId, state.preferredposition1); rec.tempo = drawTempo(playerId); }
+  const height = heightAt(rec.target_cm, ageYears, rec.tempo);
+  const bodytype = bodyTypeFor(height, state.bodytypecode);
+  const weight = weightFor(playerId, height, bodytype, ageYears, rec.tempo);
+  const changes = {};
+  // grow in whole-cm steps but skip tiny wobbles, except for the first application
+  if (height !== state.height && (rec.applied_cm === null || Math.abs(height - state.height) >= 1)) changes.height = height;
+  if (changes.height !== undefined || rec.applied_cm === null) {
+    if (weight !== state.weight) changes.weight = weight;
+    if (bodytype !== state.bodytypecode) changes.bodytypecode = bodytype;
+  }
+  if (changes.height !== undefined) { rec.prev_cm = rec.applied_cm !== null ? rec.applied_cm : state.height; rec.applied_cm = height; }
+  else if (rec.applied_cm === null) { rec.applied_cm = state.height; rec.prev_cm = state.height; }
+  return { changes, record: rec };
+}
 
 function suggestedCats(tone) {
   if (tone <= 40) return [1, 3];
@@ -234,6 +327,12 @@ function monthKeyOf(dateStr) { // 'YYYY-MM-DD' -> 'YYYY-MM'
 }
 function monthIndexOf(key) { const [y, m] = key.split('-').map(Number); return y * 12 + (m - 1); }
 function keyOfIndex(i) { const y = Math.floor(i / 12); return `${y}-${String((i % 12) + 1).padStart(2, '0')}`; }
+function ageYearsAt(dob, monthKey) { // fractional age in years at the middle of a month
+  const m = /^(\d{2})-(\d{2})-(\d{4})/.exec(dob || '');
+  if (!m) return null;
+  const [y, mo] = monthKey.split('-').map(Number);
+  return (y * 12 + (mo - 1) + 0.5 - (Number(m[3]) * 12 + (Number(m[1]) - 1) + Number(m[2]) / 31)) / 12;
+}
 function ageAt(dob, monthKey) { // dob 'MM-DD-YYYY'
   const m = /^(\d{2})-(\d{2})-(\d{4})/.exec(dob || '');
   if (!m) return null;
@@ -331,6 +430,86 @@ class DynamicLook {
     return this.run(saveId, [month], { manual: true });
   }
 
+  loadHeightRecords(saveId) {
+    return new Map(this.rows('SELECT player_id, target_cm, tempo, applied_cm, prev_cm, locked FROM dynamic_look_height WHERE save_id = ?', [saveId])
+      .map(r => [r.player_id, { target_cm: r.target_cm, tempo: r.tempo, applied_cm: r.applied_cm === undefined ? null : r.applied_cm, prev_cm: r.prev_cm === undefined ? null : r.prev_cm, locked: r.locked || 0 }]));
+  }
+
+  saveHeightRecord(saveId, playerId, rec) {
+    this.ctx.getDb().run(`INSERT INTO dynamic_look_height (save_id, player_id, target_cm, tempo, applied_cm, prev_cm, locked) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(save_id, player_id) DO UPDATE SET target_cm = excluded.target_cm, tempo = excluded.tempo, applied_cm = excluded.applied_cm, prev_cm = excluded.prev_cm, locked = excluded.locked`,
+    [saveId, playerId, rec.target_cm, rec.tempo, rec.applied_cm, rec.prev_cm, rec.locked ? 1 : 0]);
+  }
+
+  // Players the height model would act on right now (respects the "selected players" scope), with their age.
+  heightCandidates(saveId, monthKey) {
+    const settings = this.getSettings(saveId);
+    const picked = settings.scope === 'selected'
+      ? new Set(this.rows('SELECT player_id FROM dynamic_look_selected WHERE save_id = ?', [saveId]).map(r => r.player_id)) : null;
+    return this.rows(`SELECT s.player_id, s.name, s.state_json, p.dob FROM player_editor_state s
+      LEFT JOIN players p ON p.player_id = s.player_id WHERE s.save_id = ? AND s.editable = 1`, [saveId])
+      .filter(r => !picked || picked.has(r.player_id))
+      .map(r => { let st = null; try { st = JSON.parse(r.state_json); } catch (e) { /* skip */ } return { row: r, state: st, ageYears: ageYearsAt(r.dob, monthKey) }; })
+      .filter(c => c.state && c.ageYears !== null);
+  }
+
+  // What the height model would do to the squad right now, without changing anything.
+  previewHeights(saveId, currentDate) {
+    const month = monthKeyOf(currentDate) || this.getSettings(saveId).lastMonth;
+    if (!month) return { error: 'The in-game date is not known yet. Press Refresh first.' };
+    const records = this.loadHeightRecords(saveId);
+    const before = [], after = [], sample = [];
+    for (const c of this.heightCandidates(saveId, month)) {
+      const plan = planGrowth({ playerId: c.row.player_id, state: c.state, ageYears: c.ageYears, record: records.get(c.row.player_id) });
+      if (plan.record.locked) continue;
+      const h = plan.changes.height !== undefined ? plan.changes.height : c.state.height;
+      before.push(c.state.height); after.push(h);
+      sample.push({ name: c.row.name, age: Math.floor(c.ageYears), before: c.state.height, after: h, adult: plan.record.target_cm });
+    }
+    const stats = arr => arr.length ? {
+      n: arr.length, mean: arr.reduce((a, b) => a + b, 0) / arr.length,
+      under: arr.filter(h => h < 170.2).length, over: arr.filter(h => h > 193).length
+    } : { n: 0, mean: 0, under: 0, over: 0 };
+    sample.sort((a, b) => Math.abs(b.after - b.before) - Math.abs(a.after - a.before));
+    return { month, before: stats(before), after: stats(after), sample: sample.slice(0, 12) };
+  }
+
+  // Apply the height model once, to everybody (this is the "rebalance heights" button).
+  async applyHeights(saveId, currentDate) {
+    const month = monthKeyOf(currentDate) || this.getSettings(saveId).lastMonth;
+    if (!month) return { success: false, error: 'The in-game date is not known yet. Press Refresh first.' };
+    if (this.running) return { success: false, error: 'A look update is already running.' };
+    if (saveId !== this.ctx.getActiveSaveId()) return { success: false, error: 'That save is not the active one.' };
+    this.running = true;
+    try {
+      if (!(await this.ctx.pressSync())) return { success: false, error: 'Could not reach the game (is it running, and F11 bound to player_editor_sync.lua?).' };
+      const records = this.loadHeightRecords(saveId);
+      let changed = 0;
+      for (const c of this.heightCandidates(saveId, month)) {
+        const plan = planGrowth({ playerId: c.row.player_id, state: c.state, ageYears: c.ageYears, record: records.get(c.row.player_id) });
+        this.saveHeightRecord(saveId, c.row.player_id, plan.record);
+        if (!Object.keys(plan.changes).length) continue;
+        const res = this.ctx.playerEditor.queueEdit(c.row.player_id, plan.changes);
+        if (!res.success) { this.ctx.log(`[DynamicLook] height skipped for ${c.row.name}: ${res.error}`); continue; }
+        const last = this.rows('SELECT MAX(id) AS id FROM player_edits WHERE player_id = ? AND save_id = ?', [c.row.player_id, saveId])[0];
+        this.ctx.getDb().run('INSERT INTO dynamic_look_log (save_id, player_id, player_name, game_month, summary, edit_id) VALUES (?, ?, ?, ?, ?, ?)',
+          [saveId, c.row.player_id, c.row.name || '', month, 'height set by growth model', last ? last.id : null]);
+        changed++;
+      }
+      this.ctx.saveDatabaseToDisk();
+      let presses = 0;
+      while (presses < 6 && this.rows("SELECT COUNT(*) AS n FROM player_edits WHERE save_id = ? AND status = 'queued'", [saveId])[0].n > 0) {
+        presses++;
+        if (!(await this.ctx.pressApply())) break;
+      }
+      this.ctx.notify({ saveId, changed });
+      return { success: true, changed };
+    } catch (err) {
+      this.ctx.log(`[DynamicLook] height run failed: ${err && err.stack ? err.stack : err}`);
+      return { success: false, error: String((err && err.message) || err) };
+    } finally { this.running = false; }
+  }
+
   buildBootInfo() {
     const catalog = this.ctx.getCatalog();
     const links = this.ctx.getBootLinks();
@@ -367,6 +546,8 @@ class DynamicLook {
       const records = new Map(this.rows('SELECT player_id, natural_haircolor, dyed_until FROM dynamic_look_players WHERE save_id = ?', [saveId])
         .map(r => [r.player_id, { natural_haircolor: r.natural_haircolor, dyed_until_index: r.dyed_until === null || r.dyed_until === undefined ? null : Number(r.dyed_until) }]));
 
+      const heightRecords = this.loadHeightRecords(saveId);
+
       // 2. plan every month for every player, carrying the state forward month to month
       const queued = [];
       for (const row of players) {
@@ -374,6 +555,7 @@ class DynamicLook {
         try { state = JSON.parse(row.state_json); } catch (e) { continue; }
         const startState = Object.assign({}, state);
         let record = records.get(row.player_id) || null;
+        let heightRec = heightRecords.get(row.player_id) || null;
         const notes = [];
         let lastMonth = null;
         for (const month of months) {
@@ -389,7 +571,20 @@ class DynamicLook {
             plan.notes.forEach(n => notes.push(n));
             lastMonth = month;
           }
+          if (features.growth) {
+            const ageYears = ageYearsAt(row.dob, month);
+            if (ageYears !== null) {
+              const g = planGrowth({ playerId: row.player_id, state, ageYears, record: heightRec });
+              heightRec = g.record;
+              if (Object.keys(g.changes).length) {
+                Object.assign(state, g.changes);
+                notes.push(g.changes.height !== undefined && g.changes.height > startState.height ? 'grew' : 'height adjusted');
+                lastMonth = month;
+              }
+            }
+          }
         }
+        if (features.growth && heightRec) this.saveHeightRecord(saveId, row.player_id, heightRec);
         if (record) {
           this.ctx.getDb().run(`INSERT INTO dynamic_look_players (save_id, player_id, natural_haircolor, dyed_until) VALUES (?, ?, ?, ?)
             ON CONFLICT(save_id, player_id) DO UPDATE SET natural_haircolor = excluded.natural_haircolor, dyed_until = excluded.dyed_until`,
@@ -455,6 +650,16 @@ function register(ipcMain) {
     if (!saveId) return { success: false };
     return { success: true, settings: instance.setSettings(saveId, patch || {}) };
   });
+  ipcMain.handle('preview-height-model', () => {
+    const saveId = ctx().getActiveSaveId();
+    if (!saveId) return { error: 'No active save.' };
+    return instance.previewHeights(saveId, ctx().getCurrentDate());
+  });
+  ipcMain.handle('apply-height-model', async () => {
+    const saveId = ctx().getActiveSaveId();
+    if (!saveId) return { success: false, error: 'No active save.' };
+    return instance.applyHeights(saveId, ctx().getCurrentDate());
+  });
   ipcMain.handle('run-dynamic-look-now', async () => {
     const saveId = ctx().getActiveSaveId();
     if (!saveId) return { success: false, error: 'No active save.' };
@@ -462,4 +667,7 @@ function register(ipcMain) {
   });
 }
 
-module.exports = { instance, register, planMonth, profile, monthKeyOf, monthIndexOf, keyOfIndex, ageAt, FEATURE_DEFAULTS };
+module.exports = {
+  instance, register, planMonth, planGrowth, profile, monthKeyOf, monthIndexOf, keyOfIndex, ageAt, ageYearsAt,
+  drawAdultHeight, drawTempo, growthShare, heightAt, bodyTypeFor, weightFor, FEATURE_DEFAULTS
+};
