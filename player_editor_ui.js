@@ -409,7 +409,9 @@
     const otherW = units() === 'metric' ? `${Math.round(c.weight * 2.20462262)} lbs` : `${c.weight} kg`;
     return `<div class="pe-card"><h3>Size</h3><p>Shown in your ${units()} setting. The game stores whole cm and kg.</p>
         <div class="pe-row">${hInputs}${wInputs}</div>
-        <div class="pe-hint">= ${esc(otherH)} / ${esc(otherW)}. Unchanged values are never rewritten.</div></div>
+        <div class="pe-hint">= ${esc(otherH)} / ${esc(otherW)}. Unchanged values are never rewritten.</div>
+        <div class="pe-row" style="margin-top:14px"><button class="pe-chip" data-model-height title="Uses this player's own growth model: their adult height, how far they have grown at their age, and a weight that suits it">Set a realistic height &amp; weight for this player</button></div>
+        ${ed.modelNote ? `<div class="pe-hint">${esc(ed.modelNote)}</div>` : ''}</div>
       <div class="pe-card"><h3>Build</h3>
         <div class="pe-row">${selectField('Body type', 'bodytypecode', BODY_TYPES, bodyName)}</div></div>`;
   }
@@ -544,14 +546,14 @@
     if (pv && pv.error) preview = `<div class="pe-banner">${esc(pv.error)}</div>`;
     else if (pv) {
       const b = pv.before, a = pv.after;
-      const row = (label, s) => `<tr><td>${label}</td><td>${s.n}</td><td>${esc(fmtHeight(Math.round(s.mean)))}</td><td>${s.under} (${pct(s.under, s.n)}%)</td><td>${s.over}</td></tr>`;
-      preview = `<table class="pe-height-table"><thead><tr><th></th><th>Players</th><th>Average</th><th>Under 5'7"</th><th>Over 6'4"</th></tr></thead>
+      const row = (label, s) => `<tr><td>${label}</td><td>${s.n}</td><td>${esc(fmtHeight(Math.round(s.mean)))}</td><td>${Math.round(s.meanWeight || 0)} kg</td><td>${s.under} (${pct(s.under, s.n)}%)</td><td>${s.over}</td></tr>`;
+      preview = `<table class="pe-height-table"><thead><tr><th></th><th>Players</th><th>Avg height</th><th>Avg weight</th><th>Under 5'7"</th><th>Over 6'4"</th></tr></thead>
           <tbody>${row('Now', b)}${row('After the model', a)}</tbody></table>
         <div class="pe-hint" style="margin:8px 0 4px">Biggest changes (age, now to after, own adult height):</div>
-        ${pv.sample.map(s => `<div class="pe-hist-row"><span><b>${esc(s.name)}</b> <span class="pe-hint">age ${s.age}</span></span><span>${esc(fmtHeight(s.before))} to ${esc(fmtHeight(s.after))} <span class="pe-hint">(adult ${esc(fmtHeight(s.adult))})</span></span></div>`).join('')}`;
+        ${pv.sample.map(s => `<div class="pe-hist-row"><span><b>${esc(s.name)}</b> <span class="pe-hint">age ${s.age}</span></span><span>${esc(fmtHeight(s.before))} to ${esc(fmtHeight(s.after))}, ${s.wBefore} to ${s.wAfter} kg <span class="pe-hint">(adult ${esc(fmtHeight(s.adult))})</span></span></div>`).join('')}`;
     }
     return `<div class="pe-card"><h3>Realistic heights</h3>
-        <p>Each player gets their own genetic adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", taller keepers and centre-backs, shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. Preview first; nothing changes until you press Apply.</p>
+        <p>Each player gets their own genetic adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", taller keepers and centre-backs, shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. Preview first; nothing changes until you press Apply. You can also do one player at a time from their Body tab.</p>
         <div class="pe-row"><button class="pe-btn" data-dyn-height-preview>Preview realistic heights</button>
           <button class="pe-btn primary" data-dyn-height-apply>Apply to all picked players now</button></div>
         ${preview}</div>`;
@@ -800,7 +802,8 @@
     const changes = {};
     changedKeys().forEach(k => { changes[k] = ed.cur[k]; });
     ed.saving = true; ed.msg = 'Saving…'; ed.msgKind = ''; render();
-    const res = await api().queuePlayerEdit(ed.playerId, changes);
+    // a height that came from the growth model button is not a "manual" height (which would lock the model out)
+    const res = await api().queuePlayerEdit(ed.playerId, changes, { source: ed.modelHeight !== undefined && ed.cur.height === ed.modelHeight ? 'model' : undefined });
     if (!res || !res.success) {
       ed.saving = false; ed.msg = (res && res.error) || 'Save failed.'; ed.msgKind = 'err'; render();
       return;
@@ -850,10 +853,19 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick],[data-dyn-height-preview],[data-dyn-height-apply]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick],[data-dyn-height-preview],[data-dyn-height-apply],[data-model-height]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.hasAttribute('data-model-height')) {
+        const r = await api().planPlayerGrowth(ed.playerId);
+        if (!r || r.error) { ed.msg = (r && r.error) || 'Could not work out a height.'; ed.msgKind = 'err'; render(); return; }
+        Object.assign(ed.cur, r.changes);
+        ed.modelHeight = ed.cur.height;
+        ed.modelNote = `Adult height for this player: ${fmtHeight(r.adult)}. At ${r.age} they have grown to ${fmtHeight(ed.cur.height)}, weight ${ed.cur.weight} kg.`;
+        ed.msg = Object.keys(r.changes).length ? 'Height and weight set. Save to apply (Reset undoes it).' : 'Already right for this player; nothing to change.'; ed.msgKind = 'ok';
+        render(); return;
+      }
       if (t.hasAttribute('data-dyn-height-preview')) {
         ed.dyn.heightPreview = await api().previewHeightModel();
         render(); return;

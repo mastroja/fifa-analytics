@@ -145,7 +145,7 @@ function writePendingFile() {
 }
 
 // changes: { gameColumn: integerValue }. Only changed columns are sent; unchanged ones never are.
-function queueEdit(playerId, changes) {
+function queueEdit(playerId, changes, opts) {
   const saveId = ctx.getActiveSaveId();
   const cur = currentState(playerId, saveId);
   if (!cur) return { success: false, error: 'No editor data for this player yet. Run export_player_editor.lua in Live Editor first.' };
@@ -160,6 +160,14 @@ function queueEdit(playerId, changes) {
   Object.keys(real).forEach(k => { old[k] = cur.state[k]; });
   ctx.getDb().run('INSERT INTO player_edits (player_id, save_id, old_json, new_json, status) VALUES (?, ?, ?, ?, ?)',
     [playerId, saveId, JSON.stringify(old), JSON.stringify(real), 'queued']);
+  // A height the user typed in by hand is theirs: tell the height model to leave this player alone from now on.
+  // (Edits made by the model itself, source 'dynamic' or 'model', and undo of those, do not lock.)
+  if (real.height !== undefined && !(opts && (opts.source === 'dynamic' || opts.source === 'model'))) {
+    try {
+      ctx.getDb().run(`INSERT INTO dynamic_look_height (save_id, player_id, target_cm, tempo, applied_cm, prev_cm, locked) VALUES (?, ?, ?, 0, ?, ?, 1)
+        ON CONFLICT(save_id, player_id) DO UPDATE SET locked = 1`, [saveId, playerId, real.height, real.height, cur.state.height]);
+    } catch (e) { /* height table not created yet */ }
+  }
   ctx.saveDatabaseToDisk();
   const queuedCount = writePendingFile();
   return { success: true, queued: queuedCount, pendingPath: PENDING_PATH };
@@ -289,7 +297,7 @@ function register(ipcMain) {
     const cur = currentState(playerId, saveId);
     return { state: cur, edits: cur ? listEdits(playerId, saveId) : [], limits: FIELD_LIMITS };
   });
-  ipcMain.handle('queue-player-edit', (_e, playerId, changes) => queueEdit(playerId, changes));
+  ipcMain.handle('queue-player-edit', (_e, playerId, changes, opts) => queueEdit(playerId, changes, opts && opts.source === 'model' ? { source: 'model' } : undefined));
   ipcMain.handle('undo-player-edit', (_e, editId) => undoEdit(editId));
   ipcMain.handle('get-customization-catalog', () => getCatalog());
   ipcMain.handle('get-boot-links', () => getBootLinks());

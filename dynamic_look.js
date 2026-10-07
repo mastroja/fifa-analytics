@@ -147,10 +147,17 @@ function weightFor(playerId, heightCm, bodyType, ageYears, tempo) {
  */
 function planGrowth({ playerId, state, ageYears, record }) {
   const rec = Object.assign({ target_cm: null, tempo: null, applied_cm: null, prev_cm: null, locked: 0 }, record || {});
-  if (rec.locked) return { changes: {}, record: rec };
+  // A height set by hand stays as it is, but a weight that makes no sense for it is still corrected (only when it is
+  // clearly off, 6 kg or more, so a weight chosen on purpose is not fought over).
+  const weightOnly = () => {
+    const tempo = rec.tempo !== null ? rec.tempo : drawTempo(playerId);
+    const w = weightFor(playerId, state.height, state.bodytypecode, ageYears, tempo);
+    return Math.abs(w - state.weight) >= 6 ? { weight: w } : {};
+  };
+  if (rec.locked) return { changes: weightOnly(), record: rec };
   // The height should be what the model last wrote (applied_cm) or, if that write never reached the game, what it was
   // before (prev_cm). Anything else means somebody changed it by hand (the editor): respect that for good.
-  if (rec.applied_cm !== null && state.height !== rec.applied_cm && state.height !== rec.prev_cm) { rec.locked = 1; return { changes: {}, record: rec }; }
+  if (rec.applied_cm !== null && state.height !== rec.applied_cm && state.height !== rec.prev_cm) { rec.locked = 1; return { changes: weightOnly(), record: rec }; }
   if (rec.target_cm === null) { rec.target_cm = drawAdultHeight(playerId, state.preferredposition1); rec.tempo = drawTempo(playerId); }
   const height = heightAt(rec.target_cm, ageYears, rec.tempo);
   const bodytype = bodyTypeFor(height, state.bodytypecode);
@@ -158,7 +165,9 @@ function planGrowth({ playerId, state, ageYears, record }) {
   const changes = {};
   // grow in whole-cm steps but skip tiny wobbles, except for the first application
   if (height !== state.height && (rec.applied_cm === null || Math.abs(height - state.height) >= 1)) changes.height = height;
-  if (changes.height !== undefined || rec.applied_cm === null) {
+  // weight (and body type) follow the height: whenever the height moves, on the first application, or if the weight has
+  // drifted 2 kg or more from what suits this height and age
+  if (changes.height !== undefined || rec.applied_cm === null || Math.abs(weight - state.weight) >= 2) {
     if (weight !== state.weight) changes.weight = weight;
     if (bodytype !== state.bodytypecode) changes.bodytypecode = bodytype;
   }
@@ -458,20 +467,43 @@ class DynamicLook {
     const month = monthKeyOf(currentDate) || this.getSettings(saveId).lastMonth;
     if (!month) return { error: 'The in-game date is not known yet. Press Refresh first.' };
     const records = this.loadHeightRecords(saveId);
-    const before = [], after = [], sample = [];
+    const before = [], after = [], sample = [], wBefore = [], wAfter = [];
     for (const c of this.heightCandidates(saveId, month)) {
       const plan = planGrowth({ playerId: c.row.player_id, state: c.state, ageYears: c.ageYears, record: records.get(c.row.player_id) });
       if (plan.record.locked) continue;
       const h = plan.changes.height !== undefined ? plan.changes.height : c.state.height;
-      before.push(c.state.height); after.push(h);
-      sample.push({ name: c.row.name, age: Math.floor(c.ageYears), before: c.state.height, after: h, adult: plan.record.target_cm });
+      const w = plan.changes.weight !== undefined ? plan.changes.weight : c.state.weight;
+      before.push(c.state.height); after.push(h); wBefore.push(c.state.weight); wAfter.push(w);
+      sample.push({ name: c.row.name, age: Math.floor(c.ageYears), before: c.state.height, after: h, adult: plan.record.target_cm, wBefore: c.state.weight, wAfter: w });
     }
     const stats = arr => arr.length ? {
       n: arr.length, mean: arr.reduce((a, b) => a + b, 0) / arr.length,
       under: arr.filter(h => h < 170.2).length, over: arr.filter(h => h > 193).length
     } : { n: 0, mean: 0, under: 0, over: 0 };
     sample.sort((a, b) => Math.abs(b.after - b.before) - Math.abs(a.after - a.before));
-    return { month, before: stats(before), after: stats(after), sample: sample.slice(0, 12) };
+    const avg = arr => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+    const withW = (s, w) => Object.assign(s, { meanWeight: avg(w) });
+    return { month, before: withW(stats(before), wBefore), after: withW(stats(after), wAfter), sample: sample.slice(0, 12) };
+  }
+
+  // The model's height / weight / body type for ONE player right now (the editor's Body tab button). Nothing is queued:
+  // the editor applies the values to its form and the user saves them like any other edit.
+  planPlayerGrowth(saveId, playerId, currentDate) {
+    const month = monthKeyOf(currentDate) || this.getSettings(saveId).lastMonth;
+    if (!month) return { error: 'The in-game date is not known yet. Press Refresh first.' };
+    const row = this.rows(`SELECT s.player_id, s.name, s.state_json, p.dob FROM player_editor_state s
+      LEFT JOIN players p ON p.player_id = s.player_id WHERE s.save_id = ? AND s.player_id = ? AND s.editable = 1`, [saveId, playerId])[0];
+    if (!row) return { error: 'No editor data for this player yet.' };
+    const ageYears = ageYearsAt(row.dob, month);
+    if (ageYears === null) return { error: 'This player has no birth date on file.' };
+    const state = JSON.parse(row.state_json);
+    const rec = this.loadHeightRecords(saveId).get(playerId) || null;
+    // a manual lock does not apply when the user explicitly asks for the model's values
+    const plan = planGrowth({ playerId, state, ageYears, record: rec ? Object.assign({}, rec, { locked: 0, applied_cm: null, prev_cm: null }) : null });
+    const fresh = plan.record;
+    this.saveHeightRecord(saveId, playerId, { target_cm: fresh.target_cm, tempo: fresh.tempo, applied_cm: fresh.applied_cm, prev_cm: fresh.prev_cm, locked: 0 });
+    this.ctx.saveDatabaseToDisk();
+    return { changes: plan.changes, adult: fresh.target_cm, age: Math.floor(ageYears) };
   }
 
   // Apply the height model once, to everybody (this is the "rebalance heights" button).
@@ -489,7 +521,7 @@ class DynamicLook {
         const plan = planGrowth({ playerId: c.row.player_id, state: c.state, ageYears: c.ageYears, record: records.get(c.row.player_id) });
         this.saveHeightRecord(saveId, c.row.player_id, plan.record);
         if (!Object.keys(plan.changes).length) continue;
-        const res = this.ctx.playerEditor.queueEdit(c.row.player_id, plan.changes);
+        const res = this.ctx.playerEditor.queueEdit(c.row.player_id, plan.changes, { source: 'dynamic' });
         if (!res.success) { this.ctx.log(`[DynamicLook] height skipped for ${c.row.name}: ${res.error}`); continue; }
         const last = this.rows('SELECT MAX(id) AS id FROM player_edits WHERE player_id = ? AND save_id = ?', [c.row.player_id, saveId])[0];
         this.ctx.getDb().run('INSERT INTO dynamic_look_log (save_id, player_id, player_name, game_month, summary, edit_id) VALUES (?, ?, ?, ?, ?, ?)',
@@ -598,7 +630,7 @@ class DynamicLook {
       // 3. queue them as normal editor edits (validated, undoable) and remember what happened
       const edits = [];
       for (const q of queued) {
-        const res = this.ctx.playerEditor.queueEdit(q.row.player_id, q.changes);
+        const res = this.ctx.playerEditor.queueEdit(q.row.player_id, q.changes, { source: 'dynamic' });
         if (!res.success) { this.ctx.log(`[DynamicLook] skipped ${q.row.name}: ${res.error}`); continue; }
         const last = this.rows('SELECT MAX(id) AS id FROM player_edits WHERE player_id = ? AND save_id = ?', [q.row.player_id, saveId])[0];
         this.ctx.getDb().run('INSERT INTO dynamic_look_log (save_id, player_id, player_name, game_month, summary, edit_id) VALUES (?, ?, ?, ?, ?, ?)',
@@ -654,6 +686,11 @@ function register(ipcMain) {
     const saveId = ctx().getActiveSaveId();
     if (!saveId) return { error: 'No active save.' };
     return instance.previewHeights(saveId, ctx().getCurrentDate());
+  });
+  ipcMain.handle('plan-player-growth', (_e, playerId) => {
+    const saveId = ctx().getActiveSaveId();
+    if (!saveId) return { error: 'No active save.' };
+    return instance.planPlayerGrowth(saveId, Number(playerId), ctx().getCurrentDate());
   });
   ipcMain.handle('apply-height-model', async () => {
     const saveId = ctx().getActiveSaveId();
