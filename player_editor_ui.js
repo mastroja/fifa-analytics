@@ -182,6 +182,8 @@
       .pe-chip { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--expand-bg); color: inherit; font-size: 12px; cursor: pointer; }
       .pe-chip:hover { border-color: var(--accent-color); }
       .pe-chip.was { border-style: dashed; }
+      .pe-randbar { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
+      .pe-randbar .pe-chip { padding: 7px 16px; font-size: 13px; }
       .pe-chip.on { background: var(--accent-color); color: #0d1117; border-color: var(--accent-color); font-weight: 600; }
       .pe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-height: 560px; overflow-y: auto; padding: 4px 6px 4px 0; }
       .pe-grid.boots { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); max-height: 620px; }
@@ -334,8 +336,10 @@
   }
 
   // ---------- tabs ----------
+  const randomBar = (which, label) => `<div class="pe-randbar"><button class="pe-chip" data-random="${which}">🎲 ${label}</button></div>`;
+
   function tabLook() {
-    return `
+    return `${randomBar('head', 'Randomize head')}
       <div class="pe-card"><h3>Skin</h3><p>Tone follows the game's ten-step scale; complexion and type fine-tune it.</p>
         ${swatchPicker('skintonecode', SKIN_TONES, skinName, SKIN_SWATCH, 'Skin tone')}
         <div class="pe-row" style="margin-top:14px">${selectField('Complexion', 'skincomplexion', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])}
@@ -370,7 +374,7 @@
     const acc = [1, 2, 3, 4].map(n => `<div class="pe-acc"><span class="pe-hint">Slot ${n}</span>
         ${selectField('', 'accessorycode' + n, ACCESSORY_IDS, accName)}
         ${selectField('', 'accessorycolourcode' + n, ACCESSORY_COLORS, accColorName)}</div>`).join('');
-    return `
+    return `${randomBar('kit', 'Randomize kit & accessories')}
       <div class="pe-card"><h3>Shirt</h3><p>How the kit is worn. Applies to this player only.</p>
         <div class="pe-hint">Sleeves</div>${kitChips('jerseysleevelengthcode')}
         <div class="pe-hint" style="margin-top:10px">Kit fit</div>${kitChips('jerseyfit')}
@@ -433,6 +437,7 @@
       Object.keys(brandCounts).sort((x, y) => brandLabels[x].localeCompare(brandLabels[y]))
         .map(b => ({ value: b, label: `${brandLabels[b]} (${brandCounts[b]})` })));
     const shown = f.brand === 'all' ? inScope : inScope.filter(i => i.brand === f.brand);
+    ed.lastBootsShown = shown; // used by randomizeBoots
 
     const linkChip = (v, label, n) => `<button class="pe-chip${f.link === v ? ' on' : ''}" data-filter="boots:link:${v}">${label} (${n})</button>`;
     const tile = i => {
@@ -455,6 +460,7 @@
         <p>${status} Pictures that are not linked to a game id cannot be applied yet.</p>
         ${linkBox}
         <div class="pe-row" style="align-items:center;gap:12px;margin-bottom:12px">
+          <button class="pe-chip" data-random="boots" title="Pick a random linked boot from the list below">🎲 Randomize boots</button>
           <div class="pe-field" style="flex-direction:row;align-items:center;gap:8px">Brand ${filterDropdown('boots', 'brand', brandOptions, f.brand)}</div>
           <input class="pe-search" type="search" placeholder="Search boots…" data-boot-q value="${esc(f.q || '')}">
           <div class="pe-chips" style="margin:0">${views.map(v => linkChip(v[0], v[1], v[2])).join('')}</div>
@@ -572,6 +578,83 @@
     }
   }
 
+  // ---------- randomize ----------
+  // Each tab has a Randomize button. Nothing is saved until Save. Skin tone is never touched, and hair styles only come
+  // from the categories suggested for the player's skin tone (the same set as the "Suggested" hair filter).
+  const rnd = n => Math.floor(Math.random() * n);
+  const pick = arr => arr[rnd(arr.length)];
+  function pickWeighted(items) { // [[value, weight], ...]
+    const total = items.reduce((s, it) => s + it[1], 0);
+    let r = Math.random() * total;
+    for (const [v, w] of items) { r -= w; if (r <= 0) return v; }
+    return items[items.length - 1][0];
+  }
+  const SOCK_LENGTH_WEIGHTS = [[0, 40], [1, 20], [3, 10], [2, 30]];
+
+  function randomizeHead() {
+    const tone = ed.cur.skintonecode || 50;
+    const light = tone <= 40, dark = tone >= 70;
+    const cats = suggestedCats();
+    const hairPool = ((catalog && catalog.hair) || []).filter(h => h.cat !== null && cats.includes(h.cat));
+    if (hairPool.length) ed.cur.hairtypecode = pick(hairPool).id;
+
+    // natural colours only, weighted by skin tone
+    const hairColour = pickWeighted(dark ? [[0, 9], [3, 3], [6, 1]]
+      : light ? [[0, 3], [1, 2], [2, 2], [3, 4], [4, 1], [5, 3], [6, 3], [7, 0.5], [12, 0.5], [13, 0.3]]
+        : [[0, 4], [3, 4], [5, 2], [6, 3], [1, 1], [2, 1]]);
+    ed.cur.haircolorcode = hairColour;
+
+    const facial = (catalog && catalog.facialHair) || [];
+    if (facial.length && Math.random() < 0.25) {
+      ed.cur.facialhairtypecode = pick(facial).id;
+      ed.cur.facialhaircolorcode = hairColour; // beard matches the hair
+    } else {
+      ed.cur.facialhairtypecode = 0;
+    }
+
+    ed.cur.eyecolorcode = pickWeighted(dark ? [[9, 5], [3, 3], [4, 1]]
+      : light ? [[3, 3], [4, 2], [9, 2], [1, 2], [2, 1], [5, 1], [6, 1], [7, 0.5], [8, 1]]
+        : [[3, 3], [9, 3], [4, 2], [5, 1], [6, 1], [1, 1]]);
+  }
+
+  function randomizeKit() {
+    ed.cur.jerseysleevelengthcode = pickWeighted([[0, 70], [1, 22], [3, 6], [2, 2]]);
+    ed.cur.jerseyfit = pickWeighted([[0, 55], [1, 30], [2, 15]]);
+    ed.cur.jerseystylecode = pickWeighted([[0, 50], [1, 50]]);
+    ed.cur.socklengthcode = pickWeighted(SOCK_LENGTH_WEIGHTS);
+    // accessories: clear all four slots, then (about a third of the time) add one or two
+    for (let n = 1; n <= 4; n++) { ed.cur['accessorycode' + n] = 0; ed.cur['accessorycolourcode' + n] = 0; }
+    if (Math.random() < 0.35) {
+      const pool = ACCESSORY_IDS.filter(id => id !== 0);
+      const count = Math.random() < 0.3 ? 2 : 1;
+      const chosen = [];
+      while (chosen.length < count) { const id = pick(pool); if (!chosen.includes(id)) chosen.push(id); }
+      chosen.forEach((id, i) => {
+        ed.cur['accessorycode' + (i + 1)] = id;
+        ed.cur['accessorycolourcode' + (i + 1)] = pickWeighted([[0, 60], [1, 30], [2, 4], [3, 4], [4, 2]]);
+      });
+    }
+  }
+
+  function randomizeBoots() {
+    // only boots linked to a game id can be applied; honour the current brand / search filters
+    const linked = (ed.lastBootsShown || []).filter(i => Number.isInteger((ed.bootLinks || {})[i.key]));
+    if (!linked.length) return 'No linked boots in the current list. Link some pictures first (Link pictures to game ids), or clear the brand filter.';
+    ed.cur.shoetypecode = ed.bootLinks[pick(linked).key];
+    return '';
+  }
+
+  function randomize(which) {
+    let problem = '';
+    if (which === 'head') randomizeHead();
+    else if (which === 'kit') randomizeKit();
+    else if (which === 'boots') problem = randomizeBoots();
+    ed.openDd = null;
+    if (problem) { ed.msg = problem; ed.msgKind = 'err'; }
+    else { ed.msg = 'Randomized. Review it, then Save to apply (Reset undoes it).'; ed.msgKind = 'ok'; }
+    render();
+  }
+
   // ---------- state changes ----------
   function setValue(key, raw) {
     const lim = ed.limits[key];
@@ -660,10 +743,11 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.dataset.random) { randomize(t.dataset.random); return; }
       if (t.dataset.unlink) {
         const r = await api().setBootLink(t.dataset.unlink, null);
         if (r && r.success) ed.bootLinks = r.links;
