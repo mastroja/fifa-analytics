@@ -42,6 +42,7 @@ const transferExportPath = 'C:\\Users\\Public\\ea_fc_transfers_export.json';
 const watchlistInputPath = 'C:\\Users\\Public\\ea_fc_watchlist_input.json';
 const watchlistStatusPath = 'C:\\Users\\Public\\ea_fc_watchlist_status.json';
 const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
+const playerEditor = require('./player_editor');
 const leagueStatsExportPath = 'C:\\Users\\Public\\ea_fc_league_stats_export.json';
 
 // activeSaveId/currentSeasonId track whichever save/season the app is
@@ -284,6 +285,16 @@ async function initDatabase() {
     db.run(`ALTER TABLE players ADD COLUMN skintone_code INTEGER;`);
   } catch (e) {
     // column already exists, safe to ignore
+  }
+
+  // FC 27 reports skintonecode on a 10-100 scale (steps of 10) instead of
+  // FC 26's 1-10; the app keeps the 1-10 meaning (see normalizeSkintoneCode),
+  // so fold any rows synced before that fix. Idempotent: afterwards every
+  // value is <= 10.
+  try {
+    db.run(`UPDATE players SET skintone_code = MAX(1, CAST(ROUND(skintone_code / 10.0) AS INTEGER)) WHERE skintone_code > 10;`);
+  } catch (e) {
+    // players table/column not ready yet, safe to ignore
   }
 
   // Final Save Point (see checkSeasonFinalSavePoint) — added after some
@@ -1976,12 +1987,23 @@ function getYouthAcademy(saveId = activeSaveId) {
   let maxUpdatedAt = null;
   rows.forEach(r => { if (r[9] && (!maxUpdatedAt || r[9] > maxUpdatedAt)) maxUpdatedAt = r[9]; });
 
+  // The academy export only carries a potential RANGE. The player editor sync (player_editor_sync.lua, F11)
+  // exports the actual potential for academy players; attach it as `potential` when available.
+  const actualPotential = new Map();
+  try {
+    const edRes = db.exec(`SELECT player_id, state_json FROM player_editor_state WHERE save_id = ${Number(saveId)};`);
+    if (edRes.length > 0) edRes[0].values.forEach(([pid, json]) => {
+      try { const pot = JSON.parse(json).potential; if (pot) actualPotential.set(pid, pot); } catch (e) { /* skip bad row */ }
+    });
+  } catch (e) { /* editor table not created yet */ }
+
   return rows
     .filter(r => !maxUpdatedAt || r[9] >= maxUpdatedAt)
     .map(row => ({
       player_id: row[0], name: row[1], position_id: row[2], dob: row[3],
       overall: row[4], potential_low: row[5], potential_high: row[6],
-      tier: row[7], months_in_squad: row[8]
+      tier: row[7], months_in_squad: row[8],
+      potential: actualPotential.get(row[0]) || null
     }));
 }
 
@@ -2057,6 +2079,50 @@ function markAcademyGraduate(playerId, saveId = activeSaveId) {
   saveDatabaseToDisk();
   console.log(`[Academy] Player ${playerId} manually marked as academy graduate for save ${saveId}.`);
   return { success: true };
+}
+
+// "Remove from app": an app-only change. The game keeps the player exactly as it is; the app just stops
+// tracking them. Their rows for this save's seasons are deleted and the id goes on ignored_players so the
+// next F10 sync (importFifaData) does not re-create them.
+function removePlayersFromApp(playerIds, saveId = activeSaveId) {
+  if (!db || !saveId || !Array.isArray(playerIds)) return { success: false };
+  const ids = [...new Set(playerIds.map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  ids.forEach(pid => {
+    db.run('INSERT OR IGNORE INTO ignored_players (player_id, save_id) VALUES (?, ?);', [pid, saveId]);
+    db.run('DELETE FROM player_season_stats WHERE player_id = ? AND season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [pid, saveId]);
+    db.run('DELETE FROM former_player_snapshots WHERE player_id = ? AND season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [pid, saveId]);
+  });
+  saveDatabaseToDisk();
+  console.log(`[Player] Removed ${ids.length} player(s) from the app for save ${saveId} (game untouched).`);
+  return { success: true, removed: ids.length };
+}
+
+function getIgnoredPlayerIds(saveId) {
+  const ids = new Set();
+  if (!db || !saveId) return ids;
+  const res = db.exec(`SELECT player_id FROM ignored_players WHERE save_id = ${Number(saveId)};`);
+  if (res.length > 0) res[0].values.forEach(([pid]) => ids.add(pid));
+  return ids;
+}
+
+function restoreIgnoredPlayers(saveId = activeSaveId) {
+  if (!db || !saveId) return { success: false };
+  db.run('DELETE FROM ignored_players WHERE save_id = ?;', [saveId]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
+// Bulk version for the Transfer Hub's Signed view ("Mark selected as Academy Graduates").
+function markAcademyGraduates(playerIds, saveId = activeSaveId) {
+  if (!db || !saveId || !Array.isArray(playerIds)) return { success: false };
+  let marked = 0;
+  playerIds.map(Number).filter(n => Number.isInteger(n) && n > 0).forEach(pid => {
+    db.run('INSERT OR IGNORE INTO academy_graduate_overrides (player_id, save_id) VALUES (?, ?);', [pid, saveId]);
+    marked++;
+  });
+  saveDatabaseToDisk();
+  console.log(`[Academy] ${marked} player(s) manually marked as academy graduates for save ${saveId}.`);
+  return { success: true, marked };
 }
 
 // Manually-recorded PlayStyles/PlayStyle+ for a player — see the
@@ -4172,6 +4238,12 @@ function importFifaData(jsonPayload) {
     return;
   }
 
+  // Players the user removed from the app (see removePlayersFromApp) stay out, even though the game still lists them.
+  if (activeSaveId) {
+    const ignoredIds = getIgnoredPlayerIds(activeSaveId);
+    if (ignoredIds.size > 0) jsonPayload.players = jsonPayload.players.filter(p => !ignoredIds.has(p.player_id));
+  }
+
   // Whether each player already has a row THIS season (so overall_delta/
   // attribute_deltas_json below know to diff against the season's frozen
   // starting point rather than treating this as a fresh baseline). Read
@@ -4495,7 +4567,7 @@ function importFifaData(jsonPayload) {
         p.weight || '',
         p.preferred_foot || '',
         p.photo_id || p.player_id,
-        p.skintone_code || null
+        normalizeSkintoneCode(p.skintone_code)
       ]);
 
       statsStmt.run([
@@ -4809,6 +4881,15 @@ const NATIONALITY_HEADSHOT_REGION = {
 // — an accepted limitation, since skintonecode alone can't separate that
 // from a light-skinned white/olive player at the same code.
 const HEADSHOT_SKINTONE_BLACK_THRESHOLD = 7;
+
+// FC 26 exported skintonecode as 1-10; FC 27 exports 10-100 in steps of 10
+// (plus the odd off-grid value). Everything in the app keys off the 1-10
+// scale, so fold the 10-100 scale down at ingest. Values <= 10 pass through.
+function normalizeSkintoneCode(raw) {
+  const n = Number(raw);
+  if (!n || n < 0) return null;
+  return n > 10 ? Math.max(1, Math.round(n / 10)) : n;
+}
 
 function getHeadshotEthnicityDir(nationalityId, skintoneCode) {
   const region = NATIONALITY_HEADSHOT_REGION[Number(nationalityId)];
@@ -5835,7 +5916,69 @@ function deletePlayer(playerId) {
 // away from the game, which simply has to wait until you tab back.
 const GAME_WINDOW_TITLE = 'EA SPORTS FC 27';
 
-function triggerLiveEditorRefresh(isManual) {
+// Bringing the game forward (required for Live Editor's hotkey, see above) can minimize this window,
+// especially when the game runs fullscreen. focus() alone does not un-minimize, so restore it explicitly,
+// after a short pause so Live Editor has seen the keypress before focus moves away from the game.
+// F11 is also Electron's default "Toggle Full Screen" shortcut. If the hotkey ever lands on this window instead of
+// the game, it must not toggle full screen (which looked like the app minimizing), so createWindow drops F11
+// presses until this time.
+let suppressF11Until = 0;
+
+function restoreMainWindow() {
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }, 120);
+}
+
+// Releases players the app lists as loaned out: Live Editor ends the loan, then releases them from the
+// club (see the actions step of assets/lua/player_editor_sync.lua, which re-checks every player). Needs
+// the F11 sync hotkey. Runs in chunks of 10 (the Lua cap), then refreshes the squad data with F10.
+const playerActionsPendingPath = 'C:\\Users\\Public\\ea_fc_player_actions_pending.json';
+const playerActionsResultPath = 'C:\\Users\\Public\\ea_fc_player_actions_result.json';
+
+async function releaseLoanedPlayers(playerIds) {
+  const ids = [...new Set((playerIds || []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  if (ids.length === 0) return { success: false, error: 'No players selected.' };
+  const results = [];
+  for (let i = 0; i < ids.length; i += 10) {
+    const chunk = ids.slice(i, i + 10);
+    try { fs.unlinkSync(playerActionsResultPath); } catch (e) { /* none yet */ }
+    fs.writeFileSync(playerActionsPendingPath, JSON.stringify({
+      written_at: new Date().toISOString(),
+      actions: chunk.map((player_id, n) => ({ action_id: i + n + 1, type: 'release_loaned', player_id }))
+    }));
+    const startedAt = Date.now() - 1000;
+    const pressed = await triggerLiveEditorRefresh(true, 'F11');
+    if (!pressed) {
+      try { fs.unlinkSync(playerActionsPendingPath); } catch (e) { /* ignore */ }
+      return { success: false, error: 'Could not reach the game window. Is the game running, and F11 bound to player_editor_sync.lua?', results };
+    }
+    let result = null;
+    for (let waited = 0; waited < 20000 && !result; waited += 400) {
+      await new Promise(r => setTimeout(r, 400));
+      try {
+        if (fs.statSync(playerActionsResultPath).mtimeMs >= startedAt) result = JSON.parse(fs.readFileSync(playerActionsResultPath, 'utf8'));
+      } catch (e) { /* not written yet / still being written */ }
+    }
+    if (!result) {
+      try { fs.unlinkSync(playerActionsPendingPath); } catch (e) { /* ignore */ }
+      return { success: false, error: 'Live Editor did not answer. Is F11 bound to player_editor_sync.lua?', results };
+    }
+    results.push(...(result.results || []));
+  }
+  await triggerLiveEditorRefresh(true, 'F10'); // re-read the squad so the Loaned list updates
+  return { success: true, results };
+}
+
+// Focuses the game window and presses a Live Editor hotkey: F10 = read-only export_all.lua refresh,
+// F11 = player_editor_sync.lua (player editor: apply queued edits, then export; see player_editor.js).
+// Live Editor has no other way to be driven from outside, so a hotkey is the only trigger channel.
+function triggerLiveEditorRefresh(isManual, key = 'F10') {
+  if (!['F10', 'F11'].includes(key)) return Promise.resolve(false);
+  if (key === 'F11') suppressF11Until = Date.now() + 5000; // see the before-input-event handler in createWindow
   return new Promise(resolve => {
     const psCommand = `
 $typeDef = @'
@@ -5862,8 +6005,25 @@ if (-not $gameAlreadyFocused -and -not $${isManual ? 'true' : 'false'}) {
 $activated = (New-Object -ComObject WScript.Shell).AppActivate('${GAME_WINDOW_TITLE}')
 if (-not $activated) { Write-Output 'ACTIVATE_FAILED'; exit 1 }
 Start-Sleep -Milliseconds 150
+# AppActivate returns before Windows has actually switched windows. Wait until the game really is the foreground
+# window; sending the key earlier would deliver it to THIS app instead (F11 is Electron's full-screen toggle).
+$deadline = (Get-Date).AddMilliseconds(2500)
+do {
+  Start-Sleep -Milliseconds 50
+  $sb.Length = 0
+  [WinCheck]::GetWindowText([WinCheck]::GetForegroundWindow(), $sb, 256) | Out-Null
+} while ($sb.ToString() -ne '${GAME_WINDOW_TITLE}' -and (Get-Date) -lt $deadline)
+if ($sb.ToString() -ne '${GAME_WINDOW_TITLE}') {
+${isManual ? `  (New-Object -ComObject WScript.Shell).AppActivate(${process.pid}) | Out-Null\n` : ''}  Write-Output 'ACTIVATE_FAILED'
+  exit 1
+}
 Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.SendKeys]::SendWait('{F10}')
+[System.Windows.Forms.SendKeys]::SendWait('{${key}}')
+${isManual ? `# Give Live Editor a moment to see the key, then hand focus straight back to this app from the same
+# PowerShell process (Windows only lets the process that just sent input take the foreground back; Electron's
+# own focus() is refused while the game owns it, which is what left the window minimized).
+Start-Sleep -Milliseconds 450
+(New-Object -ComObject WScript.Shell).AppActivate(${process.pid}) | Out-Null` : ''}
 Write-Output 'SENT_OK'
 `;
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCommand], { windowsHide: true }, (err, stdout) => {
@@ -5872,16 +6032,16 @@ Write-Output 'SENT_OK'
       // the ones who moved it away (the manual button, clicked from
       // here) — never after a genuinely-focus-free auto-refresh tick,
       // where the game already had focus and should keep it.
-      if (isManual && mainWindow) mainWindow.focus();
+      if (isManual) restoreMainWindow();
 
       if (output === 'SKIPPED_NOT_FOCUSED') {
         console.log('[Refresh] Skipped — game isn\'t the focused window right now, and this was an auto-refresh tick (won\'t force a switch). Will try again next interval.');
         resolve(false);
       } else if (err || output === 'ACTIVATE_FAILED') {
-        console.error(`[Refresh] Failed to send F10 — could not find/focus the game window ("${GAME_WINDOW_TITLE}"). Is the game running?`, err ? err.message : '');
+        console.error(`[Refresh] Failed to send ${key} — could not find/focus the game window ("${GAME_WINDOW_TITLE}"). Is the game running?`, err ? err.message : '');
         resolve(false);
       } else {
-        console.log('[Refresh] Sent F10 — waiting on Live Editor to write updated export files.');
+        console.log(`[Refresh] Sent ${key} — waiting on Live Editor to write updated export files.`);
         resolve(true);
       }
     });
@@ -5975,6 +6135,10 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11' && Date.now() < suppressF11Until) event.preventDefault();
+  });
+
   mainWindow.loadFile('index.html');
 }
 
@@ -5984,6 +6148,8 @@ ipcMain.handle('get-all-time-squad', () => getAllTimeSquadStats());
 ipcMain.handle('get-past-players', () => getPastPlayers());
 ipcMain.handle('get-player-history', (_event, playerId) => getPlayerHistory(playerId));
 ipcMain.handle('trigger-refresh', (_event, isManual) => triggerLiveEditorRefresh(!!isManual));
+ipcMain.handle('trigger-editor-sync', () => triggerLiveEditorRefresh(true, 'F11'));
+ipcMain.handle('release-loaned-players', (_event, playerIds) => releaseLoanedPlayers(playerIds));
 ipcMain.handle('get-career-totals', () => getCareerTotalsForSquad());
 ipcMain.handle('get-manager-ppg', () => getManagerSeasonPPG());
 ipcMain.handle('get-team-record-seasons', () => getTeamRecordSeasons());
@@ -6005,6 +6171,8 @@ ipcMain.handle('delete-player', (_event, playerId) => deletePlayer(playerId));
 ipcMain.handle('get-season-competition-results', (_event, seasonId) => getSeasonCompetitionResults(seasonId));
 ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
+playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk });
+playerEditor.register(ipcMain);
 ipcMain.handle('enable-youth-mode', (_event, saveId) => enableYouthMode(saveId));
 ipcMain.handle('clear-former-players', (_event, saveId) => clearFormerPlayers(saveId));
 ipcMain.handle('get-pending-season-review', (_event, saveId) => getPendingSeasonReview(saveId));
@@ -6021,6 +6189,10 @@ ipcMain.handle('get-captaincy-history-for-player', (_event, saveId, playerId, ro
 ipcMain.handle('set-captaincy', (_event, saveId, role, playerId, inGameYear) => setCaptaincy(saveId, role, playerId, inGameYear));
 ipcMain.handle('set-captaincy-start-year', (_event, saveId, role, playerId, startYear) => setCaptaincyStartYear(saveId, role, playerId, startYear));
 ipcMain.handle('mark-academy-graduate', (_event, playerId, saveId) => markAcademyGraduate(playerId, saveId));
+ipcMain.handle('mark-academy-graduates', (_event, playerIds, saveId) => markAcademyGraduates(playerIds, saveId));
+ipcMain.handle('remove-players-from-app', (_event, playerIds, saveId) => removePlayersFromApp(playerIds, saveId));
+ipcMain.handle('get-ignored-player-count', (_event, saveId) => getIgnoredPlayerIds(saveId).size);
+ipcMain.handle('restore-ignored-players', (_event, saveId) => restoreIgnoredPlayers(saveId));
 ipcMain.handle('get-manual-play-styles', (_event, playerId) => getManualPlayStyles(playerId));
 ipcMain.handle('set-manual-play-styles', (_event, playerId, styles) => setManualPlayStyles(playerId, styles));
 ipcMain.handle('get-playstyle-suggestions', (_event, playerId) => getPlaystyleSuggestions(playerId));
@@ -6114,7 +6286,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  const watcher = chokidar.watch([squadExportPath, calendarExportPath, transferExportPath, youthExportPath, leagueStatsExportPath], {
+  const watcher = chokidar.watch([squadExportPath, calendarExportPath, transferExportPath, youthExportPath, leagueStatsExportPath, playerEditor.EXPORT_PATH, playerEditor.WRITE_LOG_PATH], {
     persistent: true,
     usePolling: true,
     interval: 500
@@ -6179,6 +6351,30 @@ app.whenReady().then(async () => {
         }
       } catch (err) {
         console.error('[Watcher] Failed to process transfers export file:', err);
+      }
+    }
+
+    if (filePath.includes('ea_fc_player_editor_export.json') && fs.existsSync(playerEditor.EXPORT_PATH)) {
+      try {
+        const { data: editorPayload } = await readJsonFileWithRetry(playerEditor.EXPORT_PATH);
+        const count = playerEditor.importEditorExport(editorPayload);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('player-editor-updated', { save_id: activeSaveId, count, kind: 'export' });
+        }
+      } catch (err) {
+        console.error('[Watcher] Failed to process player editor export file:', err);
+      }
+    }
+
+    if (filePath.includes('ea_fc_player_edits_write_log.json') && fs.existsSync(playerEditor.WRITE_LOG_PATH)) {
+      try {
+        const { data: logPayload } = await readJsonFileWithRetry(playerEditor.WRITE_LOG_PATH);
+        const count = playerEditor.handleWriteLog(logPayload);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('player-editor-updated', { save_id: activeSaveId, count, kind: 'write-log' });
+        }
+      } catch (err) {
+        console.error('[Watcher] Failed to process player edits write log:', err);
       }
     }
 

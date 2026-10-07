@@ -27,6 +27,8 @@
     "files": [
       "main.js",
       "preload.js",
+      "player_editor.js",
+      "player_editor_ui.js",
       "index.html",
       "app.js",
       "schema.sql",

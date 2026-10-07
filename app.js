@@ -2508,6 +2508,27 @@ let currentCalendar = [];
             club_name: `${getMostCommonClubName() || 'My Club'} Academy`,
             wage: 0
           };
+          // The academy export only carries overall, so every attribute used to fall back to it. The player
+          // editor export (player_editor_sync.lua) has the real values for academy players; use them when present.
+          if (window.api && window.api.getPlayerEditorState) {
+            try {
+              const editorState = await window.api.getPlayerEditorState(academyPlayer.player_id);
+              const g = editorState && editorState.state && editorState.state.state;
+              if (g && g.finishing !== undefined) {
+                player.attributes = {
+                  acceleration: g.acceleration, sprint_speed: g.sprintspeed, finishing: g.finishing, long_shots: g.longshots,
+                  shot_power: g.shotpower, positioning: g.positioning, penalties: g.penalties, volleys: g.volleys,
+                  short_passing: g.shortpassing, vision: g.vision, crossing: g.crossing, long_passing: g.longpassing,
+                  curve: g.curve, fk_accuracy: g.freekickaccuracy, dribbling: g.dribbling, ball_control: g.ballcontrol,
+                  agility: g.agility, balance: g.balance, marking: g.defensiveawareness, standing_tackle: g.standingtackle,
+                  interceptions: g.interceptions, heading_accuracy: g.headingaccuracy, sliding_tackle: g.slidingtackle,
+                  strength: g.strength, stamina: g.stamina, aggression: g.aggression, jumping: g.jumping,
+                  reactions: g.reactions, composure: g.composure,
+                  diving: g.gkdiving, handling: g.gkhandling, kicking: g.gkkicking, gk_positioning: g.gkpositioning, reflexes: g.gkreflexes
+                };
+              }
+            } catch (e) { /* no editor data yet: keep the overall fallback */ }
+          }
         }
       }
 
@@ -3039,6 +3060,7 @@ let currentCalendar = [];
               <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                 <span class="badge">Height: ${formatHeight(player.height)}</span>
                 <span class="badge">Weight: ${formatWeight(player.weight)}</span>
+                <span id="profile-edit-player-slot"></span>
                 ${player.__clubStatus === 'loan' ? `<span class="badge" style="background:#388bfd22; border-color:#388bfd55; color:#58a6ff;">Loaned to ${player.club_name || 'Unknown Club'} until ${(activeLoanInfo && activeLoanInfo.endLabel) || formatDateMMDDYYYY(player.loan_date_end)}${(activeLoanInfo && activeLoanInfo.lengthLabel) ? ` (${activeLoanInfo.lengthLabel})` : ''} ${player.is_loan_to_buy ? '[Option to Buy]' : ''}</span>` : ''}
                 ${player.injury ? `<span class="injury-badge">INJURED</span>` : ''}
               </div>
@@ -3237,6 +3259,10 @@ let currentCalendar = [];
           </div>
         </div>
       `;
+
+      if (window.PlayerEditorUI && player.player_id) {
+        window.PlayerEditorUI.attachButton(player.player_id, document.getElementById('profile-edit-player-slot'));
+      }
 
       document.getElementById('main-nav-tabs').style.display = 'none';
       switchTab('profile');
@@ -3696,6 +3722,7 @@ let currentCalendar = [];
           // Academy promotions are always free — "N/A" instead of
           // "Unknown" distinguishes "there's deliberately no fee" from
           // "we don't have fee data for this external signing".
+          is_academy: !!p.is_academy,
           fee: p.is_academy ? null : getTransferFeeForPlayer(p.player_id),
           feeDisplay: p.is_academy ? 'N/A' : null,
           season_label: p.signed_season || null
@@ -3710,6 +3737,124 @@ let currentCalendar = [];
         currentTransferSortColumn = column;
         transferSortAscending = true;
       }
+      filterAndRenderTransfers();
+    }
+
+    // ---- Loaned view: release players the game still lists as loaned out ----
+    // Releasing = Live Editor ends the loan, then releases the player from the club (player_editor_sync.lua,
+    // F11). It changes the save, so it is behind a confirm and a selection, never one click.
+    let releaseSelection = new Set();
+    let releaseShown = []; // [{ id, name }] currently listed in the Loaned view
+    let releaseBusy = false;
+
+    function updateReleaseBar() {
+      const btn = document.getElementById('transfer-release-btn');
+      if (btn) {
+        btn.textContent = `Release in game (${releaseSelection.size})`;
+        btn.disabled = releaseBusy || releaseSelection.size === 0;
+      }
+      const appBtn = document.getElementById('transfer-remove-app-btn');
+      if (appBtn) {
+        appBtn.textContent = `Remove from app (${releaseSelection.size})`;
+        appBtn.disabled = releaseBusy || releaseSelection.size === 0;
+      }
+      const gradBtn = document.getElementById('transfer-graduate-btn');
+      if (gradBtn) {
+        gradBtn.textContent = `🎓 Mark selected as Academy Graduates (${releaseSelection.size})`;
+        gradBtn.disabled = releaseSelection.size === 0;
+      }
+    }
+
+    // Loaned view, app-only: stop tracking the selected players here. The game is not touched (that is
+    // "Release in game"), and the players stay hidden across syncs until "Restore hidden".
+    async function removeSelectedFromApp() {
+      if (!currentSaveId || !window.api || !window.api.removePlayersFromApp || releaseSelection.size === 0) return;
+      const picked = releaseShown.filter(r => releaseSelection.has(r.id));
+      if (picked.length === 0) return;
+      const names = picked.slice(0, 12).map(r => r.name).join(', ') + (picked.length > 12 ? `, +${picked.length - 12} more` : '');
+      if (!confirm(`Remove ${picked.length} player${picked.length > 1 ? 's' : ''} from the app?\n\n${names}\n\nThis only changes this app: their records here are deleted and they stay hidden after future syncs. Nothing changes in the game. You can bring them back with "Restore hidden".`)) return;
+      const status = document.getElementById('transfer-release-status');
+      const result = await window.api.removePlayersFromApp(picked.map(r => r.id), currentSaveId);
+      releaseSelection = new Set();
+      if (result && result.success) {
+        if (status) { status.textContent = `Removed ${result.removed} player${result.removed > 1 ? 's' : ''} from the app. The game was not changed.`; status.style.color = '#3fb950'; }
+        await refreshSquadAfterHeadshotChange(); // re-fetches current + former players
+        await refreshSignedPlayers();
+      } else if (status) { status.textContent = 'Could not remove the selected players.'; status.style.color = '#f85149'; }
+      refreshRestoreHiddenButton();
+    }
+
+    async function refreshRestoreHiddenButton() {
+      const btn = document.getElementById('transfer-restore-btn');
+      if (!btn || !currentSaveId || !window.api || !window.api.getIgnoredPlayerCount) return;
+      const n = await window.api.getIgnoredPlayerCount(currentSaveId);
+      btn.textContent = `Restore hidden (${n})`;
+      btn.dataset.count = String(n);
+      const filterEl = document.getElementById('transfer-filter');
+      btn.style.display = (n > 0 && filterEl && filterEl.value === 'loaned') ? '' : 'none';
+    }
+
+    async function restoreHiddenPlayers() {
+      if (!currentSaveId || !window.api || !window.api.restoreIgnoredPlayers) return;
+      if (!confirm('Show all players you removed from the app again? They come back on the next sync.')) return;
+      await window.api.restoreIgnoredPlayers(currentSaveId);
+      const status = document.getElementById('transfer-release-status');
+      if (status) { status.textContent = 'Hidden players restored. They will reappear on the next sync (use Refresh).'; status.style.color = '#3fb950'; }
+      refreshRestoreHiddenButton();
+    }
+
+    // Signed view: flag the selected players as academy graduates (same fail-safe as the profile page's
+    // "Mark as Academy Graduate" button, for many players at once).
+    async function markSelectedAcademyGraduates() {
+      if (!currentSaveId || !window.api || !window.api.markAcademyGraduates || releaseSelection.size === 0) return;
+      const picked = releaseShown.filter(r => releaseSelection.has(r.id));
+      if (picked.length === 0) return;
+      const status = document.getElementById('transfer-release-status');
+      const result = await window.api.markAcademyGraduates(picked.map(r => r.id), currentSaveId);
+      if (result && result.success) {
+        releaseSelection = new Set();
+        if (status) { status.textContent = `Marked ${picked.length} player${picked.length > 1 ? 's' : ''} as academy graduates.`; status.style.color = '#3fb950'; }
+        await refreshSignedPlayers();
+      } else if (status) { status.textContent = 'Could not mark the selected players.'; status.style.color = '#f85149'; }
+    }
+
+    function toggleReleaseSelect(playerId, checked) {
+      if (checked) releaseSelection.add(playerId); else releaseSelection.delete(playerId);
+      updateReleaseBar();
+    }
+
+    function toggleReleaseSelectAll(checked) {
+      releaseSelection = checked ? new Set(releaseShown.filter(r => r.selectable !== false).map(r => r.id)) : new Set();
+      document.querySelectorAll('#transfers-tbody input[data-release-id]:not(:disabled)').forEach(cb => { cb.checked = checked; });
+      updateReleaseBar();
+    }
+
+    async function releaseSelectedLoaned() {
+      if (releaseBusy || releaseSelection.size === 0 || !window.api || !window.api.releaseLoanedPlayers) return;
+      const picked = releaseShown.filter(r => releaseSelection.has(r.id));
+      if (picked.length === 0) return;
+      const names = picked.slice(0, 12).map(r => r.name).join(', ') + (picked.length > 12 ? `, +${picked.length - 12} more` : '');
+      if (!confirm(`Release ${picked.length} loaned-out player${picked.length > 1 ? 's' : ''}?
+
+${names}
+
+Live Editor will end each loan and then release the player from your club to free agents. This changes your save and cannot be undone from this app, so back up your save first. It is sent to Live Editor automatically by hotkey (F11), so the game needs to be running.`)) return;
+      const status = document.getElementById('transfer-release-status');
+      releaseBusy = true; updateReleaseBar();
+      if (status) status.textContent = 'Releasing in the game…';
+      let res;
+      try { res = await window.api.releaseLoanedPlayers(picked.map(r => r.id)); }
+      catch (e) { res = { success: false, error: String((e && e.message) || e) }; }
+      releaseBusy = false;
+      const nameOf = id => (picked.find(r => r.id === id) || {}).name || id;
+      const results = (res && res.results) || [];
+      const ok = results.filter(r => r.ok), bad = results.filter(r => !r.ok);
+      let msg = res && res.success === false && !results.length ? res.error : `Released ${ok.length} of ${picked.length}.`;
+      if (bad.length) msg += ' Failed: ' + bad.map(r => `${nameOf(r.player_id)} (${r.error})`).join('; ');
+      if (res && res.success === false && results.length) msg += ' ' + res.error;
+      if (status) { status.textContent = msg; status.style.color = bad.length || (res && res.success === false) ? '#f85149' : '#3fb950'; }
+      releaseSelection = new Set();
+      updateReleaseBar();
       filterAndRenderTransfers();
     }
 
@@ -3792,8 +3937,27 @@ let currentCalendar = [];
         }
       }
 
+      const isLoanedView = view === 'loaned';
+      const isSignedView = view === 'signed';
+      const hasSelectColumn = isLoanedView || isSignedView;
+      const releaseBar = document.getElementById('transfer-release-bar');
+      const selectHeader = document.getElementById('transfer-select-header');
+      const releaseBtnEl = document.getElementById('transfer-release-btn');
+      const gradBtnEl = document.getElementById('transfer-graduate-btn');
+      if (releaseBar) releaseBar.style.display = hasSelectColumn ? 'flex' : 'none';
+      if (selectHeader) selectHeader.style.display = hasSelectColumn ? '' : 'none';
+      if (releaseBtnEl) releaseBtnEl.style.display = isLoanedView ? '' : 'none';
+      const removeAppBtnEl = document.getElementById('transfer-remove-app-btn');
+      if (removeAppBtnEl) removeAppBtnEl.style.display = isLoanedView ? '' : 'none';
+      refreshRestoreHiddenButton();
+      if (gradBtnEl) gradBtnEl.style.display = isSignedView ? '' : 'none';
+      // Signed: players already flagged as academy graduates have nothing to mark, so they are not selectable.
+      releaseShown = hasSelectColumn ? rows.map(t => ({ id: t.player_id, name: t.player_name, selectable: !(isSignedView && t.is_academy) })) : [];
+      releaseSelection = new Set([...releaseSelection].filter(id => releaseShown.some(r => r.id === id)));
+      updateReleaseBar();
+
       if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="empty-state">No ${view} players found.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${hasSelectColumn ? 9 : 8}" class="empty-state">No ${view} players found.</td></tr>`;
         return;
       }
 
@@ -3801,6 +3965,7 @@ let currentCalendar = [];
         const posInfo = getPositionInfo(t.position_id);
         return `
         <tr class="transfer-row">
+          ${hasSelectColumn ? `<td><input type="checkbox" data-release-id="${t.player_id}" ${isSignedView && t.is_academy ? 'disabled title="Already an academy graduate"' : ''} ${releaseSelection.has(t.player_id) ? 'checked' : ''} onchange="toggleReleaseSelect(${t.player_id}, this.checked)"></td>` : ''}
           <td>
             <span style="display: inline-flex; align-items: center; gap: 6px;">
               ${buildPlayerAvatarHtml({ name: t.player_name, headshot_path: t.headshot_path }, 34, '50%')}
@@ -7236,6 +7401,11 @@ let currentCalendar = [];
     // still bust or might be special."
     const YOUTH_REVEAL_HIGH_OFFSET_FRACTION = 0.2;
 
+    // Display switch only. true = show every player's actual potential; false = the Youth Mode reveal ranges
+    // below (all the reveal calculations stay in place and still run, they are just not what is shown).
+    // Nothing else reads this: thresholds, sorting and value estimates always used the real potential.
+    const SHOW_TRUE_POTENTIAL = true;
+
     // Only the DISPLAYED text changes here — every threshold/sort/filter
     // elsewhere in the app keeps using the real potential value, this is
     // purely cosmetic obfuscation for the human reading the screen.
@@ -7261,7 +7431,7 @@ let currentCalendar = [];
     function formatPotentialDisplay(player, careerStats) {
       const potential = Number(player.potential || 0);
       if (!potential) return '—';
-      if (!currentYouthModeEnabled) return String(potential);
+      if (!currentYouthModeEnabled || SHOW_TRUE_POTENTIAL) return String(potential);
 
       const stats = careerStats || player;
       const tier = player.youth_reveal_tier || 4;
@@ -7295,8 +7465,11 @@ let currentCalendar = [];
     function formatAcademyPotentialDisplay(academyPlayer) {
       let low = Number(academyPlayer.potential_low || 0);
       let high = Number(academyPlayer.potential_high || 0);
+      // academyPlayer.potential is the player's actual potential, filled in by getYouthAcademy (main.js) from the
+      // player editor sync data; when it is missing the game's own low-high range is shown instead.
+      if (SHOW_TRUE_POTENTIAL && Number(academyPlayer.potential || 0)) return String(Number(academyPlayer.potential));
       if (!low && !high) return '—';
-      if (!currentYouthModeEnabled) return `${low}-${high}`;
+      if (!currentYouthModeEnabled || SHOW_TRUE_POTENTIAL) return `${low}-${high}`;
 
       const gameWidth = high - low;
       const tier = findPyramidTier(getPrimaryLeagueName());

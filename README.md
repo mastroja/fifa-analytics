@@ -62,6 +62,14 @@ This companion app gets all its data from `assets/export_all.lua`
      ```
 3. Assign it to **F10**.
 
+## 4b. Player editor hotkey (optional): bind F11
+
+The in-app **Edit player** feature (generic / regen / academy players) talks to the game through a second Live Editor script, `assets/lua/player_editor_sync.lua`. The app presses its hotkey when you open the editor (refresh values) and when you press Save (write your edits to the game).
+
+1. In Live Editor's Lua Engine / Hotkeys, add `assets/lua/player_editor_sync.lua` (same folder as `export_all.lua`).
+2. Assign it to **F11**. Keep `export_all.lua` on F10; F10 stays read-only, F11 is the only hotkey that writes.
+3. That's all: you never run the Lua by hand. Edit player, Save and the Transfer Hub's Release button all go through this hotkey.
+
 ## 5. Verifying a fresh setup works end to end
 
 1. Launch the game via Live Editor's launcher (step 3).

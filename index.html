@@ -1397,10 +1397,20 @@
          changeTransferSeason). -->
     <div id="transfer-hub-total" style="font-size: 13px; color: var(--text-dim); margin-bottom: 10px; display: none;"></div>
 
+    <!-- Loaned view only: release players the game still lists as loaned out (see releaseSelectedLoaned in app.js) -->
+    <div id="transfer-release-bar" style="display: none; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap;">
+      <button id="transfer-remove-app-btn" class="refresh-btn" onclick="removeSelectedFromApp()" disabled style="display: none;" title="App only: stop tracking the selected players in this app. The game is not changed, and they stay hidden here even though the game still lists them.">Remove from app (0)</button>
+      <button id="transfer-release-btn" class="refresh-btn" onclick="releaseSelectedLoaned()" disabled style="border-color: #f85149; color: #f85149;" title="In the game: ends the loan and releases the player to free agents (sent to Live Editor by hotkey).">Release in game (0)</button>
+      <button id="transfer-restore-btn" class="refresh-btn" onclick="restoreHiddenPlayers()" style="display: none;" title="Show the players you removed from the app again (they return on the next sync).">Restore hidden (0)</button>
+      <button id="transfer-graduate-btn" class="refresh-btn" onclick="markSelectedAcademyGraduates()" disabled style="display: none;" title="Marks the selected players as academy graduates: their transfer history and from club become your Academy. Use it when automatic detection missed a promotion.">🎓 Mark selected as Academy Graduates (0)</button>
+      <span id="transfer-release-status" style="font-size: 13px; color: var(--text-dim);"></span>
+    </div>
+
     <div class="table-container">
       <table>
         <thead>
           <tr>
+            <th id="transfer-select-header" style="display: none; width: 34px;"><input type="checkbox" onclick="toggleReleaseSelectAll(this.checked)" title="Select all shown"></th>
             <th onclick="sortTransfers('player_name')">Player ↕</th>
             <th onclick="sortTransfers('position_id')">Pos ↕</th>
             <th onclick="sortTransfers('age')">Age ↕</th>
@@ -1759,5 +1769,6 @@
   <div id="season-overview-print"></div>
 
   <script src="app.js"></script>
+  <script src="player_editor_ui.js"></script>
 </body>
 </html>

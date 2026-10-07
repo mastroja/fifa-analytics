@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS players (
     -- in index.html for what this actually controls.
     youth_reveal_tier INTEGER,
     -- Real field from the game's own "players" table (see
-    -- export_squad.lua/export_all.lua) — a 1-10 skin tone lightness
+    -- export_squad.lua/export_all.lua) — a 1-10 skin tone lightness (the FC 27 game field is 10-100; main.js normalizeSkintoneCode folds it to 1-10)
     -- value (1 = palest, 10 = darkest; confirmed empirically against real
     -- players via assets/inspect_skintone.lua, not documented anywhere by
     -- Live Editor). Used only to bucket which local headshot photo to
@@ -784,4 +784,45 @@ CREATE TABLE IF NOT EXISTS news_race_leaders (
     stat_value INTEGER NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (season_id, category)
+);
+
+-- Player editor (generic / regen / academy players only; see PLAYER_EDITOR_DESIGN.md and
+-- player_editor.js). player_editor_state is the latest editable-column snapshot exported by
+-- assets/lua/export_player_editor.lua, stored as JSON keyed by the game's own column names so
+-- adding an editable column never needs a migration. editable = 1 only for non-scanned heads.
+CREATE TABLE IF NOT EXISTS player_editor_state (
+    player_id INTEGER NOT NULL,
+    save_id INTEGER NOT NULL,
+    name TEXT,
+    source TEXT,            -- 'squad' | 'academy'
+    editable INTEGER NOT NULL DEFAULT 0,
+    state_json TEXT NOT NULL,
+    save_uid TEXT,           -- GetSaveUID of the career that exported it
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (player_id, save_id)
+);
+
+-- One row per Save in the editor (old/new hold ONLY the changed game columns); doubles as undo
+-- history. status: queued -> applied | failed; an applied edit becomes undone once reverted.
+CREATE TABLE IF NOT EXISTS player_edits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,
+    save_id INTEGER NOT NULL,
+    old_json TEXT NOT NULL,
+    new_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    applied_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_player_edits_player ON player_edits(player_id, save_id);
+
+-- Players the user removed from the app only (Transfer Hub > Loaned > "Remove from app"). The game is not
+-- touched; importFifaData skips these ids for that save so a later sync does not bring them back.
+-- "Restore hidden" deletes the rows, and the players reappear on the next sync.
+CREATE TABLE IF NOT EXISTS ignored_players (
+    player_id INTEGER NOT NULL,
+    save_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (player_id, save_id)
 );
