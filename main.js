@@ -43,6 +43,7 @@ const watchlistInputPath = 'C:\\Users\\Public\\ea_fc_watchlist_input.json';
 const watchlistStatusPath = 'C:\\Users\\Public\\ea_fc_watchlist_status.json';
 const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
 const playerEditor = require('./player_editor');
+const dynamicLook = require('./dynamic_look');
 const leagueStatsExportPath = 'C:\\Users\\Public\\ea_fc_league_stats_export.json';
 
 // activeSaveId/currentSeasonId track whichever save/season the app is
@@ -6173,6 +6174,44 @@ ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
 playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
 playerEditor.register(ipcMain);
+
+// Dynamic player look (dynamic_look.js): monthly appearance changes, applied through the F11 editor sync.
+let lastKnownGameDate = null; // 'YYYY-MM-DD' from the latest squad export
+function editorStateStamp(saveId) {
+  const r = db.exec(`SELECT MAX(updated_at) FROM player_editor_state WHERE save_id = ${Number(saveId)};`);
+  return r.length ? r[0].values[0][0] : null;
+}
+function queuedEditCount(saveId) {
+  const r = db.exec(`SELECT COUNT(*) FROM player_edits WHERE save_id = ${Number(saveId)} AND status = 'queued';`);
+  return r.length ? r[0].values[0][0] : 0;
+}
+async function waitFor(check, timeoutMs) {
+  for (let waited = 0; waited < timeoutMs; waited += 400) {
+    await new Promise(r => setTimeout(r, 400));
+    if (check()) return true;
+  }
+  return false;
+}
+dynamicLook.instance.configure({
+  getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, playerEditor,
+  getCatalog: () => playerEditor.getCatalog(), getBootLinks: () => playerEditor.getBootLinks(),
+  getCurrentDate: () => lastKnownGameDate,
+  // press F11 and wait until the game's fresh export has been imported
+  pressSync: async () => {
+    const saveId = activeSaveId, before = editorStateStamp(saveId);
+    if (!(await triggerLiveEditorRefresh(true, 'F11'))) return false;
+    return waitFor(() => editorStateStamp(saveId) !== before, 12000);
+  },
+  // press F11 and wait until the write log for the queued edits has been processed
+  pressApply: async () => {
+    const saveId = activeSaveId, before = queuedEditCount(saveId);
+    if (!(await triggerLiveEditorRefresh(true, 'F11'))) return false;
+    return waitFor(() => queuedEditCount(saveId) < before, 15000);
+  },
+  notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dynamic-look-updated', payload); },
+  log: msg => console.log(msg)
+});
+dynamicLook.register(ipcMain);
 ipcMain.handle('enable-youth-mode', (_event, saveId) => enableYouthMode(saveId));
 ipcMain.handle('clear-former-players', (_event, saveId) => clearFormerPlayers(saveId));
 ipcMain.handle('get-pending-season-review', (_event, saveId) => getPendingSeasonReview(saveId));
@@ -6330,6 +6369,9 @@ app.whenReady().then(async () => {
         const { data: jsonPayload } = await readJsonFileWithRetry(squadExportPath);
 
         importFifaData(jsonPayload);
+        if (jsonPayload.current_date) lastKnownGameDate = jsonPayload.current_date;
+        dynamicLook.instance.onSquadSync({ saveId: activeSaveId, currentDate: jsonPayload.current_date })
+          .catch(err => console.error('[DynamicLook] sync hook failed:', err));
         const squadData = getSquadFromDB();
 
         if (mainWindow && !mainWindow.isDestroyed()) {

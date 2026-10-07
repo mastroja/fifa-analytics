@@ -247,6 +247,7 @@ function handleWriteLog(payload) {
     n++;
   });
   ctx.saveDatabaseToDisk();
+  try { writePendingFile(); } catch (e) { /* the next edit rewrites it */ } // the next batch (max 25 per run) of anything still queued
   return n;
 }
 
@@ -307,6 +308,6 @@ function register(ipcMain) {
 }
 
 module.exports = {
-  configure, register, importEditorExport, handleWriteLog, validateChanges, queueEdit, undoEdit,
+  configure, register, importEditorExport, handleWriteLog, validateChanges, queueEdit, undoEdit, getCatalog, getBootLinks, writePendingFile,
   EXPORT_PATH, WRITE_LOG_PATH, PENDING_PATH, FIELD_LIMITS, ATTRIBUTES
 };

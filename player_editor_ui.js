@@ -66,7 +66,7 @@
   const EYE_SWATCH = { 1: '#3b7dd8', 2: '#86bdea', 3: '#7a4a21', 4: '#a8743a', 5: '#8a6a2f', 6: '#3f8f4f', 7: '#93d093', 8: '#4a86cf', 9: '#3a2314', 10: '#1fa845' };
   const SKIN_SWATCH = { 10: '#f6d9c5', 20: '#efc7a8', 30: '#e2b08a', 40: '#d19a6b', 50: '#bf8456', 60: '#a46f46', 70: '#8a5a38', 80: '#6e4529', 90: '#573520', 100: '#3f2616' };
 
-  const TABS = [['look', 'Head'], ['body', 'Body'], ['kit', 'Kit & accessories'], ['boots', 'Boots'], ['ratings', 'Ratings'], ['pos', 'Positions'], ['play', 'Playstyles'], ['hist', 'History']];
+  const TABS = [['look', 'Head'], ['body', 'Body'], ['kit', 'Kit & accessories'], ['boots', 'Boots'], ['ratings', 'Ratings'], ['pos', 'Positions'], ['play', 'Playstyles'], ['dyn', 'Dynamic look'], ['hist', 'History']];
 
   let ed = null; // open editor session
   let staticData = null;
@@ -182,6 +182,8 @@
       .pe-chip { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--expand-bg); color: inherit; font-size: 12px; cursor: pointer; }
       .pe-chip:hover { border-color: var(--accent-color); }
       .pe-chip.was { border-style: dashed; }
+      .pe-dyn-feat { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border-color); cursor: pointer; }
+      .pe-dyn-switch { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
       .pe-randbar { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
       .pe-randbar .pe-chip { padding: 7px 16px; font-size: 13px; }
       .pe-chip.on { background: var(--accent-color); color: #0d1117; border-color: var(--accent-color); font-weight: 600; }
@@ -519,6 +521,36 @@
       <div class="pe-card"><h3>Personality &amp; AI traits</h3><div class="pe-ps-grid">${traits}</div></div>`;
   }
 
+  // ---------- dynamic look ----------
+  // Global for the save (not just this player): every editable player may change a little each in-game month.
+  const DYN_FEATURES = [
+    ['hair', 'Haircuts and new styles', 'Younger players change more often; styles stay within the ones suggested for their skin tone, and long hair usually gets cut.'],
+    ['beard', 'Beard growth and shaving', 'Adults can grow stubble into a full beard over months, trim it, or shave it off. About a third never grow one.'],
+    ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months; veterans from 35 slowly go silver.'],
+    ['boots', 'Boots', 'Mostly new-season switches, usually staying with the same brand. Only boots linked to a game id are used.'],
+    ['accessories', 'Accessories', 'Tape, wristbands and gloves come and go.']
+  ];
+  function tabDynamic() {
+    const d = ed.dyn;
+    if (!d) return `<div class="pe-card"><h3>Dynamic look</h3><p>Loading…</p></div>`;
+    const s = d.settings || { enabled: false, features: {}, lastMonth: null };
+    const feats = DYN_FEATURES.map(([k, label, hint]) => `<label class="pe-dyn-feat"><input type="checkbox" data-dyn-feature="${k}"${s.features[k] !== false ? ' checked' : ''}${s.enabled ? '' : ' disabled'}>
+      <span><b>${esc(label)}</b><br><span class="pe-hint">${esc(hint)}</span></span></label>`).join('');
+    const log = (d.log || []).length
+      ? d.log.map(l => `<div class="pe-hist-row"><span><b>${esc(l.player_name)}</b> · ${esc(l.summary)} <span class="pe-hint">(${esc(l.game_month)})</span></span>
+          <span class="pe-st ${esc(l.status || 'queued')}">${esc(l.status || 'queued')}</span></div>`).join('')
+      : '<div class="pe-hint">Nothing has changed yet.</div>';
+    return `<div class="pe-card"><h3>Dynamic player look</h3>
+        <p>Every in-game month, each editable player (your squad and academy generics) may change a little. Changes are queued as normal edits and applied automatically through the F11 hotkey, so the game window comes forward briefly once a month. This applies to the whole save, not just this player.</p>
+        <label class="pe-dyn-switch"><input type="checkbox" data-dyn-enabled${s.enabled ? ' checked' : ''}> <b>Update looks automatically each month</b></label>
+        <div class="pe-hint" style="margin:6px 0 14px">${s.lastMonth ? `Last month played out: ${esc(s.lastMonth)}.` : 'Starts counting from the next in-game month after you turn it on.'}</div>
+        ${feats}
+        <div class="pe-row" style="margin-top:14px"><button class="pe-btn" data-dyn-run${s.enabled || true ? '' : ' disabled'}>Run this month now</button>
+          <span class="pe-hint" style="align-self:center">Plays the current in-game month with fresh randomness and applies it to the game now. Useful for trying it out.</span></div>
+        ${d.msg ? `<div class="pe-msg ${d.msgKind || ''}" style="margin-bottom:10px">${esc(d.msg)}</div>` : ''}</div>
+      <div class="pe-card"><h3>Recent changes</h3>${log}</div>`;
+  }
+
   function tabHistory() {
     if (!ed.edits.length) return `<div class="pe-card"><h3>History</h3><p>No edits yet for this player.</p></div>`;
     const rows = ed.edits.slice(0, 20).map(e => {
@@ -552,7 +584,7 @@
     const prevScroll = panel ? panel.scrollTop : 0;
     const prevTab = panel ? panel.dataset.tab : null;
     const changes = changedKeys();
-    const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, hist: tabHistory }[ed.tab]();
+    const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, dyn: tabDynamic, hist: tabHistory }[ed.tab]();
     const staleBanner = ed.stale ? `<div class="pe-banner">${esc(ed.stale)}</div>` : '';
     dlg.innerHTML = `<div class="pe-shell">
       <div class="pe-top">
@@ -739,14 +771,28 @@
     render();
   }
 
+  async function loadDynamic() {
+    if (!api().getDynamicLook) return;
+    const r = await api().getDynamicLook();
+    ed.dyn = Object.assign({}, ed.dyn || {}, r);
+    if (ed && ed.tab === 'dyn') render();
+  }
+
   // ---------- events ----------
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.hasAttribute('data-dyn-run')) {
+        ed.dyn = Object.assign({}, ed.dyn, { msg: 'Running… the game window will come forward briefly.', msgKind: '' }); render();
+        const res = await api().runDynamicLookNow();
+        ed.dyn.msg = res && res.success ? `Done: ${res.changed} player${res.changed === 1 ? '' : 's'} changed.` : ((res && res.error) || 'Failed.');
+        ed.dyn.msgKind = res && res.success ? 'ok' : 'err';
+        await loadDynamic(); render(); return;
+      }
       if (t.dataset.random) { randomize(t.dataset.random); return; }
       if (t.dataset.unlink) {
         const r = await api().setBootLink(t.dataset.unlink, null);
@@ -769,7 +815,7 @@
       if (t.hasAttribute('data-save')) { await save(); return; }
       if (t.hasAttribute('data-toggle-gk')) { ed.showGk = !ed.showGk; render(); return; }
       if (t.hasAttribute('data-reset')) { ed.cur = Object.assign({}, ed.baseline); ed.orig = Object.assign({}, ed.baseline); ed.overallTouched = false; ed.msg = ''; render(); return; }
-      if (t.dataset.tab) { ed.tab = t.dataset.tab; render(); return; }
+      if (t.dataset.tab) { ed.tab = t.dataset.tab; render(); if (ed.tab === 'dyn') await loadDynamic(); return; }
       if (t.dataset.set) { const [k, v] = t.dataset.set.split(':'); ed.openDd = null; setValue(k, v); return; }
       if (t.dataset.filter) {
         const [kind, group, val] = t.dataset.filter.split(':');
@@ -796,9 +842,11 @@
       ed.focusBootQ = true;
       render();
     });
-    dlg.addEventListener('change', (e) => {
+    dlg.addEventListener('change', async (e) => {
       if (!ed) return;
       const el = e.target;
+      if (el.hasAttribute('data-dyn-enabled')) { const r = await api().setDynamicLook({ enabled: el.checked }); if (r && r.success) ed.dyn.settings = r.settings; render(); return; }
+      if (el.dataset.dynFeature) { const r = await api().setDynamicLook({ features: { [el.dataset.dynFeature]: el.checked } }); if (r && r.success) ed.dyn.settings = r.settings; render(); return; }
       if (el.dataset.num) setValue(el.dataset.num, el.value);
       else if (el.dataset.sel) setValue(el.dataset.sel, el.value);
       else if (el.dataset.trait2) { ed.cur.trait2 = setBit(ed.cur.trait2, Number(el.dataset.trait2), el.checked); ed.msg = ''; render(); }

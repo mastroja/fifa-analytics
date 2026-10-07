@@ -826,3 +826,35 @@ CREATE TABLE IF NOT EXISTS ignored_players (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (player_id, save_id)
 );
+
+-- Dynamic player look (dynamic_look.js): once per in-game month, editable players may change hair, beard, hair colour,
+-- boots and accessories. Settings are per save; last_month is the last in-game month already played out.
+CREATE TABLE IF NOT EXISTS dynamic_look_settings (
+    save_id INTEGER PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    features_json TEXT,
+    last_month TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Per-player memory the monthly rules need: the natural hair colour (so a dye job can grow out) and when a dye ends
+-- (an absolute month index: year * 12 + month - 1).
+CREATE TABLE IF NOT EXISTS dynamic_look_players (
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    natural_haircolor INTEGER,
+    dyed_until INTEGER,
+    PRIMARY KEY (save_id, player_id)
+);
+
+-- What the monthly update did, one row per player per run, linked to the editor edit that carries the change.
+CREATE TABLE IF NOT EXISTS dynamic_look_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT,
+    game_month TEXT,
+    summary TEXT,
+    edit_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
