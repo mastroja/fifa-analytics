@@ -358,8 +358,7 @@
     jerseysleevelengthcode: [[0, 'Short'], [1, 'Long'], [2, 'Long + turtleneck'], [3, 'Seasonal undershirt'], [4, 'Seasonal undershirt + turtleneck']],
     jerseyfit: [[0, 'Normal'], [1, 'Tight'], [2, 'Team kit fit']],
     jerseystylecode: [[0, 'Tucked in'], [1, 'Untucked']],
-    socklengthcode: [[1, 'Short'], [3, 'Low'], [0, 'Medium'], [2, 'Long']],
-    sockstylecode: [[0, 'No shin pad'], [1, 'Regular'], [2, 'Small shin pad'], [3, 'Micro shin pad'], [5, 'One hole'], [6, 'Two holes'], [7, 'Three holes'], [8, 'Multi holes']]
+    socklengthcode: [[1, 'Short'], [3, 'Low'], [0, 'Medium'], [2, 'Long']]
   };
   function kitChips(key) {
     const cur = ed.cur[key], orig = ed.orig[key];
@@ -377,8 +376,7 @@
         <div class="pe-hint" style="margin-top:10px">Kit fit</div>${kitChips('jerseyfit')}
         <div class="pe-hint" style="margin-top:10px">Tucking</div>${kitChips('jerseystylecode')}</div>
       <div class="pe-card"><h3>Socks</h3>
-        <div class="pe-hint">Sock length</div>${kitChips('socklengthcode')}
-        <div class="pe-hint" style="margin-top:10px">Shin pads</div>${kitChips('sockstylecode')}</div>
+        <div class="pe-hint">Sock length</div>${kitChips('socklengthcode')}</div>
       <div class="pe-card"><h3>Accessories</h3><p>Hand tape, wristbands, gloves and the like. Only accessories seen in the game's data are offered; some can only be white.</p>${acc}</div>`;
   }
 

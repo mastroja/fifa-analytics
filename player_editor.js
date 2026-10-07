@@ -42,7 +42,7 @@ const FIELD_LIMITS = {
   accessorycolourcode1: [0, 99], accessorycolourcode2: [0, 99], accessorycolourcode3: [0, 99], accessorycolourcode4: [0, 99],
   bodytypecode: [1, 11], height: [140, 220], weight: [40, 120],
   shoetypecode: [0, 562],
-  jerseyfit: [0, 2], jerseysleevelengthcode: [0, 4], jerseystylecode: [0, 1], socklengthcode: [0, 3], sockstylecode: [0, 8]
+  jerseyfit: [0, 2], jerseysleevelengthcode: [0, 4], jerseystylecode: [0, 1], socklengthcode: [0, 3]
 };
 ATTRIBUTES.forEach(a => { FIELD_LIMITS[a] = [1, 99]; });
 
