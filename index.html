@@ -1179,7 +1179,7 @@
       color: #3fb950;
     }
 
-    /* Challenge Mode — Home card, header chip, Transfers Hub banners and
+    /* Challenge Mode — Home card, Transfers Hub banners and
        slide-over drawer. All fed by one status object (see js/challenge.js
        and renderChallengeUI in js/app.js). */
     .challenge-chip {
@@ -3503,10 +3503,6 @@
       <div class="home-ticker-track" id="home-ticker-track"></div>
     </div>
 
-    <div class="challenge-card" id="challenge-card" style="display: none;" onclick="openChallengeDrawer()"></div>
-
-    <div class="youth-mode-warning-banner" id="youth-mode-warning-banner" style="display: none;"></div>
-
     <!-- Unskippable PlayStyle-development alert — see renderPlaystyleAlerts.
          Deliberately no "Clear"/dismiss button (unlike the youth warning
          banner above): a win is auto-recorded in the companion app the
@@ -3536,6 +3532,29 @@
       <div class="profile-card home-widget" style="cursor: pointer;" onclick="switchTab('calendar')">
         <h3><span id="home-league-table-title">League Table</span></h3>
         <div id="home-league-table-body"></div>
+      </div>
+    </div>
+
+    <!-- One Youth Mode strip (below the match/table row): Challenge status,
+         the over-the-cap warning and Overall Cap Watch share a single
+         slot instead of three. Hidden unless Youth Mode has something to
+         show; the Challenge line collapses to one quiet row when all is
+         clear (see renderChallengeUI / updateYouthStripVisibility). -->
+    <div class="youth-strip" id="youth-strip">
+      <div class="challenge-card" id="challenge-card" style="display: none;" onclick="openChallengeDrawer()"></div>
+      <div class="youth-mode-warning-banner" id="youth-mode-warning-banner" style="display: none;"></div>
+      <!-- Youth Squad Career Mode: forward-looking companion to the
+             warning banner near the top of the page — that banner only
+             fires once the squad is ALREADY over the cap; this flags
+             still-growing players in the range below it, before it becomes
+             a season-end violation. See
+             computeYouthModeDangerZonePlayers/renderYouthModeDangerZone. -->
+      <div class="profile-card home-widget" id="youth-mode-danger-zone-card" style="display: none;">
+        <h3>
+          <span>⚠️ Overall Cap Watch</span>
+          <span class="danger-zone-count-badge" id="youth-mode-danger-zone-count"></span>
+        </h3>
+        <div id="home-danger-zone-body"></div>
       </div>
     </div>
 
@@ -3612,14 +3631,19 @@
       </div>
     </div>
 
-    <div class="home-dashboard-grid home-grid-top">
+    <div class="home-dashboard-grid">
       <div class="profile-card home-widget">
-        <h3><span>Future Stars</span></h3>
+        <h3 style="display: flex; justify-content: space-between; align-items: center;">
+          <span>Youth Pipeline</span>
+          <div class="home-toggle">
+            <button class="home-toggle-btn active" id="youth-pipeline-stars-btn"
+              onclick="setYouthPipelineView('stars')">Future Stars</button>
+            <button class="home-toggle-btn" id="youth-pipeline-academy-btn"
+              onclick="setYouthPipelineView('academy')">Academy</button>
+          </div>
+        </h3>
         <div id="home-youth-body"></div>
-      </div>
-      <div class="profile-card home-widget">
-        <h3><span>Youth Academy</span></h3>
-        <div id="home-youth-academy-body"></div>
+        <div id="home-youth-academy-body" style="display: none;"></div>
       </div>
     </div>
 
@@ -3635,20 +3659,6 @@
     </div>
 
     <div class="home-dashboard-grid home-grid-stats">
-      <!-- Youth Squad Career Mode: forward-looking companion to the
-           warning banner near the top of the page — that banner only
-           fires once the squad is ALREADY over the cap; this flags
-           still-growing players in the range below it, before it becomes
-           a season-end violation. See
-           computeYouthModeDangerZonePlayers/renderYouthModeDangerZone. -->
-      <div class="profile-card home-widget" id="youth-mode-danger-zone-card" style="display: none;">
-        <h3>
-          <span>⚠️ Overall Cap Watch</span>
-          <span class="danger-zone-count-badge" id="youth-mode-danger-zone-count"></span>
-        </h3>
-        <div id="home-danger-zone-body"></div>
-      </div>
-
       <div class="profile-card home-widget">
         <h3><span>Squad Age Profile</span></h3>
         <div id="home-age-profile-body"></div>
