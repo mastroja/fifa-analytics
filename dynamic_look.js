@@ -60,8 +60,11 @@ const NATURAL_COLOURS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 12, 13]);
 const DARK_COLOURS = new Set([0, 3, 5, 6]);
 const DYE_RATE = 0.006;               // monthly, age <= 27, times fashion
 const DYE_MONTHS = [2, 6];            // a dye job lasts this many months, then it grows out to the natural colour
-const DYES_FOR_DARK = [[1, 40], [4, 20], [7, 15], [12, 10], [14, 5], [11, 4], [10, 3], [8, 3]];
-const DYES_FOR_LIGHT = [[0, 30], [3, 20], [7, 15], [14, 10], [11, 10], [10, 5], [8, 5], [9, 5]];
+// What a dye job turns into. Dark natural hair (black / browns) is almost always bleached blonde; red and ginger are not
+// something a dark-haired player goes for. Wild colours (pink, blue, green) are rare.
+const DYES_FOR_DARK = [[1, 55], [4, 25], [2, 10], [8, 4], [9, 3], [14, 1], [11, 1], [10, 1]]; // blonde, light blonde, dirty blonde, white, silver, then wild
+// Naturally light or red hair mostly goes darker, sometimes platinum/silver, and now and then something wild.
+const DYES_FOR_LIGHT = [[0, 25], [3, 25], [6, 15], [5, 10], [8, 10], [9, 5], [14, 4], [11, 3], [10, 3]];
 const GREY_MIN_AGE = 35;
 const GREY_RATE_PER_YEAR = 0.002;     // monthly chance = (age - 34) * this
 const SILVER = 9;
