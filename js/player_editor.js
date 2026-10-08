@@ -14,7 +14,7 @@ const path = require('path');
 const EXPORT_PATH = 'C:\\Users\\Public\\ea_fc_player_editor_export.json';
 const PENDING_PATH = 'C:\\Users\\Public\\ea_fc_player_edits_pending.json';
 const WRITE_LOG_PATH = 'C:\\Users\\Public\\ea_fc_player_edits_write_log.json';
-const CATALOG_PATH = path.join(__dirname, 'assets', 'player_customization', 'catalog.json');
+const CATALOG_PATH = path.join(__dirname, '..', 'assets', 'player_customization', 'catalog.json');
 const MAX_EDITS_PER_RUN = 25; // must match assets/lua/apply_player_edits.lua
 
 const ATTRIBUTES = [
@@ -318,12 +318,12 @@ function handleWriteLog(payload) {
 // Boot pictures are not tied to game ids on their own. A link maps a picture (its catalog key, e.g.
 // "nike/boot_006_....png") to the game's shoetypecode. User links live in boot_links.json in the app's data folder;
 // assets/data/boots_id_map.json can ship defaults. A user value of null removes a shipped link.
-function bootLinksPath() { return path.join(ctx.userDataPath || __dirname, 'boot_links.json'); }
+function bootLinksPath() { return path.join(ctx.userDataPath || path.join(__dirname, '..'), 'boot_links.json'); }
 function readJsonObject(file) {
   try { const v = JSON.parse(fs.readFileSync(file, 'utf8')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
 }
 function getBootLinks() {
-  const shipped = readJsonObject(path.join(__dirname, 'assets', 'data', 'boots_id_map.json'));
+  const shipped = readJsonObject(path.join(__dirname, '..', 'assets', 'data', 'boots_id_map.json'));
   const user = readJsonObject(bootLinksPath());
   const merged = Object.assign({}, shipped, user);
   Object.keys(merged).forEach(k => { if (merged[k] === null) delete merged[k]; });
@@ -361,8 +361,8 @@ function register(ipcMain) {
   ipcMain.handle('get-player-editor-static', () => {
     try {
       return {
-        formula: JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'data', 'overall_formula.json'), 'utf8')),
-        labels: JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'data', 'editor_labels.json'), 'utf8')),
+        formula: JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'data', 'overall_formula.json'), 'utf8')),
+        labels: JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'data', 'editor_labels.json'), 'utf8')),
         limits: FIELD_LIMITS
       };
     } catch (e) {

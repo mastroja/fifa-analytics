@@ -448,6 +448,45 @@
 
     .youth-mode-header-badge { background: #1a2e22; border-color: #3fb950; color: #3fb950; }
 
+    /* Challenge Mode — Home card, header chip, Transfers Hub banners and
+       slide-over drawer. All fed by one status object (see js/challenge.js
+       and renderChallengeUI in js/app.js). */
+    .challenge-chip { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 10px; border: 1px solid; border-radius: 20px; background: transparent; }
+    .challenge-chip.tone-good { background: #1a2e22; border-color: #3fb950; color: #3fb950; }
+    .challenge-chip.tone-warn { background: #2e2512; border-color: #d29922; color: #d29922; }
+    .challenge-chip.tone-danger { background: #2e1517; border-color: #f85149; color: #f85149; }
+    .challenge-card { background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid var(--text-dim); border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; cursor: pointer; }
+    .challenge-card:hover { background: var(--hover-color); }
+    .challenge-card.tone-good { border-left-color: #3fb950; }
+    .challenge-card.tone-warn { border-left-color: #d29922; }
+    .challenge-card.tone-danger { border-left-color: #f85149; }
+    .challenge-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); display: flex; justify-content: space-between; }
+    .challenge-card-title { font-size: 18px; font-weight: 700; margin: 2px 0; }
+    .challenge-card-detail { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
+    .challenge-progress { height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden; }
+    .challenge-progress > div { height: 100%; background: var(--accent-color); border-radius: 3px; }
+    .challenge-card.tone-warn .challenge-progress > div { background: #d29922; }
+    .challenge-card.tone-danger .challenge-progress > div { background: #f85149; }
+    .challenge-progress-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+    .challenge-banner { padding: 10px 14px; border-radius: 6px; border: 1px solid; margin-bottom: 10px; font-size: 14px; }
+    .challenge-banner.tone-good { background: #1a2e22; border-color: #3fb950; color: #56d364; }
+    .challenge-banner.tone-warn { background: #2e2512; border-color: #d29922; color: #e3b341; }
+    .challenge-banner.tone-danger { background: #2e1517; border-color: #f85149; color: #ff7b72; }
+    #challenge-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 900; display: none; }
+    #challenge-drawer-backdrop.open { display: block; }
+    #challenge-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100vw); background: var(--bg-color); border-left: 1px solid var(--border-color); z-index: 901; transform: translateX(100%); transition: transform 0.2s ease; display: flex; flex-direction: column; }
+    #challenge-drawer.open { transform: translateX(0); }
+    .challenge-drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color); font-size: 17px; font-weight: 700; }
+    .challenge-drawer-body { flex: 1; overflow-y: auto; padding: 18px 20px; }
+    .challenge-section { margin-bottom: 22px; }
+    .challenge-section h4 { font-size: 13px; color: var(--accent-color); margin-bottom: 8px; }
+    .challenge-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+    .challenge-row.done { color: var(--text-dim); text-decoration: line-through; }
+    .challenge-ban-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .challenge-ban-form input, .challenge-ban-form select { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+    .challenge-ban-form input[type=number] { width: 64px; }
+    .challenge-ban-form input[type=text] { flex: 1; min-width: 120px; }
+
     .connected-career-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); display: inline-block; flex-shrink: 0; }
     .connected-career-dot.synced { background: #3fb950; box-shadow: 0 0 6px #3fb95088; }
     .connected-career-dot.error { background: #f85149; box-shadow: 0 0 6px #f8514988; }
@@ -1014,6 +1053,7 @@
       <select id="save-select" onchange="changeSave(this.value)" title="Switch which career save to view"></select>
       <button class="refresh-btn" onclick="deleteCurrentSave()" title="Permanently delete the selected save's history">🗑</button>
       <span class="badge youth-mode-header-badge" id="youth-mode-header-badge" style="display: none;" title="Youth Squad Career Mode is permanently enabled for this save.">🎓 Youth Mode Active</span>
+      <button class="badge challenge-chip" id="challenge-chip" style="display: none;" onclick="openChallengeDrawer()" title="Open Challenge Mode details"></button>
       <button class="refresh-btn" id="youth-mode-season-reminder-btn" onclick="openYouthMyRulesDialog()" style="display: none; padding: 4px 10px; border-color: #d29922; color: #d29922;" title="Just the rule that applies to your team right now — who you can sign, who you must sell, and your squad cap. The full rules reference is still in Settings.">⚠️ Squad Rules</button>
       <button class="refresh-btn" id="refresh-btn" onclick="triggerRefresh()" title="Sends the F10 hotkey to Live Editor to re-run export_all.lua">↻ Refresh</button>
       <div class="settings-wrap" id="settings-wrap">
@@ -1140,6 +1180,8 @@
     <div class="home-ticker" id="home-ticker" style="display: none;">
       <div class="home-ticker-track" id="home-ticker-track"></div>
     </div>
+
+    <div class="challenge-card" id="challenge-card" style="display: none;" onclick="openChallengeDrawer()"></div>
 
     <div class="youth-mode-warning-banner" id="youth-mode-warning-banner" style="display: none;"></div>
 
@@ -1381,6 +1423,7 @@
 
   <!-- Transfers Hub Tab -->
   <div id="transfers-tab" class="tab-content">
+    <div id="challenge-transfer-banners"></div>
     <div class="filter-container">
       <div style="display: flex; align-items: center; gap: 10px;">
         <label for="transfer-filter" style="font-weight: bold; font-size: 14px;">View:</label>
@@ -1782,8 +1825,15 @@
   </div>
   <div id="season-overview-print"></div>
 
-  <script src="app.js"></script>
-  <script src="player_editor_ui.js"></script>
-  <script src="dynamic_look_ui.js"></script>
+  <div id="challenge-drawer-backdrop" onclick="closeChallengeDrawer()"></div>
+  <aside id="challenge-drawer" aria-hidden="true">
+    <div class="challenge-drawer-head"><span>🎯 Challenge Mode</span><button class="refresh-btn" style="padding: 4px 10px;" onclick="closeChallengeDrawer()">✕</button></div>
+    <div class="challenge-drawer-body" id="challenge-drawer-body"></div>
+  </aside>
+
+  <script src="js/challenge.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/player_editor_ui.js"></script>
+  <script src="js/dynamic_look_ui.js"></script>
 </body>
 </html>

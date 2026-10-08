@@ -26,14 +26,8 @@
     },
     "files": [
       "main.js",
-      "preload.js",
-      "player_editor.js",
-      "dynamic_look.js",
-      "squad_numbers.js",
-      "player_editor_ui.js",
-      "dynamic_look_ui.js",
       "index.html",
-      "app.js",
+      "js/**/*",
       "schema.sql",
       "assets/**/*",
       "connected_career/**/*"

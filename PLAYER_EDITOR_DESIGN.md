@@ -1,8 +1,8 @@
 
 ## 13. Implementation status (2026-10-07)
 
-Built: `assets/lua/export_player_editor.lua`, `assets/lua/apply_player_edits.lua`, `player_editor.js`
-(backend/IPC), `player_editor_ui.js` (Edit-player dialog), `scripts/build_customization_catalog.js`
+Built: `assets/lua/export_player_editor.lua`, `assets/lua/apply_player_edits.lua`, `js/player_editor.js`
+(backend/IPC), `js/player_editor_ui.js` (Edit-player dialog), `scripts/build_customization_catalog.js`
 (-> `assets/player_customization/catalog.json`), tables `player_editor_state` + `player_edits`.
 Deviations from the design above: state is stored as JSON (not explicit columns); the editor is a dialog
 opened from an "Edit player" button on the profile (fields are unlocked inside it) rather than unlocking

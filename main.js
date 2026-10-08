@@ -42,9 +42,9 @@ const transferExportPath = 'C:\\Users\\Public\\ea_fc_transfers_export.json';
 const watchlistInputPath = 'C:\\Users\\Public\\ea_fc_watchlist_input.json';
 const watchlistStatusPath = 'C:\\Users\\Public\\ea_fc_watchlist_status.json';
 const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
-const playerEditor = require('./player_editor');
-const dynamicLook = require('./dynamic_look');
-const squadNumbers = require('./squad_numbers');
+const playerEditor = require('./js/player_editor');
+const dynamicLook = require('./js/dynamic_look');
+const squadNumbers = require('./js/squad_numbers');
 const leagueStatsExportPath = 'C:\\Users\\Public\\ea_fc_league_stats_export.json';
 
 // activeSaveId/currentSeasonId track whichever save/season the app is
@@ -2226,6 +2226,52 @@ function getPlaystyleSuggestions(playerId) {
   const res = db.exec(`SELECT playstyle_name, tier, detected_at FROM playstyle_suggestions WHERE player_id = ${playerId} AND status = 'added' ORDER BY detected_at ASC;`);
   if (res.length === 0) return [];
   return res[0].values.map(([name, tier, detectedAt]) => ({ name, plus: tier === 'plus', detectedAt }));
+}
+
+// Challenge Mode — see challenge_transfer_bans in schema.sql and
+// challenge.js. Bans are returned newest first.
+function getChallengeBans(saveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`SELECT id, start_date, end_date, reason, cancelled_at FROM challenge_transfer_bans WHERE save_id = ${Number(saveId)} ORDER BY start_date DESC, id DESC;`);
+  if (res.length === 0) return [];
+  return res[0].values.map(([id, startDate, endDate, reason, cancelledAt]) => ({ id, startDate, endDate, reason, cancelledAt }));
+}
+
+function addChallengeBan(saveId, startDate, endDate, reason) {
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  if (!db || !saveId || !iso.test(startDate || '') || !iso.test(endDate || '') || endDate < startDate) return { success: false };
+  db.run('INSERT INTO challenge_transfer_bans (save_id, start_date, end_date, reason) VALUES (?, ?, ?, ?);', [saveId, startDate, endDate, reason || null]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
+// Lifts a ban early (kept in history, not deleted).
+function cancelChallengeBan(saveId, banId) {
+  if (!db || !saveId || !banId) return { success: false };
+  db.run("UPDATE challenge_transfer_bans SET cancelled_at = datetime('now') WHERE id = ? AND save_id = ? AND cancelled_at IS NULL;", [banId, saveId]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
+// Every captured deal for the save, uncollapsed (unlike getTransferFees,
+// which keeps only the latest per player+type) — the Challenge dashboard
+// needs every signing/sale in a season, not just each player's latest.
+// deal_date is rewritten MM-DD-YYYY -> YYYY-MM-DD so it compares directly
+// against in-game ISO dates; blank/unparseable dates come back as ''.
+function getChallengeDeals(saveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`
+    SELECT t.player_id, p.name, t.from_team_name, t.to_team_name, t.deal_type, t.fee,
+      CASE WHEN t.deal_date LIKE '__-__-____'
+        THEN substr(t.deal_date,7,4) || '-' || substr(t.deal_date,1,2) || '-' || substr(t.deal_date,4,2)
+        ELSE '' END AS iso_date
+    FROM transfer_fees t LEFT JOIN players p ON p.player_id = t.player_id
+    WHERE t.save_id = ${Number(saveId)}
+    ORDER BY iso_date ASC;
+  `);
+  if (res.length === 0) return [];
+  return res[0].values.map(([playerId, name, fromTeam, toTeam, dealType, fee, date]) =>
+    ({ playerId, name, fromTeam, toTeam, dealType, fee, date }));
 }
 
 // "Untouchable" tag for Youth Squad Career Mode's Overall Cap Watch box —
@@ -6131,7 +6177,7 @@ function createWindow() {
     // default icon.
     icon: path.join(__dirname, 'assets', 'app-icon', 'icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'js', 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true
     }
@@ -6157,6 +6203,10 @@ ipcMain.handle('get-manager-ppg', () => getManagerSeasonPPG());
 ipcMain.handle('get-team-record-seasons', () => getTeamRecordSeasons());
 ipcMain.handle('get-inferred-transfers', (_event, saveId) => getInferredTransfers(saveId));
 ipcMain.handle('get-transfer-fees', (_event, saveId) => getTransferFees(saveId));
+ipcMain.handle('get-challenge-bans', (_event, saveId) => getChallengeBans(saveId));
+ipcMain.handle('add-challenge-ban', (_event, saveId, startDate, endDate, reason) => addChallengeBan(saveId, startDate, endDate, reason));
+ipcMain.handle('cancel-challenge-ban', (_event, saveId, banId) => cancelChallengeBan(saveId, banId));
+ipcMain.handle('get-challenge-deals', (_event, saveId) => getChallengeDeals(saveId));
 ipcMain.handle('get-player-transfer-history', (_event, playerId, saveId) => getPlayerTransferHistory(playerId, saveId));
 ipcMain.handle('get-player-injury-history', (_event, playerId, saveId) => getPlayerInjuryHistory(playerId, saveId));
 ipcMain.handle('get-injury-report', (_event, saveId) => getInjuryReport(saveId));

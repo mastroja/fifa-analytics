@@ -4393,6 +4393,7 @@ Live Editor will end each loan and then release the player from your club to fre
       if (!window.api || !window.api.getTransferFees) return;
       currentTransferFees = (await window.api.getTransferFees(currentSaveId)) || [];
       filterAndRenderTransfers();
+      refreshChallenge();
       // Redraw-only (currentPastPlayers itself hasn't changed, only the fee
       // lookup it's about to use) — renderPastPlayersTable would re-fetch
       // past players over IPC for no reason.
@@ -9392,11 +9393,206 @@ Live Editor will end each loan and then release the player from your club to fre
       `;
     }
 
+    // ===== Challenge Mode ================================================
+    // One shared status object (see js/challenge.js) feeds all four entry
+    // points: the Home card, the header chip, the Transfers Hub banners and
+    // the slide-over drawer. refreshChallenge() is the only place that
+    // builds it; renderChallengeUI() only reads it.
+    let challengeStatus = null;
+    let challengeCtx = null; // rule rows shown in the drawer
+    let challengeBans = [];
+    let challengeDeals = [];
+
+    function challengeEscape(str) {
+      return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function refreshChallenge() {
+      if (!currentYouthModeEnabled || !currentSaveId || !window.api || !window.api.getChallengeDeals || !window.Challenge) {
+        challengeStatus = null;
+        renderChallengeUI();
+        return;
+      }
+      const saveAtStart = currentSaveId;
+      const [bans, deals, ctx] = await Promise.all([
+        window.api.getChallengeBans(saveAtStart),
+        window.api.getChallengeDeals(saveAtStart),
+        resolveYouthRulesHighlightContext()
+      ]);
+      if (saveAtStart !== currentSaveId) return; // user switched saves mid-fetch
+      challengeBans = bans || [];
+      challengeDeals = deals || [];
+
+      const capRows = buildYouthRulesCapRows();
+      const capRow = ctx.capIndex !== null ? capRows[ctx.capIndex] : null;
+      const signingRow = ctx.capIndex !== null ? buildYouthSigningTypeRows(capRows)[ctx.capIndex] : null;
+      const section = ctx.transferSectionIndex !== null ? YOUTH_TRANSFER_RULES[ctx.transferSectionIndex] : null;
+      const outcome = section && ctx.transferRowIndex !== null ? section.rules[ctx.transferRowIndex] : null;
+      challengeCtx = { capRow, signingRow, section, outcome };
+
+      const club = (getMostCommonClubName() || '').toLowerCase();
+      const norm = name => (name || '').toLowerCase() === club ? club : name;
+      const today = toSortableDateStr(currentIngameDate || new Date());
+      challengeStatus = window.Challenge.computeChallengeStatus({
+        today,
+        club,
+        ruleText: outcome ? outcome[1] : null,
+        outcomeLabel: outcome ? outcome[0] : null,
+        deals: challengeDeals.map(d => ({ ...d, fromTeam: norm(d.fromTeam), toTeam: norm(d.toTeam) })),
+        bans: challengeBans,
+        bands: capRow ? { avg: capRow.avg, max: capRow.maxNum } : null,
+        overallOf: id => { const p = currentPlayers.find(x => x.player_id == id); return p ? Number(p.overall) : null; }
+      });
+      renderChallengeUI();
+    }
+
+    function renderChallengeUI() {
+      const st = challengeStatus;
+      const chip = document.getElementById('challenge-chip');
+      const card = document.getElementById('challenge-card');
+      const bannerBox = document.getElementById('challenge-transfer-banners');
+
+      if (!st) {
+        if (chip) chip.style.display = 'none';
+        if (card) card.style.display = 'none';
+        if (bannerBox) bannerBox.innerHTML = '';
+        return;
+      }
+      if (chip) {
+        chip.style.display = st.chip ? '' : 'none';
+        if (st.chip) { chip.textContent = st.chip.text; chip.className = `badge challenge-chip tone-${st.chip.tone}`; }
+      }
+      if (card) {
+        const h = st.headline, p = h.progress;
+        const pct = p && p.total ? Math.round((p.done / p.total) * 100) : 0;
+        card.style.display = '';
+        card.className = `challenge-card tone-${h.tone}`;
+        card.innerHTML = `
+          <div class="challenge-card-label"><span>🎯 Challenge Status</span><span>Details ›</span></div>
+          <div class="challenge-card-title">${challengeEscape(h.title)}</div>
+          <div class="challenge-card-detail">${challengeEscape(h.detail)}</div>
+          ${p ? `<div class="challenge-progress"><div style="width: ${pct}%"></div></div><div class="challenge-progress-label">${challengeEscape(p.label)}</div>` : ''}
+        `;
+      }
+      if (bannerBox) {
+        bannerBox.innerHTML = st.banners.map(b => `<div class="challenge-banner tone-${b.tone}">${challengeEscape(b.text)}</div>`).join('');
+      }
+      renderChallengeDrawer();
+    }
+
+    function openChallengeDrawer() {
+      if (!challengeStatus) return;
+      renderChallengeDrawer();
+      document.getElementById('challenge-drawer').classList.add('open');
+      document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'false');
+      document.getElementById('challenge-drawer-backdrop').classList.add('open');
+    }
+
+    function closeChallengeDrawer() {
+      document.getElementById('challenge-drawer').classList.remove('open');
+      document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'true');
+      document.getElementById('challenge-drawer-backdrop').classList.remove('open');
+    }
+
+    function renderChallengeDrawer() {
+      const body = document.getElementById('challenge-drawer-body');
+      const st = challengeStatus;
+      if (!body || !st) return;
+      const e = challengeEscape;
+      const slotRows = [];
+      if (st.signings) {
+        st.signings.signed.forEach(s => slotRows.push(`<div class="challenge-row done"><span>✅ ${e(s.name || 'Player')} <em>(${s.cls})</em></span><span>${e(s.date)}</span></div>`));
+        ['marquee', 'squad', 'prospect'].forEach(c => {
+          for (let i = 0; i < st.signings.remaining[c]; i++) {
+            slotRows.push(`<div class="challenge-row"><span>${st.ban.active ? '🚫' : '🟢'} ${c[0].toUpperCase() + c.slice(1)} signing available</span><span>${st.ban.active ? 'on hold' : 'open'}</span></div>`);
+          }
+        });
+        if (st.signings.hasChoice) slotRows.push(`<div class="challenge-row"><span>Rule offers a choice: ${st.signings.options.map(o => ['marquee', 'squad', 'prospect'].filter(c => o[c]).map(c => `${o[c]} ${c}`).join(' + ')).join(' OR ')}</span><span></span></div>`);
+      }
+      if (st.sells) {
+        st.sells.sold.forEach(s => slotRows.push(`<div class="challenge-row done"><span>✅ Sold ${e(s.name || 'player')}</span><span>${e(s.date)}</span></div>`));
+        for (let i = 0; i < st.sells.remaining; i++) {
+          slotRows.push(`<div class="challenge-row"><span>${st.sells.overdue ? '🔴' : '🟠'} Sell a player</span><span>by ${e(st.sells.deadline)}</span></div>`);
+        }
+      }
+
+      const ban = st.ban;
+      const banStatus = ban.active
+        ? `<div class="challenge-banner tone-danger">Active until <strong>${e(ban.active.endDate)}</strong> (${ban.daysLeft} days left)${ban.active.reason ? ` — ${e(ban.active.reason)}` : ''}
+             <div style="margin-top: 8px;"><button class="refresh-btn" style="padding: 4px 12px; font-size: 13px;" onclick="cancelChallengeBanClick(${ban.active.id})">Lift ban early</button></div></div>`
+        : ban.upcoming ? `<div class="challenge-banner tone-warn">Scheduled ${e(ban.upcoming.startDate)} → ${e(ban.upcoming.endDate)}</div>` : '';
+      const violations = ban.violations.map(v => `<div class="challenge-row"><span>⚠️ ${e(v.name || 'Player')} signed during ban</span><span>${e(v.date)}</span></div>`).join('');
+      const pastBans = ban.history.filter(b => !(ban.active && b.id === ban.active.id)).map(b =>
+        `<div class="challenge-row"><span>${e(b.startDate)} → ${e(b.endDate)}${b.reason ? ` · ${e(b.reason)}` : ''}</span><span>${b.cancelledAt ? 'lifted early' : b.endDate < st.today ? 'served' : ''}</span></div>`).join('');
+
+      const ctx = challengeCtx || {};
+      const deals = [...(st.signings ? st.signings.signed.map(d => ({ ...d, dir: 'In' })) : []), ...(st.sells ? st.sells.sold.map(d => ({ ...d, dir: 'Out' })) : [])]
+        .sort((a, b) => a.date.localeCompare(b.date));
+      body.innerHTML = `
+        <div class="challenge-card tone-${st.headline.tone}" style="cursor: default;">
+          <div class="challenge-card-title">${e(st.headline.title)}</div>
+          <div class="challenge-card-detail">${e(st.headline.detail)}</div>
+          ${st.headline.progress ? `<div class="challenge-progress"><div style="width: ${st.headline.progress.total ? Math.round(st.headline.progress.done / st.headline.progress.total * 100) : 0}%"></div></div><div class="challenge-progress-label">${e(st.headline.progress.label)}</div>` : ''}
+        </div>
+        ${slotRows.length ? `<div class="challenge-section"><h4>📋 Obligations this season</h4>${slotRows.join('')}</div>` : ''}
+        <div class="challenge-section">
+          <h4>🚫 Transfer Ban modifier</h4>
+          <p class="youth-rules-note" style="margin: 0 0 6px;">Optional. Freeze incoming signings (and loans) for a stretch of in-game time. Sales still count. Nothing is enforced — deals dated inside a ban are flagged.</p>
+          ${banStatus}
+          ${violations}
+          ${ban.active ? '' : `
+            <div class="challenge-ban-form">
+              <input type="number" id="challenge-ban-count" min="1" max="10" value="1" />
+              <select id="challenge-ban-unit">
+                <option value="windows">transfer window(s)</option>
+                <option value="months">month(s)</option>
+                <option value="seasons">season(s)</option>
+              </select>
+              <input type="text" id="challenge-ban-reason" placeholder="Reason (optional)" maxlength="80" />
+              <button class="refresh-btn" style="padding: 6px 14px; font-size: 13px;" onclick="startChallengeBanClick()">Start ban</button>
+            </div>`}
+          ${pastBans ? `<div style="margin-top: 10px;">${pastBans}</div>` : ''}
+        </div>
+        <div class="challenge-section">
+          <h4>📝 This season's rules</h4>
+          ${ctx.outcome ? `<div class="challenge-row"><span>${e(ctx.outcome[0])}</span><span>${e(ctx.outcome[1])}</span></div><p class="youth-rules-note">Based on last season's result (${e(ctx.section.league)}).</p>` : '<p class="youth-rules-note">No recorded result from last season yet.</p>'}
+          ${ctx.signingRow ? `<div class="challenge-row"><span>Prospect</span><span>${e(ctx.signingRow.prospect)}</span></div><div class="challenge-row"><span>Squad player</span><span>${e(ctx.signingRow.squad)}</span></div><div class="challenge-row"><span>Marquee</span><span>${e(ctx.signingRow.marquee)}</span></div>` : ''}
+          ${ctx.capRow ? `<div class="challenge-row"><span>${e(ctx.capRow.label)} OVR cap</span><span>${e(ctx.capRow.maxDisplay)} (${e(ctx.capRow.allowanceDisplay)} allowed over)</span></div>` : ''}
+          <p style="margin-top: 8px;"><a href="#" onclick="event.preventDefault(); closeChallengeDrawer(); openYouthRulesDialog();" style="color: var(--accent-color); font-size: 13px;">View full rules reference ›</a></p>
+        </div>
+        <div class="challenge-section">
+          <h4>🕘 This season's deals</h4>
+          ${deals.length
+            ? deals.map(d => `<div class="challenge-row"><span>${d.dir === 'In' ? '⬅️' : '➡️'} ${e(d.name || 'Player')}</span><span>${e(d.date)}</span></div>`).join('')
+            : '<p class="youth-rules-note">No permanent signings or sales recorded since June 1.</p>'}
+        </div>
+      `;
+    }
+
+    async function startChallengeBanClick() {
+      if (!currentSaveId || !window.api || !challengeStatus) return;
+      const count = document.getElementById('challenge-ban-count').value;
+      const unit = document.getElementById('challenge-ban-unit').value;
+      const reason = document.getElementById('challenge-ban-reason').value.trim();
+      const start = challengeStatus.today;
+      const end = window.Challenge.computeBanEnd(start, unit, count);
+      if (!end) return;
+      const res = await window.api.addChallengeBan(currentSaveId, start, end, reason);
+      if (res && res.success) await refreshChallenge();
+    }
+
+    async function cancelChallengeBanClick(banId) {
+      if (!currentSaveId || !window.api) return;
+      const res = await window.api.cancelChallengeBan(currentSaveId, banId);
+      if (res && res.success) await refreshChallenge();
+    }
+
     function renderHomeDashboard() {
       renderHomeHeader();
       renderHomeTicker();
       maybeShowNextTrophyWinPopup(); // retry a queued trophy popup that got blocked by another dialog earlier
       renderYouthModeWarning();
+      refreshChallenge();
       renderPlaystyleAlerts();
       renderYouthModeDangerZone();
       renderSquadAgeProfile();
