@@ -1,6 +1,6 @@
 // Player editor UI (generic / regen / academy players only). Loaded after app.js; relies on app.js
 // globals available at call time: currentUnits ('imperial' | 'metric'), POSITION_MAP.
-// Backend: player_editor.js (IPC). Design: PLAYER_EDITOR_DESIGN.md.
+// Backend: player_editor.js (IPC). Design: assets/design_docs/PLAYER_EDITOR_DESIGN.md.
 //
 // Flow: profile "Edit player" -> sync from game (F11) -> tabbed editor dialog -> Save queues only the
 // CHANGED game columns and presses F11 again so assets/lua/player_editor_sync.lua writes them.

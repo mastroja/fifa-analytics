@@ -899,6 +899,8 @@ CREATE TABLE IF NOT EXISTS squad_numbers_used (
     save_id INTEGER PRIMARY KEY,
     numbers_json TEXT NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Challenge Mode "Transfer Ban" modifier — a self-imposed, user-chosen
 -- freeze on incoming signings for a stretch of in-game time (see
 -- js/challenge.js). One row per ban, so past bans stay visible in the

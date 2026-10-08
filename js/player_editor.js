@@ -1,6 +1,6 @@
 // Player editor backend (generic / regen / academy players only).
 //
-// Data flow (see PLAYER_EDITOR_DESIGN.md):
+// Data flow (see assets/design_docs/PLAYER_EDITOR_DESIGN.md):
 //   game --assets/lua/export_player_editor.lua--> ea_fc_player_editor_export.json --> importEditorExport
 //   Save --> queueEdit --> ea_fc_player_edits_pending.json --assets/lua/apply_player_edits.lua--> game
 //   apply_player_edits.lua --> ea_fc_player_edits_write_log.json --> handleWriteLog
