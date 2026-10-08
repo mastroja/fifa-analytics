@@ -283,10 +283,10 @@
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
       ${isString && idx === 0
         ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span>
-            <span class="dc-rightcol"><span class="dc-ovr dc-ovr-big">${ovr}</span><span class="dc-age">${p.__alltime ? 'peak' : (age ?? '—')}</span></span>`
+            <span class="dc-rightcol"><span class="dc-ovr dc-ovr-big">${ovr}</span>${p.__alltime ? '<span class="dc-age">peak</span>' : ''}</span>`
         : isString
-          ? `<span class="dc-col"><span class="dc-name"><span class="dc-tag">${idx + 1}</span> ${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>`
-          : `${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>`}
+          ? `<span class="dc-col"><span class="dc-name"><span class="dc-tag">${idx + 1}</span> ${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span><span class="dc-ovr">${ovr}</span>`
+          : `${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span>`}
     </div>`;
   }
 
@@ -324,7 +324,7 @@
     const age = p.__alltime ? null : root.computeAge(p.dob);
     return `<div class="dc-rcard" data-pid="${esc(p.player_id)}" draggable="true" onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 44, '50%')}</span>
-      <span class="dc-rinfo"><span class="dc-rname">${esc(p.name)}</span><span class="dc-rsub">${posBadge(p)}${altText(p)}</span><span class="dc-rsub">${p.__alltime ? `${esc(p.peak_season || '')} · ${p.appearances} apps` : `age ${age ?? '—'}`}${tag ? ` · <em>${tag}</em>` : ''}${p.injury ? ' · <em class="dc-inj">injured</em>' : ''}</span></span>
+      <span class="dc-rinfo"><span class="dc-rname">${esc(p.name)}</span><span class="dc-rsub">${posBadge(p)}${altText(p)}</span>${p.__alltime || tag || p.injury ? `<span class="dc-rsub">${p.__alltime ? `${esc(p.peak_season || '')} · ${p.appearances} apps` : ''}${tag ? `<em>${tag}</em>` : ''}${p.injury ? `${tag ? ' · ' : ''}<em class="dc-inj">injured</em>` : ''}</span>` : ''}</span>
       <span class="dc-rovr">${p.overall || '?'}</span></div>`;
   }
 
@@ -334,8 +334,8 @@
     const age = root.computeAge(a.dob);
     return `<div class="dc-rcard dc-rcard-academy" data-pid="${esc(a.player_id)}" onclick="openPlayerProfile('${a.player_id ?? esc(a.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(a, 44, '50%')}</span>
-      <span class="dc-rinfo"><span class="dc-rname">${esc(a.name)}</span><span class="dc-rsub">${posBadge(a)}</span><span class="dc-rsub">age ${age ?? '—'} · <em>🎓 academy</em></span></span>
-      <span class="dc-rovr">${a.overall || '?'}<span class="dc-pot">→${esc(a.potential_high || a.potential || '?')}</span></span></div>`;
+      <span class="dc-rinfo"><span class="dc-rname">${esc(a.name)}</span><span class="dc-rsub">${posBadge(a)}</span><span class="dc-rsub">age ${age ?? '—'}</span></span>
+      <span class="dc-rovr">${a.overall || '?'}<span class="dc-pot"><small>POT</small> ${esc(a.potential_high || a.potential || '?')}</span></span></div>`;
   }
 
   function depthHtml() {
