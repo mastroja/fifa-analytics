@@ -123,7 +123,7 @@
   function filterCatalog(list, kind, categoryOnly) {
     const f = ed.filters[kind];
     let out = list;
-    if (f.cat === 'suggested') { const cats = suggestedCats(); out = out.filter(h => h.cat === null || cats.includes(h.cat)); }
+    if (f.cat === 'suggested') { const cats = suggestedCats(); out = out.filter(h => cats.includes(h.cat)); } // uncategorised styles live under "Other"
     else if (f.cat === 'other') out = out.filter(h => h.cat === null);
     else if (f.cat !== 'all') out = out.filter(h => h.cat === Number(f.cat));
     if (!categoryOnly && f.length !== 'all') out = out.filter(h => h.length === f.length);
@@ -299,7 +299,7 @@
     const catOptions = [];
     if (kind === 'hair') {
       const sug = suggestedCats();
-      const sugCount = list.filter(h => h.cat === null || sug.includes(h.cat)).length;
+      const sugCount = list.filter(h => sug.includes(h.cat)).length;
       catOptions.push({ value: 'suggested', label: `Suggested for skin tone (${sugCount})` });
       catOptions.push({ value: 'all', label: `All (${list.length})` });
       [1, 2, 3].forEach(n => { if (catCounts[n]) catOptions.push({ value: n, label: `${CAT_LABEL[n]} (${catCounts[n]})` }); });
