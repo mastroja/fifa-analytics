@@ -1183,6 +1183,25 @@
       border-left-color: #f85149;
     }
 
+    /* Shared player filter (js/player_filters.js) — Squad + Former Players */
+    .pf-host { margin-bottom: 12px; }
+    .pf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .pf-chip { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 14px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+    .pf-chip:hover { border-color: var(--accent-color); }
+    .pf-chip.active { background: var(--accent-color); color: #000; border-color: var(--accent-color); }
+    .pf-count { background: #000; color: var(--accent-color); border-radius: 10px; padding: 0 6px; margin-left: 4px; font-size: 11px; }
+    .pf-clear { background: none; border: none; color: #f85149; font-size: 12px; cursor: pointer; text-decoration: underline; }
+    .pf-summary { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+    .pf-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 16px; margin-top: 10px; }
+    .pf-field { border-left: 2px solid transparent; padding-left: 8px; }
+    .pf-field.active { border-left-color: var(--accent-color); }
+    .pf-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 4px; }
+    .pf-control { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+    .pf-control input[type=number], .pf-control input[type=text], .pf-control select { background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 7px; font-size: 13px; width: 86px; }
+    .pf-control input[type=text], .pf-control select { width: 100%; }
+    .pf-dash { color: var(--text-dim); }
+    .pf-toggle { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+
     .youth-strip {
       display: flex;
       flex-direction: column;
@@ -3654,6 +3673,8 @@
         placeholder="Search player name or position (e.g., ST, CM)..." oninput="renderTableRows()" />
     </div>
 
+    <div id="squad-filter-mount" class="pf-host"></div>
+
     <div class="filter-container" style="padding-top: 0;">
       <div style="display: flex; align-items: center; gap: 16px; font-size: 13px;">
         <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -3709,6 +3730,7 @@
         title="Hides every former player currently listed — for wiping the pre-youth-rebuild squad so it doesn't count. Doesn't touch past season stats; anyone who leaves after this still shows up normally.">🧹
         Clear Former Players</button>
     </div>
+    <div id="past-filter-mount" class="pf-host"></div>
     <div class="table-container">
       <table>
         <thead>
@@ -4168,6 +4190,7 @@
   </aside>
 
   <script src="js/challenge.js"></script>
+  <script src="js/player_filters.js"></script>
   <script src="js/app.js"></script>
   <script src="js/player_editor_ui.js"></script>
   <script src="js/dynamic_look_ui.js"></script>
