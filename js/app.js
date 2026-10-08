@@ -3443,6 +3443,45 @@ let currentCalendar = [];
       `;
     }
 
+    // ---- Squad filter (shared component: js/player_filters.js) -------------
+    const parsePotentialValue = pot => {
+      if (pot === null || pot === undefined || pot === '') return null;
+      const m = String(pot).match(/\d+/g); // academy players carry a "70-78" range — filter on its top end
+      return m ? Number(m[m.length - 1]) : null;
+    };
+    const contractExpiryYear = p => { const m = String(p.contract_expiry || '').match(/\d{4}/); return m ? Number(m[0]) : null; };
+    const GROUP_CHIPS = [{ value: 'GK', label: 'GK' }, { value: 'DEF', label: 'DEF' }, { value: 'MID', label: 'MID' }, { value: 'ATT', label: 'ATT' }];
+
+    const squadFilter = PlayerFilters.create({
+      key: 'squad',
+      mount: 'squad-filter-mount',
+      onChange: () => renderTableRows(),
+      fields: [
+        { id: 'group', label: 'Position', type: 'chips', options: GROUP_CHIPS, get: p => getPositionInfo(p.position_id).group },
+        { id: 'age', label: 'Age', type: 'range', get: p => computeAge(p.dob) },
+        { id: 'overall', label: 'Overall', type: 'range', get: p => p.overall },
+        { id: 'potential', label: 'Potential', type: 'range', get: p => parsePotentialValue(p.potential) },
+        { id: 'delta', label: 'OVR change (at least)', type: 'min', get: p => p.overall_delta },
+        { id: 'apps', label: 'Appearances', type: 'range', get: p => Number(p.appearances || 0) },
+        { id: 'goals', label: 'Goals (at least)', type: 'min', get: p => Number(p.goals || 0) },
+        { id: 'assists', label: 'Assists (at least)', type: 'min', get: p => Number(p.assists || 0) },
+        { id: 'ga', label: 'Goals + assists (at least)', type: 'min', get: p => Number(p.ga || 0) },
+        { id: 'cs', label: 'Clean sheets (at least)', type: 'min', get: p => Number(p.clean_sheets || 0) },
+        { id: 'rating', label: 'Avg rating (at least)', type: 'min', step: 0.1, get: p => Number(p.avg_rating || 0) },
+        { id: 'cards', label: 'Yellow cards (at least)', type: 'min', get: p => Number(p.yellow_cards || 0) },
+        { id: 'contract', label: 'Contract expires (year)', type: 'range', get: contractExpiryYear },
+        { id: 'injured', label: 'Fitness', type: 'toggle', toggleLabel: 'Injured only', get: p => !!p.injury }
+      ],
+      presets: [
+        { label: 'Under 21', set: { age: { max: 20 } } },
+        { label: 'Prime 24–29', set: { age: { min: 24, max: 29 } } },
+        { label: '30+', set: { age: { min: 30 } } },
+        { label: 'Injured', set: { injured: true } },
+        { label: 'Contract ending', set: () => ({ contract: { max: currentInGameYear() } }) },
+        { label: 'No appearances', set: { apps: { min: 0, max: 0 } } }
+      ]
+    });
+
     function renderTableRows() {
       const tbody = document.getElementById('stats-body');
       tbody.innerHTML = '';
@@ -3454,14 +3493,16 @@ let currentCalendar = [];
       let filtered = squadTableRows.filter(p => {
         if (!includeLoaned && p.__clubStatus === 'loan') return false;
         if (!includeTransferred && p.__clubStatus === 'transferred') return false;
+        if (!squadFilter.matches(p)) return false;
         if (!query) return true;
         const nameMatch = (p.name || '').toLowerCase().includes(query);
         const posMatch = (p.pos_label || '').toLowerCase().includes(query);
         return nameMatch || posMatch;
       });
 
+      squadFilter.setSummary(filtered.length, squadTableRows.length);
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" class="empty-state">No players match your search criteria.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" class="empty-state">No players match your search${squadFilter.activeCount() ? ' and filters' : ' criteria'}.</td></tr>`;
         return;
       }
 
@@ -4241,6 +4282,32 @@ Live Editor will end each loan and then release the player from your club to fre
       renderPastPlayersRows();
     }
 
+    // ---- Former Players filter (same shared component as the Squad tab) ----
+    const pastPlayersFilter = PlayerFilters.create({
+      key: 'former',
+      mount: 'past-filter-mount',
+      onChange: () => renderPastPlayersRows(),
+      getRows: () => currentPastPlayers,
+      fields: [
+        { id: 'group', label: 'Position', type: 'chips', options: GROUP_CHIPS, get: p => getPositionInfo(p.position_id).group },
+        { id: 'age', label: 'Age now', type: 'range', get: p => p.__age },
+        { id: 'overall', label: 'Current OVR', type: 'range', get: p => p.overall },
+        { id: 'club', label: 'Current club', type: 'text', get: p => p.current_club },
+        { id: 'fee', label: 'Sold for', type: 'range', step: 1000, get: p => p.__soldFor },
+        { id: 'hasfee', label: 'Transfer fee', type: 'toggle', toggleLabel: 'Known fee only', get: p => !!p.__soldFor },
+        { id: 'value', label: 'Current value', type: 'range', step: 1000, get: p => p.__value },
+        { id: 'years', label: 'Years at club', type: 'range', get: p => p.years_active },
+        { id: 'joined', label: 'Joined season', type: 'select', options: rows => [...new Set(rows.map(p => p.joined_season).filter(Boolean))].sort(), get: p => p.joined_season },
+        { id: 'departed', label: 'Departed season', type: 'select', options: rows => [...new Set(rows.map(p => p.departed_season).filter(Boolean))].sort(), get: p => p.departed_season }
+      ],
+      presets: [
+        { label: 'Sold for a fee', set: { hasfee: true } },
+        { label: 'Now 80+ OVR', set: { overall: { min: 80 } } },
+        { label: 'Under 23 now', set: { age: { max: 22 } } },
+        { label: 'Stayed 3+ years', set: { years: { min: 3 } } }
+      ]
+    });
+
     // Pulled apart from the fetch above so sortPastPlayers can just
     // re-render the already-cached list instead of re-fetching.
     function renderPastPlayersRows() {
@@ -4254,7 +4321,7 @@ Live Editor will end each loan and then release the player from your club to fre
 
       // Precompute the derived fields sorting/display both need, once,
       // rather than recomputing per comparison during sort.
-      const rows = currentPastPlayers.map(p => {
+      let rows = currentPastPlayers.map(p => {
         const age = computeAge(p.dob);
         // wage_at_departure is the best available proxy for a current-club
         // wage we have no way to know — value is still just an estimate.
@@ -4262,6 +4329,14 @@ Live Editor will end each loan and then release the player from your club to fre
         const soldFor = getTransferFeeForPlayer(p.player_id);
         return { ...p, __age: age, __value: value, __soldFor: soldFor };
       });
+
+      const allRows = rows;
+      rows = rows.filter(p => pastPlayersFilter.matches(p));
+      pastPlayersFilter.setSummary(rows.length, allRows.length);
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="empty-state">No former players match your filters.</td></tr>`;
+        return;
+      }
 
       rows.sort((a, b) => {
         let valA = a[pastPlayersSortColumn];
