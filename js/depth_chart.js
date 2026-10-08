@@ -49,7 +49,8 @@
   const prospectScore = a => Number(a.potential_high || a.potential || 0) * 1000 + Number(a.overall || 0);
 
   // seniors: player rows; academy: academy rows; exclude: Set of player_ids treated as sold.
-  function buildDepth(formation, seniors, academy, exclude) {
+  // needs: optional Map player_id -> watchlist player (computeTeamNeeds in app.js) so the Team Needs reasons become flags.
+  function buildDepth(formation, seniors, academy, exclude, needs) {
     const slots = (FORMATIONS[formation] || FORMATIONS[DEFAULT_FORMATION]).map(([role, x, y], i) => ({
       id: i, role, x, y, starter: null, backup: null, backupShared: false, prospect: null
     }));
@@ -84,7 +85,7 @@
       if (pick) { slots[i].prospect = pick; usedAcademy.add(pick); }
     });
 
-    slots.forEach(s => { s.flags = findGaps(s); });
+    slots.forEach(s => { s.flags = findGaps(s, needs); });
     return slots;
   }
 
@@ -94,13 +95,24 @@
   }
 
   // severity: 'high' (red) | 'mid' (amber) | 'info'
-  function findGaps(slot) {
+  function findGaps(slot, needs) {
     const flags = [];
     if (!slot.starter) { flags.push({ type: 'nostarter', severity: 'high', text: 'No player for this role' }); return flags; }
     const expiring = isExpiring(slot.starter);
-    if (expiring && !slot.backup && !slot.prospect) flags.push({ type: 'expiring-uncovered', severity: 'high', text: 'Starter\'s contract is expiring and there is no replacement' });
-    else if (expiring) flags.push({ type: 'expiring', severity: 'info', text: 'Starter\'s contract is expiring (cover available)' });
+    const left = root.computeMonthsUntilExpiry(slot.starter.contract_expiry);
+    const when = left < 0 ? `contract ran out in ${slot.starter.contract_expiry}` : `contract ends ${slot.starter.contract_expiry} (${left} month${left === 1 ? '' : 's'} left)`;
+    if (expiring && !slot.backup && !slot.prospect) flags.push({ type: 'expiring-uncovered', severity: 'high', text: `Starter's ${when} and there is no replacement` });
+    else if (expiring) flags.push({ type: 'expiring', severity: 'info', text: `Starter's ${when}; cover available` });
     if (!slot.backup) flags.push({ type: 'nobackup', severity: 'mid', text: 'No backup in the senior squad' });
+    const need = needs && needs.get(slot.starter.player_id);
+    if (need) {
+      const pos = root.getPositionInfo(need.position_id).label;
+      const target = Math.max(75, Number(need.overall || 75) - 2);
+      flags.push({
+        type: 'need', label: need.__reasons[0].toLowerCase(), severity: slot.backup ? 'info' : 'mid',
+        text: `Watchlist: ${need.__reasons.join(', ')}. Suggested replacement: ${pos}, age 23-27, OVR ${target}+`
+      });
+    }
     return flags;
   }
 
@@ -138,7 +150,7 @@
 
   function slotHtml(s, newKeys) {
     const worst = s.flags.find(f => f.severity === 'high') || s.flags.find(f => f.severity === 'mid') || s.flags[0];
-    const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : 'expiring'}</span>`).join('');
+    const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring'}</span>`).join('');
     return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${s.y}%">
       <div class="dc-slot-head"><strong>${s.role}</strong>${flagHtml}</div>
       ${personHtml(s.starter, 'starter')}${personHtml(s.backup, 'backup')}${personHtml(s.prospect, 'prospect')}
@@ -157,13 +169,15 @@
       ${groups[l].sort((a, b) => prospectScore(b) - prospectScore(a)).map(a => personHtml(a, 'prospect')).join('')}</div>`).join('');
   }
 
+  const needsMap = () => new Map((typeof computeTeamNeeds === 'function' ? computeTeamNeeds() : []).map(p => [p.player_id, p]));
+
   function depthHtml() {
-    const seniors = seniorsNow(), academy = academyNow();
-    const base = buildDepth(formation, seniors, academy);
+    const seniors = seniorsNow(), academy = academyNow(), needs = needsMap();
+    const base = buildDepth(formation, seniors, academy, null, needs);
     let slots = base, banner = '', newKeys = null;
     if (sellId) {
       const sold = seniors.find(p => String(p.player_id) === String(sellId));
-      slots = buildDepth(formation, seniors, academy, new Set([sold && sold.player_id]));
+      slots = buildDepth(formation, seniors, academy, new Set([sold && sold.player_id]), needs);
       const before = new Set(); base.forEach(s => s.flags.forEach(f => before.add(gapKey(s, f))));
       newKeys = new Set(); const fresh = [];
       slots.forEach(s => s.flags.forEach(f => { const k = gapKey(s, f); if (!before.has(k)) { newKeys.add(k); fresh.push(`${s.role}: ${f.text}`); } }));
@@ -202,6 +216,33 @@
       }).join('')}</div>`;
   }
 
+  // Home "Squad Gaps" card: replaces the old Expiring Contracts + Team Needs cards. Same flags as the Depth view,
+  // for the chosen formation, worst first; plus watchlist players who are not in the starting shape.
+  function flagLabel(f) {
+    return f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring';
+  }
+  function renderGapsCard() {
+    const el = $('home-squad-gaps-body'); if (!el) return;
+    const seniors = seniorsNow();
+    if (!seniors.length) { el.innerHTML = '<div class="empty-state" style="padding: 12px;">No squad data loaded.</div>'; return; }
+    const needs = needsMap();
+    const slots = buildDepth(formation, seniors, academyNow(), null, needs);
+    const rank = { high: 0, mid: 1, info: 2 };
+    const rows = slots.map(s => ({ s, worst: s.flags.slice().sort((a, b) => rank[a.severity] - rank[b.severity])[0] }))
+      .filter(r => r.worst && r.worst.severity !== 'info')
+      .sort((a, b) => rank[a.worst.severity] - rank[b.worst.severity]);
+    const starters = new Set(slots.map(s => s.starter && s.starter.player_id));
+    const bench = [...needs.values()].filter(p => !starters.has(p.player_id)).slice(0, 5);
+    const rowHtml = r => `<tr class="clickable-name" ${r.s.starter ? `onclick="openPlayerProfile('${r.s.starter.player_id}')"` : ''}>
+      <td><span class="pos-badge">${r.s.role}</span></td><td>${r.s.starter ? esc(r.s.starter.name) : '<em>Vacant</em>'}</td>
+      <td>${r.s.flags.map(f => `<span class="dc-flag sev-${f.severity}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join(' ')}</td></tr>`;
+    el.innerHTML = `<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 6px;">Formation ${formation} · hover a flag for detail</div>`
+      + (rows.length ? `<table class="sub-table"><thead><tr><th>Slot</th><th>Starter</th><th>Flags</th></tr></thead><tbody>${rows.slice(0, 8).map(rowHtml).join('')}</tbody></table>`
+        : '<div class="empty-state" style="padding: 12px;">No gaps in the starting shape.</div>')
+      + (bench.length ? `<div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin: 12px 0 6px;">Watchlist (outside the starting shape)</div>
+        <table class="sub-table"><tbody>${bench.map(p => `<tr class="clickable-name" onclick="openPlayerProfile('${p.player_id}')"><td>${esc(p.name)}</td><td>${root.getPositionInfo(p.position_id).label}</td><td>${p.overall || '?'}</td><td>${esc(p.__reasons.join(', '))}</td></tr>`).join('')}</tbody></table>` : '');
+  }
+
   // ---- view switching -----------------------------------------------------
   const $ = id => root.document.getElementById(id);
   function render() {
@@ -222,16 +263,16 @@
 
   const api = {
     mode: () => mode,
-    render,
-    refresh() { if (mode !== 'list') render(); },
+    render, renderGapsCard,
+    refresh() { renderGapsCard(); if (mode !== 'list') render(); },
     setView,
-    setFormation(f) { formation = f; store.set('formation', f); render(); },
+    setFormation(f) { formation = f; store.set('formation', f); render(); renderGapsCard(); },
     setSell(id) { sellId = id; render(); },
     init() {
       formation = FORMATIONS[store.get('formation', DEFAULT_FORMATION)] ? store.get('formation', DEFAULT_FORMATION) : DEFAULT_FORMATION;
       const m = store.get('mode', 'list');
       mode = ['list', 'depth', 'age'].includes(m) ? m : 'list';
-      applyMode(); if (mode !== 'list') render();
+      applyMode(); if (mode !== 'list') render(); renderGapsCard();
     },
     buildDepth, findGaps, FORMATIONS
   };

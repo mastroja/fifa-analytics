@@ -10,4 +10,4 @@ Squad tab toggle: **List** (existing table + filters) / **Depth** / **Age**. Cod
 - Pipeline panel: academy prospects grouped by position. Age view: position group x age band grid, avg age per group.
 - Depth/Age ignore the list filters and season selector; they use the live senior squad (not loaned out / transferred).
 
-Planned: fold Expiring Contracts and Team Needs Home cards into the gap flags.
+Home: the Expiring Contracts and Team Needs cards are replaced by one Squad Gaps card (same flags, chosen formation). Team Needs reasons (Aging, Regression, Underperforming, Limited Minutes, Potential Reached) show as flags on the starter, via `computeTeamNeeds()` in app.js.

@@ -3668,14 +3668,13 @@
       </div>
     </div>
 
-    <div class="home-dashboard-grid home-grid-top">
+    <div class="home-dashboard-grid">
       <div class="profile-card home-widget">
-        <h3><span>Expiring Contracts</span></h3>
-        <div id="home-expiring-body"></div>
-      </div>
-      <div class="profile-card home-widget">
-        <h3><span>Team Needs / Future Transfers</span></h3>
-        <div id="home-needs-watchlist-body"></div>
+        <h3 style="display: flex; justify-content: space-between; align-items: center;">
+          <span>Squad Gaps</span>
+          <button class="home-toggle-btn" onclick="switchTab('squad'); SquadViews.setView('depth')">Open depth chart</button>
+        </h3>
+        <div id="home-squad-gaps-body"></div>
       </div>
     </div>
 

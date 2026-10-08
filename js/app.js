@@ -7190,40 +7190,6 @@ Live Editor will end each loan and then release the player from your club to fre
       renderTopStatWidget('appearances', 'home-top-appearances-body', true);
     }
 
-    function renderExpiringContractsTable() {
-      // __clubStatus === 'transferred' means the player has actually left
-      // the club — their old contract_expiry can still be sitting on the
-      // stale row (last known before the sale), which would otherwise
-      // list someone no longer even on the books. Loaned players stay
-      // eligible: the parent club still holds their contract.
-      const ranked = currentPlayers
-        .filter(p => p.contract_expiry && p.__clubStatus !== 'transferred')
-        .map(p => ({ ...p, __monthsLeft: computeMonthsUntilExpiry(p.contract_expiry) }))
-        .filter(p => p.__monthsLeft !== null && p.__monthsLeft <= 18)
-        .map(p => ({ ...p, __value: estimateMarketValue(p.overall, p.potential, computeAge(p.dob || p.birthdate), p.wage) }))
-        .sort((a, b) => String(a.contract_expiry).localeCompare(String(b.contract_expiry)));
-
-      renderExpandableList('home-expiring-body', ranked, (visible) => `
-        <table class="sub-table">
-          <thead><tr><th>Player</th><th>Expires</th><th>Months Left</th><th>Wage</th><th>Value</th></tr></thead>
-          <tbody>
-            ${visible.map(p => {
-              const monthsLeft = p.__monthsLeft;
-              return `
-                <tr class="clickable-name" onclick="openPlayerProfile('${p.player_id ?? p.name}')">
-                  <td>${p.name}</td>
-                  <td>${p.contract_expiry}</td>
-                  <td>${monthsLeft !== null ? monthsLeft : 'N/A'}</td>
-                  <td>${formatWageAmount(p.wage)}/wk</td>
-                  <td style="color: var(--accent-color); font-weight:600;">${formatMoney(p.__value)}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `, 'No contract data loaded.');
-    }
-
     // How outlying a flagged player's issue actually is, so the widget
     // can surface only the handful that matter most instead of every
     // player who technically clears one of the loose thresholds below.
@@ -7272,10 +7238,9 @@ Live Editor will end each loan and then release the player from your club to fre
     // outlying cases are shown (see computeNeedsSeverity) — this is meant
     // to flag the sharpest squad gaps at a glance, not list everyone who
     // loosely clears a threshold.
-    function renderTeamNeedsWatchlist() {
-      const container = document.getElementById('home-needs-watchlist-body');
-      if (!container) return;
-
+    // Every squad player with at least one watchlist reason (see the rules above), most outlying first. Feeds the
+    // Squad Gaps card and the Depth chart's gap flags (js/depth_chart.js) — the old Team Needs card is gone.
+    function computeTeamNeeds() {
       // Excludes anyone not actually at the club right now — 'transferred'
       // (left mid-season, see __clubStatus in transformPlayersForTable)
       // and 'loan' (out playing elsewhere) shouldn't be flagged as a squad
@@ -7319,39 +7284,9 @@ Live Editor will end each loan and then release the player from your club to fre
         return reasons.length > 0 ? { ...p, __age: age, __reasons: reasons } : null;
       }).filter(Boolean)
         .map(p => ({ ...p, __severity: computeNeedsSeverity(p, avgSquadAppearances, medianSquadWage) }))
-        .sort((a, b) => b.__severity - a.__severity)
-        .slice(0, 5);
+        .sort((a, b) => b.__severity - a.__severity);
 
-      if (flagged.length === 0) {
-        container.innerHTML = `<div class="empty-state" style="padding: 12px;">No squad gaps flagged right now.</div>`;
-        return;
-      }
-
-      container.innerHTML = `
-        <table class="sub-table">
-          <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Age</th><th>Value</th><th>Wage</th><th>Reason</th><th>Suggested Target</th></tr></thead>
-          <tbody>
-            ${flagged.map(p => {
-              const posInfo = getPositionInfo(p.position_id);
-              const value = estimateMarketValue(p.overall, p.potential, p.__age, p.wage);
-              const targetOvr = Math.max(75, (p.overall || 75) - 2);
-              const hint = `${posInfo.label}, age 23-27, OVR ${targetOvr}+ · budget ~${formatMoney(value)}`;
-              return `
-                <tr class="clickable-name" onclick="openPlayerProfile('${p.player_id ?? p.name}')">
-                  <td>${p.name}</td>
-                  <td><span class="pos-badge pos-${posInfo.group}">${posInfo.label}</span></td>
-                  <td>${p.overall || 0}</td>
-                  <td>${p.__age ?? 'N/A'}</td>
-                  <td style="color: var(--accent-color); font-weight:600;">${formatMoney(value)}</td>
-                  <td>${formatWageAmount(p.wage)}/wk</td>
-                  <td>${p.__reasons.join(', ')}</td>
-                  <td style="color: var(--text-dim); font-size: 12px;">${hint}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `;
+      return flagged;
     }
 
     // A "promising" potential varies by division — an 81-potential player
@@ -9557,10 +9492,9 @@ Live Editor will end each loan and then release the player from your club to fre
       renderManagerPPGWidget();
       renderTrophiesWidget();
       renderTopStatsWidgets();
-      renderExpiringContractsTable();
       renderPromisingYouthTable();
       renderYouthAcademyTable();
-      renderTeamNeedsWatchlist();
+      if (typeof SquadViews !== 'undefined') SquadViews.renderGapsCard();
     }
 
     if (window.api) {
