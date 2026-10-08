@@ -1326,6 +1326,12 @@ let currentCalendar = [];
     }
 
     function switchTab(tabName) {
+      // Opening Squad from another tab starts on the List view; coming back from a player profile keeps whichever
+      // view (List / Depth / Academy) the user was on.
+      const leavingTab = document.querySelector('.tab-content.active');
+      if (tabName === 'squad' && leavingTab && leavingTab.id !== 'squad-tab' && leavingTab.id !== 'profile-tab' && typeof SquadViews !== 'undefined' && SquadViews.mode() !== 'list') {
+        SquadViews.setView('list');
+      }
       if (tabName !== 'profile') {
         previousActiveTab = tabName;
         document.getElementById('main-nav-tabs').style.display = 'flex';

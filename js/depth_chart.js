@@ -643,7 +643,7 @@ ${academySection}</aside>
     if (mode !== 'depth') { edit = null; refreshModal(); }
   }
   function setView(m) {
-    mode = m; store.set('mode', m); applyMode();
+    mode = m; applyMode();
     if (m === 'list') { renderControls(); if (root.renderTableRows) root.renderTableRows(); } else render();
   }
 
@@ -689,8 +689,7 @@ ${academySection}</aside>
     init() {
       loadLineups();
       wireHost();
-      const m = store.get('mode', 'list');
-      mode = ['list', 'depth', 'academy'].includes(m) ? m : 'list';
+      mode = 'list'; // the Squad tab always opens on the List view
       applyMode(); render(); renderGapsCard();
     },
     buildDepth, findGaps, FORMATIONS, movePlayer, summaryHtml,

@@ -34,3 +34,6 @@ Hover a player on the pitch and click the small ✕ (or use ✕ in a position's 
 
 ## All-Time XI button
 "🏆 All-Time XI" sits in the toolbar right after "＋ New".
+
+## Default view
+Opening the Squad tab from another tab always starts on **List**. Coming back from a player profile keeps whichever view (List / Depth / Academy) you were on. The last view is no longer remembered across launches.
