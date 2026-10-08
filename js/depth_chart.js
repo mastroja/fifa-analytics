@@ -35,6 +35,7 @@
     '5-3-2': [['GK', 50, 91], ['LWB', 9, 68], ['CB', 28, 77], ['CB', 50, 77], ['CB', 72, 77], ['RWB', 91, 68], ['CM', 28, 48], ['CM', 50, 52], ['CM', 72, 48], ['ST', 37, 20], ['ST', 63, 20]]
   };
   const DEFAULT_FORMATION = '4-3-3';
+  const EMPTY = '-'; // pin value meaning "leave this string vacant" (a player was removed from the chart)
 
   const OVR_ALT_PENALTY = 6; // an off-position (alt_positions) player must be this much better to beat a natural one
   const STRING_NAMES = ['1st', '2nd', '3rd'];
@@ -86,13 +87,16 @@
     const used = new Set();
     const idOf = p => String(p.player_id);
     const byId = id => pool.find(p => String(p.player_id) === String(id));
-    const pinOf = (sl, idx) => (pins && pins[sl.id] && pins[sl.id][idx] != null) ? byId(pins[sl.id][idx]) : null;
+    const rawPin = (sl, idx) => pins && pins[sl.id] ? pins[sl.id][idx] : undefined;
+    const pinOf = (sl, idx) => { const r = rawPin(sl, idx); return r != null && r !== EMPTY ? byId(r) : null; };
 
     slots.forEach(sl => {
+      if (rawPin(sl, 0) === EMPTY) { sl.pinned.add(0); return; }
       const st = pinOf(sl, 0);
       if (st && !used.has(idOf(st))) { sl.starter = st; sl.pinned.add(0); used.add(idOf(st)); }
     });
     slots.forEach(sl => {
+      if (rawPin(sl, 1) === EMPTY) { sl.pinned.add(1); return; }
       const bk = pinOf(sl, 1);
       if (bk && !used.has(idOf(bk))) { sl.backup = bk; sl.pinned.add(1); used.add(idOf(bk)); }
     });
@@ -101,7 +105,7 @@
     slots.forEach(sl => {
       const pin = pins && pins[sl.id]; if (!pin) return;
       Object.keys(pin).map(Number).filter(i => i >= 2).sort((a, b) => a - b).forEach(i => {
-        const p = byId(pin[i]);
+        const p = pin[i] === EMPTY ? null : byId(pin[i]);
         if (p && !used.has(idOf(p))) { extras.push({ sl, i, p }); used.add(idOf(p)); }
       });
     });
@@ -251,10 +255,11 @@
 
   // Depth for a lineup (Reserves exclude the Starting XI's starters from the auto fill).
   function depthFor(l, seniors, academy, exclude, needs) {
-    let autoExclude = null;
+    let autoExclude = (l.removed && l.removed.length) ? new Set(l.removed.map(String)) : null;
+    if (autoExclude) autoExclude = new Set([...autoExclude].flatMap(id => [id, Number(id)]));
     if (l.reserve) {
       const xi = lineupById('xi');
-      autoExclude = new Set(buildDepth(xi.formation, seniors, academy, exclude, null, pinsOf(xi)).map(s => s.starter && s.starter.player_id).filter(v => v != null));
+      autoExclude = new Set([...(autoExclude || []), ...buildDepth(xi.formation, seniors, academy, exclude, null, pinsOf(xi)).map(s => s.starter && s.starter.player_id).filter(v => v != null)]);
     }
     const slots = buildDepth(l.formation, seniors, academy, exclude, l.alltime ? null : needs, pinsOf(l), autoExclude);
     if (l.alltime) slots.forEach(sl => { sl.flags = []; }); // gap flags are about the live squad
@@ -300,7 +305,8 @@
       : `${p.overall || '?'}`;
     const tag = isString && idx > 0 ? `<span class="dc-tag">${idx + 1}</span>` : kind === 'prospect' ? '<span class="dc-tag">🎓</span>' : '';
     const drag = kind === 'prospect' ? '' : ' draggable="true"';
-    return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
+    const rm = isString ? `<button class="dc-rm" title="Remove from this lineup" onclick="event.stopPropagation(); SquadViews.removeFrom(${slotId}, ${idx})">✕</button>` : '';
+    return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">${rm}
       <span class="dc-ring ${fitRing(p, role)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
       ${isString && idx === 0
         ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p, role)}</span></span>
@@ -389,12 +395,12 @@
     const academySection = l.alltime ? '' : `
           <div class="dc-rhead dc-rhead-academy">Youth academy <span class="dc-dim">${academy.length} prospect${academy.length === 1 ? '' : 's'}</span></div>
           <div class="dc-rgrid">${academy.slice().sort((a, b) => prospectScore(b) - prospectScore(a)).map(academyCardHtml).join('') || '<span class="dc-none">No academy prospects loaded.</span>'}</div>`;
-    return `<div class="dc-legend-bar"><span class="dc-ringkey"><span class="dc-ring ring-fit-0">&nbsp;</span> main position <span class="dc-ring ring-fit-1">&nbsp;</span> alt position <span class="dc-ring ring-fit-x">&nbsp;</span> out of position · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
+    return `<div class="dc-legend-bar"><span class="dc-ringkey"><i class="dc-dot d0"></i> main position <i class="dc-dot d1"></i> alt position <i class="dc-dot dx"></i> out of position · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
       ${banner}
       <div class="dc-layout">
         <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys)).join('')}</div></div>
         <aside class="dc-reserves"><div class="dc-rhead">${listTitle} <span class="dc-dim">${rest.length} player${rest.length === 1 ? '' : 's'}</span></div>
-          <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div>
+          <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : (l.removed || []).some(r => sameId(r, p.player_id)) ? 'removed' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div>
 ${academySection}</aside>
       </div>
 `;
@@ -413,8 +419,8 @@ ${academySection}</aside>
         : `<button class="home-toggle-btn" title="Create another lineup (e.g. cup XI, youth team)" onclick="SquadViews.startCreate()">＋ New</button>`);
     const sellOptions = seniors.slice().sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0))
       .map(p => `<option value="${esc(p.player_id)}"${sameId(p.player_id, sellId) ? ' selected' : ''}>${esc(p.name)} (${p.overall || '?'})</option>`).join('');
-    const hasPins = Object.keys(l.pins).length > 0;
-    const trophy = `<button class="dc-trophy${l.alltime ? ' on' : ''}" title="All-Time XI: the best players ever to play for the club" onclick="SquadViews.setLineup('alltime')">🏆</button>`;
+    const hasPins = Object.keys(l.pins).length > 0 || (l.removed || []).length > 0;
+    const trophy = `<button class="dc-trophy${l.alltime ? ' on' : ''}" title="All-Time XI: the best players ever to play for the club" onclick="SquadViews.setLineup('alltime')">🏆 All-Time XI</button>`;
     return `<div class="home-toggle dc-lineups">${chips}</div>${trophy}
       <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
       ${l.alltime ? '' : `<label class="dc-ctl">What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>`}
@@ -440,18 +446,32 @@ ${academySection}</aside>
       if (!Object.keys(P[k]).length) delete P[k];
     });
     unpin(pid); if (occupant) unpin(occupant.player_id);
+    l.removed = (l.removed || []).filter(r => !sameId(r, pid)); // putting a player back on the chart un-removes them
     (P[target.slot] = P[target.slot] || {})[target.idx] = pid;
     if (src && occupant) (P[src.slot] = P[src.slot] || {})[src.idx] = occupant.player_id;
+    saveLineups(); renderAll();
+  }
+
+  // Take a player off the chart: their string stays vacant and they are kept out of the auto fill, so they sit in the list.
+  function removeFrom(slotId, idx) {
+    const l = active();
+    const slot = lastSlots[slotId]; const p = slot && slot.strings[idx];
+    if (!p) return;
+    const P = l.pins;
+    Object.keys(P).forEach(k => {
+      Object.keys(P[k]).forEach(i => { if (sameId(P[k][i], p.player_id)) delete P[k][i]; });
+      if (!Object.keys(P[k]).length) delete P[k];
+    });
+    if (idx < 2) (P[slotId] = P[slotId] || {})[idx] = EMPTY;
+    l.removed = l.removed || [];
+    if (!l.removed.some(r => sameId(r, p.player_id))) l.removed.push(p.player_id);
     saveLineups(); renderAll();
   }
 
   function clearString(slotId, idx) {
     const l = active();
     const P = l.pins;
-    if (idx < 2) {
-      // an auto-filled string can't be left empty by clearing it; pin "nobody" isn't a thing, so just drop the pin
-      if (P[slotId]) delete P[slotId][idx];
-    } else if (P[slotId]) delete P[slotId][idx];
+    if (P[slotId]) delete P[slotId][idx]; // back to auto (or, for 3rd string and beyond, simply empty)
     if (P[slotId] && !Object.keys(P[slotId]).length) delete P[slotId];
     saveLineups(); renderAll();
   }
@@ -473,7 +493,9 @@ ${academySection}</aside>
       strings.push(`<div class="dc-mstring${i === edit.idx ? ' on' : ''}" onclick="SquadViews.pickString(${i})">
         <span class="dc-mlabel">${stringName(i)} string</span>
         ${p ? `<span class="dc-row" data-pid="${esc(p.player_id)}"><span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${p.overall || '?'}</span></span>
-          <button class="dc-x" title="${i < 2 ? 'Back to auto' : 'Remove'}" onclick="event.stopPropagation(); SquadViews.clearString(${slot.id}, ${i})">✕</button>`
+          ${i < 2 && slot.pinned.has(i) ? `<button class="dc-x" title="Back to auto-fill" onclick="event.stopPropagation(); SquadViews.clearString(${slot.id}, ${i})">↺</button>` : ''}
+          <button class="dc-x" title="Remove from the chart" onclick="event.stopPropagation(); SquadViews.removeFrom(${slot.id}, ${i})">✕</button>`
+          : slot.pinned.has(i) && i < 2 ? `<span class="dc-none">vacant</span><button class="dc-x" title="Back to auto-fill" onclick="event.stopPropagation(); SquadViews.clearString(${slot.id}, ${i})">↺</button>`
           : '<span class="dc-none">empty</span>'}
       </div>`);
     }
@@ -636,7 +658,7 @@ ${academySection}</aside>
     setView,
     setFormation(f) { if (!FORMATIONS[f]) return; active().formation = f; saveLineups(); renderAll(); },
     setSell(id) { sellId = id; render(); },
-    resetOrder() { const l = active(); l.pins = {}; saveLineups(); renderAll(); },
+    resetOrder() { const l = active(); l.pins = {}; l.removed = []; saveLineups(); renderAll(); },
     setAllTimeData(rows) { allTimeRows = prepAllTime(rows); },
     setLineup(id) { if (!lineupById(id)) return; if (id === 'alltime') sellId = ''; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
     startCreate() { creating = true; renderControls(); },
@@ -663,7 +685,7 @@ ${academySection}</aside>
       refreshModal();
     },
     assign(pid) { if (edit) { movePlayer(pid, null, { slot: edit.slot, idx: edit.idx }); } },
-    clearString,
+    clearString, removeFrom,
     init() {
       loadLineups();
       wireHost();

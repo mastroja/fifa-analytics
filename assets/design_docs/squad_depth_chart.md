@@ -28,3 +28,9 @@ Heights are capped at 6'9" (206 cm) on display, on import (main.js `capHeightCm`
 
 ## Season selector
 The season selector and search bar belong to the List view only; Depth and Academy hide them.
+
+## Removing a player from the chart
+Hover a player on the pitch and click the small ✕ (or use ✕ in a position's ✎ dialog). Their string stays vacant, they are kept out of the auto fill, and they appear in the right-hand list tagged "removed". Dragging them back (or choosing them in ✎) restores them. ↺ in the dialog hands a string back to auto-fill. "Reset order" clears pins and removals for the selected lineup.
+
+## All-Time XI button
+"🏆 All-Time XI" sits in the toolbar right after "＋ New".

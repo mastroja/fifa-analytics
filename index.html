@@ -1249,6 +1249,11 @@
     .dc-tag { font-size: 9px; color: var(--text-dim); }
     .dc-ring { display: inline-flex; border-radius: 50%; border: 2px solid transparent; flex-shrink: 0; }
     .dc-ring.ring-fit-0 { border-color: #3fb950; } .dc-ring.ring-fit-1 { border-color: #d29922; } .dc-ring.ring-fit-x { border-color: #f85149; }
+    .dc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; }
+    .dc-dot.d0 { background: #3fb950; } .dc-dot.d1 { background: #d29922; } .dc-dot.dx { background: #f85149; }
+    .dc-row { position: relative; }
+    .dc-rm { position: absolute; top: 1px; right: 1px; display: none; background: rgba(13, 17, 23, 0.9); border: 1px solid var(--border-color); color: var(--text-dim); border-radius: 50%; width: 18px; height: 18px; line-height: 14px; font-size: 10px; cursor: pointer; padding: 0; z-index: 2; }
+    .dc-row:hover .dc-rm { display: block; } .dc-rm:hover { color: #f85149; border-color: #f85149; }
     .dc-ringkey { display: inline-flex; align-items: center; gap: 6px; }
     .dc-alts { display: inline-flex; gap: 3px; margin-left: 5px; }
     .dc-altchip { font-size: 9px; font-weight: 600; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--text-dim); }
@@ -1288,7 +1293,7 @@
     .dc-ctl select { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; margin-left: 4px; }
     .dc-new-form { display: inline-flex; align-items: center; gap: 6px; }
     .dc-new-form input[type=text] { background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; width: 150px; }
-    .dc-trophy { margin-left: auto; background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 15px; opacity: 0.35; padding: 2px 6px; }
+    .dc-trophy { background: none; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text-dim); opacity: 0.85; padding: 4px 10px; }
     .dc-trophy:hover, .dc-trophy.on { opacity: 1; border-color: #d29922; }
     .dc-rightcol { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; } .dc-ovr-big { font-size: 20px; font-weight: 800; }
     .dc-pos { font-size: 10px; padding: 1px 6px; }
