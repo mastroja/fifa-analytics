@@ -9448,19 +9448,13 @@ Live Editor will end each loan and then release the player from your club to fre
 
     function renderChallengeUI() {
       const st = challengeStatus;
-      const chip = document.getElementById('challenge-chip');
       const card = document.getElementById('challenge-card');
       const bannerBox = document.getElementById('challenge-transfer-banners');
 
       if (!st) {
-        if (chip) chip.style.display = 'none';
         if (card) card.style.display = 'none';
         if (bannerBox) bannerBox.innerHTML = '';
         return;
-      }
-      if (chip) {
-        chip.style.display = st.chip ? '' : 'none';
-        if (st.chip) { chip.textContent = st.chip.text; chip.className = `badge challenge-chip tone-${st.chip.tone}`; }
       }
       if (card) {
         const h = st.headline, p = h.progress;

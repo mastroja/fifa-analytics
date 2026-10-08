@@ -448,13 +448,9 @@
 
     .youth-mode-header-badge { background: #1a2e22; border-color: #3fb950; color: #3fb950; }
 
-    /* Challenge Mode — Home card, header chip, Transfers Hub banners and
+    /* Challenge Mode — Home card, Transfers Hub banners and
        slide-over drawer. All fed by one status object (see js/challenge.js
        and renderChallengeUI in js/app.js). */
-    .challenge-chip { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 10px; border: 1px solid; border-radius: 20px; background: transparent; }
-    .challenge-chip.tone-good { background: #1a2e22; border-color: #3fb950; color: #3fb950; }
-    .challenge-chip.tone-warn { background: #2e2512; border-color: #d29922; color: #d29922; }
-    .challenge-chip.tone-danger { background: #2e1517; border-color: #f85149; color: #f85149; }
     .challenge-card { background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid var(--text-dim); border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; cursor: pointer; }
     .challenge-card:hover { background: var(--hover-color); }
     .challenge-card.tone-good { border-left-color: #3fb950; }
@@ -1053,7 +1049,6 @@
       <select id="save-select" onchange="changeSave(this.value)" title="Switch which career save to view"></select>
       <button class="refresh-btn" onclick="deleteCurrentSave()" title="Permanently delete the selected save's history">🗑</button>
       <span class="badge youth-mode-header-badge" id="youth-mode-header-badge" style="display: none;" title="Youth Squad Career Mode is permanently enabled for this save.">🎓 Youth Mode Active</span>
-      <button class="badge challenge-chip" id="challenge-chip" style="display: none;" onclick="openChallengeDrawer()" title="Open Challenge Mode details"></button>
       <button class="refresh-btn" id="youth-mode-season-reminder-btn" onclick="openYouthMyRulesDialog()" style="display: none; padding: 4px 10px; border-color: #d29922; color: #d29922;" title="Just the rule that applies to your team right now — who you can sign, who you must sell, and your squad cap. The full rules reference is still in Settings.">⚠️ Squad Rules</button>
       <button class="refresh-btn" id="refresh-btn" onclick="triggerRefresh()" title="Sends the F10 hotkey to Live Editor to re-run export_all.lua">↻ Refresh</button>
       <div class="settings-wrap" id="settings-wrap">
