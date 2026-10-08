@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS saves (
     -- (see enableYouthMode in main.js) — "always activated" per the user's
     -- design for Youth Squad Career Mode.
     youth_mode_enabled INTEGER DEFAULT 0,
+    -- Which game the save's exports come from ('FC27'); NULL for saves synced before this was recorded. Lets the UI say
+    -- "not available in FC 27 yet" instead of an unexplained empty widget.
+    game_version TEXT,
     -- Set by clearFormerPlayers in main.js when the user clears the Former
     -- Players tab (e.g. right before starting a youth rebuild, to drop the
     -- pre-rebuild squad that shouldn't count). getPastPlayers hides anyone

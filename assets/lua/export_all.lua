@@ -502,7 +502,7 @@ do
     end
 
     local function serialize_to_json(tbl, current_date)
-        local json = string.format('{"save_uid":"%s","current_date":"%s","players":[', save_uid:gsub('"', '\\"'), current_date)
+        local json = string.format('{"game":"FC27","save_uid":"%s","current_date":"%s","players":[', save_uid:gsub('"', '\\"'), current_date)
         for i, p in ipairs(tbl) do
             local attr = p.attributes or {}
             json = json .. string.format(

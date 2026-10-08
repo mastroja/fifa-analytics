@@ -230,6 +230,13 @@ async function initDatabase() {
     // column already exists, safe to ignore
   }
 
+  // See game_version in schema.sql — same ignore-already-exists migration pattern as above.
+  try {
+    db.run(`ALTER TABLE saves ADD COLUMN game_version TEXT;`);
+  } catch (e) {
+    // column already exists, safe to ignore
+  }
+
   // See former_players_cleared_before in schema.sql / clearFormerPlayers
   // below — same ignore-already-exists migration pattern as above.
   try {
@@ -4342,6 +4349,9 @@ function importFifaData(jsonPayload) {
   // date, resolving from it here is always correct, not a compromise.
   if (jsonPayload.save_uid) {
     resolveActiveSave(jsonPayload.save_uid, null, null, jsonPayload.current_date);
+    if (jsonPayload.game && activeSaveId) {
+      db.run('UPDATE saves SET game_version = ? WHERE id = ? AND (game_version IS NULL OR game_version <> ?);', [String(jsonPayload.game), activeSaveId, String(jsonPayload.game)]);
+    }
   } else if (!currentSeasonId) {
     refreshCurrentSeasonFromCalendar();
   } else {
@@ -5893,7 +5903,7 @@ function getTeamRecordSeasons(saveId = activeSaveId) {
 function getSavesList() {
   if (!db) return [];
   const res = db.exec(`
-    SELECT s.id, s.club_name, s.manager_name, s.save_uid, ss.synced_at, s.youth_mode_enabled
+    SELECT s.id, s.club_name, s.manager_name, s.save_uid, ss.synced_at, s.youth_mode_enabled, s.game_version
     FROM saves s
     LEFT JOIN save_snapshots ss ON ss.save_id = s.id
     ORDER BY s.id ASC;
@@ -5906,7 +5916,8 @@ function getSavesList() {
     save_uid: row[3],
     last_synced_at: row[4],
     is_live: row[0] === liveSyncedSaveId,
-    youth_mode_enabled: row[5] === 1
+    youth_mode_enabled: row[5] === 1,
+    game_version: row[6] || null
   }));
 }
 
@@ -5928,6 +5939,8 @@ function selectSave(saveId) {
   const youthRes = db.exec(`SELECT youth_mode_enabled FROM saves WHERE id = ${saveId};`);
   const youthModeEnabled = youthRes.length > 0 && youthRes[0].values.length > 0
     && youthRes[0].values[0][0] === 1;
+  const gameRes = db.exec(`SELECT game_version FROM saves WHERE id = ${saveId};`);
+  const gameVersion = (gameRes.length > 0 && gameRes[0].values.length > 0 && gameRes[0].values[0][0]) || null;
 
   let calendar = null;
   let calendarIsSnapshot = false;
@@ -5962,6 +5975,7 @@ function selectSave(saveId) {
     seasons: getSeasonsList(saveId),
     youth_academy: getYouthAcademy(saveId),
     youth_mode_enabled: youthModeEnabled,
+    game_version: gameVersion,
     pending_season_review: getPendingSeasonReview(saveId)
   };
 }
