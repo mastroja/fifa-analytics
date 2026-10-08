@@ -1044,7 +1044,7 @@
     }
 
     .home-grid-stats {
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
     }
 
     @media (max-width: 1100px) {
@@ -1107,25 +1107,6 @@
       border-color: var(--accent-color);
     }
 
-    /* Header "⚠️ Squad Rules" button — pulses until clicked open at least
-       once this season (see renderYouthSeasonRulesReminder), instead of
-       auto-popping the dialog open, which the user found too intrusive. */
-    @keyframes youthReminderPulse {
-
-      0%,
-      100% {
-        box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.65);
-      }
-
-      50% {
-        box-shadow: 0 0 0 6px rgba(210, 153, 34, 0);
-      }
-    }
-
-    .youth-reminder-pulse {
-      animation: youthReminderPulse 1.6s ease-in-out infinite;
-    }
-
     /* Player Profile Page Styles */
     .back-btn {
       background: var(--card-bg);
@@ -1173,43 +1154,9 @@
       color: var(--accent-color);
     }
 
-    .youth-mode-header-badge {
-      background: #1a2e22;
-      border-color: #3fb950;
-      color: #3fb950;
-    }
-
     /* Challenge Mode — Home card, Transfers Hub banners and
        slide-over drawer. All fed by one status object (see js/challenge.js
        and renderChallengeUI in js/app.js). */
-    .challenge-chip {
-      cursor: pointer;
-      font-weight: 600;
-      font-size: 13px;
-      padding: 4px 10px;
-      border: 1px solid;
-      border-radius: 20px;
-      background: transparent;
-    }
-
-    .challenge-chip.tone-good {
-      background: #1a2e22;
-      border-color: #3fb950;
-      color: #3fb950;
-    }
-
-    .challenge-chip.tone-warn {
-      background: #2e2512;
-      border-color: #d29922;
-      color: #d29922;
-    }
-
-    .challenge-chip.tone-danger {
-      background: #2e1517;
-      border-color: #f85149;
-      color: #f85149;
-    }
-
     .challenge-card {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
@@ -1234,6 +1181,31 @@
 
     .challenge-card.tone-danger {
       border-left-color: #f85149;
+    }
+
+    .youth-strip {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .youth-strip>* {
+      margin-bottom: 0;
+    }
+
+    .youth-strip:not(:has(> *:not([style*="display: none"]))) {
+      display: none;
+    }
+
+    .challenge-card.compact {
+      padding: 8px 16px;
+    }
+
+    .challenge-card.compact .challenge-card-label {
+      font-size: 13px;
+      text-transform: none;
+      letter-spacing: 0;
     }
 
     .challenge-card-label {
@@ -3352,14 +3324,6 @@
       <select id="save-select" onchange="changeSave(this.value)" title="Switch which career save to view"></select>
       <button class="refresh-btn" onclick="deleteCurrentSave()"
         title="Permanently delete the selected save's history">🗑</button>
-      <span class="badge youth-mode-header-badge" id="youth-mode-header-badge" style="display: none;"
-        title="Youth Squad Career Mode is permanently enabled for this save.">🎓 Youth Mode Active</span>
-      <button class="badge challenge-chip" id="challenge-chip" style="display: none;" onclick="openChallengeDrawer()"
-        title="Open Challenge Mode details"></button>
-      <button class="refresh-btn" id="youth-mode-season-reminder-btn" onclick="openYouthMyRulesDialog()"
-        style="display: none; padding: 4px 10px; border-color: #d29922; color: #d29922;"
-        title="Just the rule that applies to your team right now — who you can sign, who you must sell, and your squad cap. The full rules reference is still in Settings.">⚠️
-        Squad Rules</button>
       <button class="refresh-btn" id="refresh-btn" onclick="triggerRefresh()"
         title="Sends the F10 hotkey to Live Editor to re-run export_all.lua">↻ Refresh</button>
       <div class="settings-wrap" id="settings-wrap">
@@ -3409,8 +3373,9 @@
             <div class="settings-row" id="settings-youth-mode-row">
               <span id="settings-youth-mode-status" style="color: var(--text-dim);">Not enabled</span>
               <div style="display: flex; gap: 6px;">
-                <button class="refresh-btn" id="settings-youth-mode-rules-btn" onclick="openYouthRulesDialog()"
-                  style="display: none;" title="Review the Youth Squad Career Mode rules.">📋 Rules</button>
+                <button class="refresh-btn" id="settings-youth-mode-rules-btn"
+                  onclick="toggleSettingsPanel(false); openChallengeDrawer()" style="display: none;"
+                  title="Open the Challenge dashboard: obligations, transfer ban, rules.">🎯 Challenge</button>
                 <button class="refresh-btn" id="settings-youth-mode-btn" onclick="onYouthModeButtonClick()"
                   title="Enable Youth Squad Career Mode for this save (permanent, cannot be turned off).">Enable</button>
               </div>
@@ -4126,29 +4091,6 @@
     </div>
     <button class="back-btn" style="margin: 16px; justify-content: center;"
       onclick="closeTrophyWinDialog()">Continue</button>
-  </dialog>
-
-  <!-- Youth Squad Career Mode: "My Rules" — just the cap/signing/transfer
-       rule that actually applies to this team right now (see
-       renderYouthMyRulesBody), instead of the full reference tables in
-       youth-rules-dialog above. Auto-shown once per season (see
-       renderYouthSeasonRulesReminder), reopenable any time via the header
-       "⚠️ Squad Rules" button, which stays visible permanently whenever
-       Youth Mode is enabled. -->
-  <dialog id="youth-my-rules-dialog"
-    style="background: var(--card-bg); color: var(--text-color); border: 1px solid #d29922; border-radius: 8px; padding: 20px; max-width: 480px; width: 90%; max-height: 80vh; overflow: hidden;">
-    <div
-      style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-shrink: 0;">
-      <h3 style="margin: 0;">⚠️ My Youth Mode Rules</h3>
-      <button class="back-btn" style="margin: 0;" onclick="closeYouthMyRulesDialog()">✕</button>
-    </div>
-    <div id="youth-my-rules-body" class="youth-rules-body-scroll"></div>
-    <div style="display: flex; gap: 8px; margin-top: 16px; flex-shrink: 0;">
-      <button class="back-btn" style="flex: 1; justify-content: center;" onclick="openFullYouthRulesFromMyRules()"
-        title="See every league's rules, not just yours">📋 View Full Rules</button>
-      <button class="back-btn" style="flex: 1; justify-content: center;" onclick="closeYouthMyRulesDialog()">Got
-        it</button>
-    </div>
   </dialog>
 
   <!-- Youth Squad Career Mode: occasional attention-grabbing popup for an
