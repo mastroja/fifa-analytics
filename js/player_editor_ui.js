@@ -126,7 +126,11 @@
     if (f.cat === 'suggested') { const cats = suggestedCats(); out = out.filter(h => h.cat === null || cats.includes(h.cat)); }
     else if (f.cat === 'other') out = out.filter(h => h.cat === null);
     else if (f.cat !== 'all') out = out.filter(h => h.cat === Number(f.cat));
-    if (!categoryOnly && f.length !== 'all') out = out.filter(h => h.length === f.length);
+    if (!categoryOnly) {
+      if (f.length === 'other') out = out.filter(h => !h.length);                    // styles that fit no length group
+      else if (f.length !== 'all') out = out.filter(h => h.length === f.length);
+      else if (out.some(h => h.length)) out = out.filter(h => h.length);            // "Any length" = short + medium + long together
+    }
     return out;
   }
 
@@ -311,10 +315,13 @@
     const lengthCounts = {};
     inCategory.forEach(h => { if (h.length) lengthCounts[h.length] = (lengthCounts[h.length] || 0) + 1; });
     const lengths = ['short', 'med', 'long'].filter(l => lengthCounts[l]);
-    if (f.length !== 'all' && !lengthCounts[f.length]) f.length = 'all';
+    const withLength = lengths.reduce((n, l) => n + lengthCounts[l], 0);
+    const otherCount = inCategory.length - withLength; // no length group: only offered next to real length groups
+    if (f.length === 'other' ? !(lengths.length && otherCount) : (f.length !== 'all' && !lengthCounts[f.length])) f.length = 'all';
     const chip = (value, label) => `<button class="pe-chip${String(f.length) === String(value) ? ' on' : ''}" data-filter="${kind}:length:${value}">${label}</button>`;
     const lenChips = lengths.length > 0
-      ? chip('all', `Any length (${inCategory.length})`) + lengths.map(l => chip(l, `${LENGTH_LABEL[l]} (${lengthCounts[l]})`)).join('')
+      ? chip('all', `Any length (${withLength})`) + lengths.map(l => chip(l, `${LENGTH_LABEL[l]} (${lengthCounts[l]})`)).join('')
+        + (otherCount > 0 ? chip('other', `Other (${otherCount})`) : '')
       : '';
 
     const shown = filterCatalog(list, kind);
