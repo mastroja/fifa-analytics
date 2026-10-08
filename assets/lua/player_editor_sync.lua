@@ -263,6 +263,32 @@ do
     end
 end
 
+-- squad numbers (jerseynumber) are stored per team on teamplayerlinks, not on players: find the user's links and who
+-- wears which number, so a number can be checked for duplicates and written to the right record
+local links_table = LE.db:GetTable("teamplayerlinks")
+local okTeam, user_team_id = pcall(GetUserTeamID)
+local linkRecFor, numberOwner = {}, {}
+do
+    local needJerseys = false
+    for _, e in ipairs(edits) do if type(e.new) == "table" and e.new.jerseynumber ~= nil then needJerseys = true end end
+    if needJerseys and links_table and okTeam and user_team_id and user_team_id > 0 then
+        local rec, n = links_table:GetFirstRecord(), 0
+        while rec and rec > 0 and n < 60000 do
+            n = n + 1
+            local okt, team = pcall(links_table.GetRecordFieldValue, links_table, rec, "teamid")
+            if okt and team == user_team_id then
+                local okp, p = pcall(links_table.GetRecordFieldValue, links_table, rec, "playerid")
+                local okn, num = pcall(links_table.GetRecordFieldValue, links_table, rec, "jerseynumber")
+                if okp and p then
+                    linkRecFor[p] = rec
+                    if okn and type(num) == "number" and num > 0 then numberOwner[num] = p end
+                end
+            end
+            rec = links_table:GetNextValidRecord()
+        end
+    end
+end
+
 -- 2. apply each edit
 for _, e in ipairs(edits) do
     local pid = e.player_id
@@ -281,8 +307,11 @@ for _, e in ipairs(edits) do
     else
         local problem = nil
         local merged = {}
+        local playerNew = {}
+        for k, v in pairs(e.new) do if k ~= "jerseynumber" then playerNew[k] = v end end
+        local jerseyNew = e.new.jerseynumber
         -- validate every column and the drift check BEFORE writing anything
-        for field, newVal in pairs(e.new) do
+        for field, newVal in pairs(playerNew) do
             local lim = FIELD_LIMITS[field]
             if not lim then problem = "column not editable: " .. field; break end
             if type(newVal) ~= "number" or newVal ~= math.floor(newVal) or newVal < lim[1] or newVal > lim[2] then
@@ -295,6 +324,27 @@ for _, e in ipairs(edits) do
                 break
             end
             merged[field] = newVal
+        end
+
+        local jerseyLink = nil
+        if not problem and jerseyNew ~= nil then
+            if type(jerseyNew) ~= "number" or jerseyNew ~= math.floor(jerseyNew) or jerseyNew < 1 or jerseyNew > 99 then
+                problem = "squad number must be a whole number from 1 to 99"
+            else
+                jerseyLink = linkRecFor[pid]
+                if not jerseyLink then
+                    problem = "player is not in your team's squad list, so he has no squad number to change"
+                else
+                    local okc, curNum = pcall(links_table.GetRecordFieldValue, links_table, jerseyLink, "jerseynumber")
+                    if not okc then
+                        problem = "could not read the current squad number"
+                    elseif curNum ~= jerseyNew and curNum ~= e.old.jerseynumber then
+                        problem = string.format("game squad number drifted (game=%s, expected=%s)", tostring(curNum), tostring(e.old.jerseynumber))
+                    elseif curNum ~= jerseyNew and numberOwner[jerseyNew] ~= nil and numberOwner[jerseyNew] ~= pid then
+                        problem = "squad number " .. tostring(jerseyNew) .. " is already worn by another player"
+                    end
+                end
+            end
         end
 
         if not problem then
@@ -334,6 +384,18 @@ for _, e in ipairs(edits) do
                 if IS_ATTRIBUTE[field] then
                     -- only players with a development plan accept this; harmless otherwise
                     pcall(PlayerSetValueInDevelopementPlan, pid, field, newVal)
+                end
+            end
+            -- squad number (teamplayerlinks)
+            if not writeErr and jerseyLink and jerseyNew ~= nil then
+                local okC, oldNum = pcall(links_table.GetRecordFieldValue, links_table, jerseyLink, "jerseynumber")
+                local okJ, errJ = pcall(links_table.SetRecordFieldValue, links_table, jerseyLink, "jerseynumber", jerseyNew)
+                local okB, backNum = pcall(links_table.GetRecordFieldValue, links_table, jerseyLink, "jerseynumber")
+                if not okJ then writeErr = "write failed for jerseynumber: " .. tostring(errJ)
+                elseif not okB or backNum ~= jerseyNew then writeErr = string.format("read-back mismatch for jerseynumber (wrote %s, game has %s)", tostring(jerseyNew), tostring(backNum))
+                else
+                    if okC and numberOwner[oldNum] == pid then numberOwner[oldNum] = nil end
+                    numberOwner[jerseyNew] = pid
                 end
             end
             -- read back
@@ -438,6 +500,7 @@ do
 end
 log("user team id: " .. tostring(user_team_id))
 
+local jerseys, usedNumbers = {}, {} -- squad numbers live on teamplayerlinks (per team), not on players
 local tpl = LE.db:GetTable("teamplayerlinks")
 if tpl and user_team_id > 0 then
     local rec, n = tpl:GetFirstRecord(), 0
@@ -446,7 +509,11 @@ if tpl and user_team_id > 0 then
         local ok, team = pcall(tpl.GetRecordFieldValue, tpl, rec, "teamid")
         if ok and team == user_team_id then
             local ok2, pid = pcall(tpl.GetRecordFieldValue, tpl, rec, "playerid")
-            if ok2 then want(pid, "squad") end
+            if ok2 then
+                want(pid, "squad")
+                local okj, num = pcall(tpl.GetRecordFieldValue, tpl, rec, "jerseynumber")
+                if okj and type(num) == "number" and num > 0 then jerseys[pid] = num; table.insert(usedNumbers, num) end
+            end
         end
         rec = tpl:GetNextValidRecord()
     end
@@ -478,6 +545,7 @@ while rec and rec > 0 and scanned < MAX_SCAN and found < #order do
             if okf then row[f] = v end
         end
         row.editable = (row.hashighqualityhead == 0)
+        row.jerseynumber = jerseys[pid]
         local okn, name = pcall(GetPlayerName, pid)
         row.name = okn and name or ""
         table.insert(out, row)
@@ -494,7 +562,7 @@ end
 
 local f = io.open(OUT_PATH, "w+")
 if f then
-    f:write(json.encode({ save_uid = save_uid, team_id = user_team_id, players = out }))
+    f:write(json.encode({ save_uid = save_uid, team_id = user_team_id, used_numbers = usedNumbers, players = out }))
     f:close()
     log(string.format("wrote %d players to %s", #out, OUT_PATH))
 else

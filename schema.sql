@@ -878,3 +878,25 @@ CREATE TABLE IF NOT EXISTS dynamic_look_height (
     locked INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (save_id, player_id)
 );
+
+-- Squad numbers (squad_numbers.js, player_editor.js).
+-- squad_number_settings: whether academy promotions get a reserve number (31+); baselined = the squad was recorded once.
+-- squad_number_assigned: graduates already handled, so a number you change by hand later is never overwritten.
+-- squad_numbers_used: every number the user's team had at the last editor export (to avoid duplicates).
+CREATE TABLE IF NOT EXISTS squad_number_settings (
+    save_id INTEGER PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    baselined INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS squad_number_assigned (
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    number INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (save_id, player_id)
+);
+CREATE TABLE IF NOT EXISTS squad_numbers_used (
+    save_id INTEGER PRIMARY KEY,
+    numbers_json TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

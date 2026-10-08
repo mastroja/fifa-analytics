@@ -370,11 +370,27 @@
     if (!opts.some(o => o[0] === cur)) opts.unshift([cur, `Value ${cur}`]);
     return `<div class="pe-chips">${opts.map(([v, label]) => `<button class="pe-chip${v === cur ? ' on' : ''}${v === orig && v !== cur ? ' was' : ''}" data-set="${key}:${v}">${esc(label)}</button>`).join('')}</div>`;
   }
+  // Squad number: lives on the team list (not the player row), so only players in the senior squad have one.
+  function numberCard() {
+    if (!Number.isInteger(ed.cur.jerseynumber)) {
+      return `<div class="pe-card"><h3>Squad number</h3><p>This player is not in the senior squad list, so he has no squad number yet. It appears here after he is promoted.</p></div>`;
+    }
+    const used = new Set(ed.usedNumbers || []);
+    const own = ed.orig.jerseynumber;
+    const clash = used.has(ed.cur.jerseynumber) && ed.cur.jerseynumber !== own;
+    return `<div class="pe-card"><h3>Squad number</h3>
+      <p>Numbers above 30 are reserve numbers. Two players cannot wear the same number.</p>
+      <div class="pe-row" style="align-items:flex-end">${numberField('Squad number', 'jerseynumber', 1, 99)}
+        <button class="pe-chip" data-reserve-number title="Pick a random number from 31 to 99 that nobody is wearing">🎲 Random reserve number (31+)</button></div>
+      ${clash ? '<div class="pe-hint" style="color:#f85149">That number is already worn by another player.</div>' : ''}</div>`;
+  }
+
   function tabKit() {
     const acc = [1, 2, 3, 4].map(n => `<div class="pe-acc"><span class="pe-hint">Slot ${n}</span>
         ${selectField('', 'accessorycode' + n, ACCESSORY_IDS, accName)}
         ${selectField('', 'accessorycolourcode' + n, ACCESSORY_COLORS, accColorName)}</div>`).join('');
     return `${randomBar('kit', 'Randomize kit & accessories')}
+      ${numberCard()}
       <div class="pe-card"><h3>Shirt</h3><p>How the kit is worn. Applies to this player only.</p>
         <div class="pe-hint">Sleeves</div>${kitChips('jerseysleevelengthcode')}
         <div class="pe-hint" style="margin-top:10px">Kit fit</div>${kitChips('jerseyfit')}
@@ -722,6 +738,9 @@
   async function save() {
     const changes = {};
     changedKeys().forEach(k => { changes[k] = ed.cur[k]; });
+    if (changes.jerseynumber !== undefined && (ed.usedNumbers || []).includes(changes.jerseynumber) && changes.jerseynumber !== ed.orig.jerseynumber) {
+      ed.msg = `Squad number ${changes.jerseynumber} is already worn by another player.`; ed.msgKind = 'err'; render(); return;
+    }
     ed.saving = true; ed.msg = 'Saving…'; ed.msgKind = ''; render();
     // a height that came from the growth model button is not a "manual" height (which would lock the model out)
     const res = await api().queuePlayerEdit(ed.playerId, changes, { source: ed.modelHeight !== undefined && ed.cur.height === ed.modelHeight ? 'model' : undefined });
@@ -748,10 +767,19 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-model-height]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-model-height],[data-reserve-number]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.hasAttribute('data-reserve-number')) {
+        const used = new Set(ed.usedNumbers || []);
+        const free = [];
+        for (let n = 31; n <= 99; n++) if (!used.has(n) || n === ed.orig.jerseynumber) free.push(n);
+        if (!free.length) { ed.msg = 'Every number from 31 to 99 is taken.'; ed.msgKind = 'err'; render(); return; }
+        ed.cur.jerseynumber = free[Math.floor(Math.random() * free.length)];
+        ed.msg = `Reserve number ${ed.cur.jerseynumber} picked. Save to apply (Reset undoes it).`; ed.msgKind = 'ok';
+        render(); return;
+      }
       if (t.hasAttribute('data-model-height')) {
         const r = await api().planPlayerGrowth(ed.playerId);
         if (!r || r.error) { ed.msg = (r && r.error) || 'Could not work out a height.'; ed.msgKind = 'err'; render(); return; }
@@ -864,7 +892,7 @@
       ed = {
         playerId, name: stateRes.state.name || '', source: stateRes.state.source,
         orig: Object.assign({}, s), baseline: Object.assign({}, s), cur: Object.assign({}, s),
-        limits: stateRes.limits || {}, edits: stateRes.edits || [], overallTouched: false, msg: '', msgKind: '', saving: false,
+        limits: stateRes.limits || {}, usedNumbers: stateRes.usedNumbers || [], edits: stateRes.edits || [], overallTouched: false, msg: '', msgKind: '', saving: false,
         tab: 'look', showGk: false, stale, linkMode: false, bootLinks: bootLinks || {},
         filters: { hair: { cat: 'suggested', length: 'all' }, facial: { cat: 'all', length: 'all' }, boots: { brand: 'all', link: 'all', q: '' } }
       };

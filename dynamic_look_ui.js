@@ -361,10 +361,22 @@
     } catch (e) { el.textContent = ''; }
   }
 
+  // Settings switch: reserve squad numbers (31+) for academy promotions (squad_numbers.js)
+  async function loadReserveNumbers() {
+    const el = document.getElementById('settings-reserve-numbers-toggle');
+    if (!el || !api() || !api().getSquadNumberSettings) return;
+    try { const r = await api().getSquadNumberSettings(); el.checked = !!(r && r.enabled); } catch (e) { /* leave as is */ }
+  }
+  async function setReserveNumbers(on) {
+    if (!api() || !api().setSquadNumberSettings) return;
+    const r = await api().setSquadNumberSettings(on);
+    if (!r || !r.success) { const el = document.getElementById('settings-reserve-numbers-toggle'); if (el) el.checked = !on; }
+  }
+
   if (window.api && window.api.onDynamicLookUpdated) {
     window.api.onDynamicLookUpdated(() => { if (S) load(true); updateSettingsStatus(); });
   }
-  document.addEventListener('DOMContentLoaded', () => setTimeout(updateSettingsStatus, 1500));
+  document.addEventListener('DOMContentLoaded', () => setTimeout(() => { updateSettingsStatus(); loadReserveNumbers(); }, 1500));
 
-  window.DynamicLookUI = { open, updateSettingsStatus };
+  window.DynamicLookUI = { open, updateSettingsStatus, setReserveNumbers };
 })();

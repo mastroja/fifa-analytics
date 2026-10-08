@@ -44,6 +44,7 @@ const watchlistStatusPath = 'C:\\Users\\Public\\ea_fc_watchlist_status.json';
 const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
 const playerEditor = require('./player_editor');
 const dynamicLook = require('./dynamic_look');
+const squadNumbers = require('./squad_numbers');
 const leagueStatsExportPath = 'C:\\Users\\Public\\ea_fc_league_stats_export.json';
 
 // activeSaveId/currentSeasonId track whichever save/season the app is
@@ -6192,26 +6193,52 @@ async function waitFor(check, timeoutMs) {
   }
   return false;
 }
+// Several features press F11 (dynamic look, reserve numbers); never let two of them run their sequences at the same time.
+let hotkeyChain = Promise.resolve();
+function serialized(fn) {
+  const run = hotkeyChain.then(fn, fn);
+  hotkeyChain = run.catch(() => {});
+  return run;
+}
 dynamicLook.instance.configure({
   getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, playerEditor,
   getCatalog: () => playerEditor.getCatalog(), getBootLinks: () => playerEditor.getBootLinks(),
   getCurrentDate: () => lastKnownGameDate,
   // press F11 and wait until the game's fresh export has been imported
-  pressSync: async () => {
+  pressSync: () => serialized(async () => {
     const saveId = activeSaveId, before = editorStateStamp(saveId);
     if (!(await triggerLiveEditorRefresh(true, 'F11'))) return false;
     return waitFor(() => editorStateStamp(saveId) !== before, 12000);
-  },
+  }),
   // press F11 and wait until the write log for the queued edits has been processed
-  pressApply: async () => {
+  pressApply: () => serialized(async () => {
     const saveId = activeSaveId, before = queuedEditCount(saveId);
     if (!(await triggerLiveEditorRefresh(true, 'F11'))) return false;
     return waitFor(() => queuedEditCount(saveId) < before, 15000);
-  },
+  }),
   notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dynamic-look-updated', payload); },
   log: msg => console.log(msg)
 });
 dynamicLook.register(ipcMain);
+
+// Reserve squad numbers (31+) for players promoted from the academy.
+squadNumbers.instance.configure({
+  getDb: () => db, saveDatabaseToDisk, playerEditor,
+  getGraduateIds: saveId => getAcademyGraduateIds(saveId),
+  pressSync: () => serialized(async () => {
+    const saveId = activeSaveId, before = editorStateStamp(saveId);
+    if (!(await triggerLiveEditorRefresh(true, 'F11'))) return false;
+    return waitFor(() => editorStateStamp(saveId) !== before, 12000);
+  }),
+  pressApply: () => serialized(async () => {
+    const saveId = activeSaveId, before = queuedEditCount(saveId);
+    if (!(await triggerLiveEditorRefresh(true, 'F11'))) return false;
+    return waitFor(() => queuedEditCount(saveId) < before, 15000);
+  }),
+  notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('player-editor-updated', { save_id: payload.saveId, count: payload.changed, kind: 'write-log' }); },
+  log: msg => console.log(msg)
+});
+squadNumbers.register(ipcMain, () => activeSaveId);
 ipcMain.handle('enable-youth-mode', (_event, saveId) => enableYouthMode(saveId));
 ipcMain.handle('clear-former-players', (_event, saveId) => clearFormerPlayers(saveId));
 ipcMain.handle('get-pending-season-review', (_event, saveId) => getPendingSeasonReview(saveId));
@@ -6370,6 +6397,8 @@ app.whenReady().then(async () => {
 
         importFifaData(jsonPayload);
         if (jsonPayload.current_date) lastKnownGameDate = jsonPayload.current_date;
+        squadNumbers.instance.onSquadSync({ saveId: activeSaveId, players: jsonPayload.players })
+          .catch(err => console.error('[SquadNumbers] sync hook failed:', err));
         dynamicLook.instance.onSquadSync({ saveId: activeSaveId, currentDate: jsonPayload.current_date })
           .catch(err => console.error('[DynamicLook] sync hook failed:', err));
         const squadData = getSquadFromDB();

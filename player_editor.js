@@ -41,7 +41,7 @@ const FIELD_LIMITS = {
   accessorycode1: [0, 1100], accessorycode2: [0, 1100], accessorycode3: [0, 1100], accessorycode4: [0, 1100],
   accessorycolourcode1: [0, 99], accessorycolourcode2: [0, 99], accessorycolourcode3: [0, 99], accessorycolourcode4: [0, 99],
   bodytypecode: [1, 11], height: [140, 220], weight: [40, 120],
-  shoetypecode: [0, 562],
+  shoetypecode: [0, 562], jerseynumber: [1, 99],
   jerseyfit: [0, 2], jerseysleevelengthcode: [0, 4], jerseystylecode: [0, 1], socklengthcode: [0, 3]
 };
 ATTRIBUTES.forEach(a => { FIELD_LIMITS[a] = [1, 99]; });
@@ -121,6 +121,18 @@ function validateChanges(state, changes) {
   return null;
 }
 
+// Every shirt number the user's team had at the last export, plus numbers seen on editor states. Used to avoid duplicates.
+function usedNumbers(saveId) {
+  const used = new Set();
+  rowsOf('SELECT numbers_json FROM squad_numbers_used WHERE save_id = ?', [saveId]).forEach(r => {
+    try { JSON.parse(r.numbers_json).forEach(n => used.add(n)); } catch (e) { /* ignore */ }
+  });
+  rowsOf('SELECT state_json FROM player_editor_state WHERE save_id = ?', [saveId]).forEach(r => {
+    try { const n = JSON.parse(r.state_json).jerseynumber; if (Number.isInteger(n)) used.add(n); } catch (e) { /* ignore */ }
+  });
+  return used;
+}
+
 function currentState(playerId, saveId) {
   ensureReady();
   const r = rowsOf('SELECT editable, name, source, state_json, updated_at FROM player_editor_state WHERE player_id = ? AND save_id = ?', [playerId, saveId]);
@@ -155,6 +167,12 @@ function queueEdit(playerId, changes, opts) {
   Object.keys(changes || {}).forEach(k => { if (changes[k] !== cur.state[k]) real[k] = changes[k]; });
   const err = validateChanges(cur.state, real);
   if (err) return { success: false, error: err };
+
+  if (real.jerseynumber !== undefined) {
+    const taken = usedNumbers(saveId);
+    if (taken.has(real.jerseynumber) && real.jerseynumber !== cur.state.jerseynumber) return { success: false, error: `Squad number ${real.jerseynumber} is already worn by another player.` };
+    if (!Number.isInteger(cur.state.jerseynumber)) return { success: false, error: 'This player has no squad number to change (only players in the senior squad do).' };
+  }
 
   const old = {};
   Object.keys(real).forEach(k => { old[k] = cur.state[k]; });
@@ -235,6 +253,10 @@ function importEditorExport(payload) {
   const saveId = found[0].id;
   const db = ctx.getDb();
   db.run('DELETE FROM player_editor_state WHERE save_id = ?', [saveId]); // the export is the whole current set
+  if (Array.isArray(payload.used_numbers)) {
+    db.run(`INSERT INTO squad_numbers_used (save_id, numbers_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(save_id) DO UPDATE SET numbers_json = excluded.numbers_json, updated_at = CURRENT_TIMESTAMP`, [saveId, JSON.stringify(payload.used_numbers)]);
+  }
   let n = 0;
   payload.players.forEach(p => {
     if (!p.playerid) return;
@@ -329,7 +351,7 @@ function register(ipcMain) {
   ipcMain.handle('get-player-editor-state', (_e, playerId) => {
     const saveId = ctx.getActiveSaveId();
     const cur = currentState(playerId, saveId);
-    return { state: cur, edits: cur ? listEdits(playerId, saveId) : [], limits: FIELD_LIMITS };
+    return { state: cur, edits: cur ? listEdits(playerId, saveId) : [], limits: FIELD_LIMITS, usedNumbers: [...usedNumbers(saveId)] };
   });
   ipcMain.handle('queue-player-edit', (_e, playerId, changes, opts) => queueEdit(playerId, changes, opts && opts.source === 'model' ? { source: 'model' } : undefined));
   ipcMain.handle('undo-player-edit', (_e, editId) => undoEdit(editId));
@@ -350,6 +372,6 @@ function register(ipcMain) {
 }
 
 module.exports = {
-  configure, register, importEditorExport, handleWriteLog, validateChanges, queueEdit, undoEdit, getCatalog, getBootLinks, writePendingFile, computeOriginals, planRestore,
+  configure, register, importEditorExport, handleWriteLog, validateChanges, queueEdit, undoEdit, getCatalog, getBootLinks, writePendingFile, computeOriginals, planRestore, usedNumbers, getState: (playerId, saveId) => currentState(playerId, saveId),
   EXPORT_PATH, WRITE_LOG_PATH, PENDING_PATH, FIELD_LIMITS, ATTRIBUTES
 };
