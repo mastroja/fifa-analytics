@@ -1334,6 +1334,13 @@
     .dc-cand { padding: 5px 10px; border-bottom: 1px solid var(--border-color); border-radius: 0; font-size: 13px; }
     .dc-fit { font-size: 10px; color: var(--text-dim); } .dc-fit.fit-0 { color: #3fb950; } .dc-fit.fit-1 { color: #d29922; } .dc-fit.fit-x { color: #f85149; }
     @media (max-width: 700px) { .dc-modal-body { grid-template-columns: 1fr; overflow-y: auto; } }
+    .pro-locked::after { content: ' 🔒'; }
+    .pro-dim { color: var(--text-dim); }
+    .pro-list { margin: 6px 0 10px 18px; padding: 0; font-size: 13px; }
+    .pro-key { flex: 1; min-width: 0; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; }
+    #pro-dialog { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--accent-color); border-radius: 10px; padding: 20px; max-width: 460px; width: 92%; }
+    #pro-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+    .pro-dlg h3 { margin: 0 0 6px; }
     .dc-section { margin: 22px 0 8px; }
     .dc-pipeline { display: flex; flex-wrap: wrap; gap: 12px; }
     .dc-pipe-col { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 10px; width: 230px; font-size: 13px; }
@@ -3495,6 +3502,10 @@
               </select>
             </div>
           </div>
+          <div class="settings-section" id="settings-pro-section" style="display: none;">
+            <h4>Pro</h4>
+            <div id="settings-pro-body"></div>
+          </div>
           <div class="settings-section">
             <h4>Player customization</h4>
             <div class="settings-row"
@@ -3509,10 +3520,10 @@
             <div class="settings-row" id="settings-youth-mode-row">
               <span id="settings-youth-mode-status" style="color: var(--text-dim);">Not enabled</span>
               <div style="display: flex; gap: 6px;">
-                <button class="refresh-btn" id="settings-youth-mode-rules-btn"
+                <button class="refresh-btn" id="settings-youth-mode-rules-btn" data-pro="youth-mode"
                   onclick="toggleSettingsPanel(false); openChallengeDrawer()" style="display: none;"
                   title="Open the Challenge dashboard: obligations, transfer ban, rules.">🎯 Challenge</button>
-                <button class="refresh-btn" id="settings-youth-mode-btn" onclick="onYouthModeButtonClick()"
+                <button class="refresh-btn" id="settings-youth-mode-btn" data-pro="youth-mode" onclick="onYouthModeButtonClick()"
                   title="Enable Youth Squad Career Mode for this save (permanent, cannot be turned off).">Enable</button>
               </div>
             </div>
@@ -3748,7 +3759,7 @@
       <div class="home-toggle" id="squad-view-toggle">
         <button class="home-toggle-btn active" id="squad-view-list" onclick="SquadViews.setView('list')">List</button>
         <button class="home-toggle-btn" id="squad-view-depth" onclick="SquadViews.setView('depth')">Depth</button>
-        <button class="home-toggle-btn" id="squad-view-academy" onclick="SquadViews.setView('academy')">Academy</button>
+        <button class="home-toggle-btn" id="squad-view-academy" data-pro="academy-tracker" onclick="SquadViews.setView('academy')">Academy</button>
       </div>
       <div id="squad-view-controls" class="dc-toolbar-controls"></div>
     </div>
@@ -4240,6 +4251,7 @@
     <div class="challenge-drawer-body" id="challenge-drawer-body"></div>
   </aside>
 
+  <script src="js/license_ui.js"></script>
   <script src="js/challenge.js"></script>
   <script src="js/player_filters.js"></script>
   <script src="js/app.js"></script>

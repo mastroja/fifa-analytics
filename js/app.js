@@ -7598,6 +7598,7 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     async function onYouthModeButtonClick() {
+      if (typeof License !== 'undefined' && !License.isPro('youth-mode')) { License.upsell('youth-mode'); return; }
       if (currentYouthModeEnabled) return;
       if (!currentSaveId || !window.api || !window.api.enableYouthMode) return;
 
@@ -9221,6 +9222,7 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     function openChallengeDrawer() {
+      if (typeof License !== 'undefined' && !License.isPro('youth-mode')) { License.upsell('youth-mode'); return; }
       renderChallengeDrawer();
       document.getElementById('challenge-drawer').classList.add('open');
       document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'false');

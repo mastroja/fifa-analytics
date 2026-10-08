@@ -353,7 +353,10 @@ function register(ipcMain) {
     const cur = currentState(playerId, saveId);
     return { state: cur, edits: cur ? listEdits(playerId, saveId) : [], limits: FIELD_LIMITS, usedNumbers: [...usedNumbers(saveId)] };
   });
-  ipcMain.handle('queue-player-edit', (_e, playerId, changes, opts) => queueEdit(playerId, changes, opts && opts.source === 'model' ? { source: 'model' } : undefined));
+  ipcMain.handle('queue-player-edit', (_e, playerId, changes, opts) => {
+    if (ctx.isPro && !ctx.isPro('player-editor')) return { error: 'The player editor is a Pro feature.' };
+    return queueEdit(playerId, changes, opts && opts.source === 'model' ? { source: 'model' } : undefined);
+  });
   ipcMain.handle('undo-player-edit', (_e, editId) => undoEdit(editId));
   ipcMain.handle('get-customization-catalog', () => getCatalog());
   ipcMain.handle('get-boot-links', () => getBootLinks());
