@@ -46,10 +46,15 @@
     return String(p.alt_positions || '').split(',').map(s => s.trim()).filter(Boolean).map(labelOf);
   }
   // 0 = natural position, 1 = listed alternative, null = cannot play the role
+  // The three central-midfield roles are interchangeable enough that a player listed at any of them (main or alt)
+  // counts as a "close" (tier 1, yellow) fit for the others, rather than out of position.
+  const CENTRAL_MID_ROLES = ['CDM', 'CM', 'CAM'];
+  const CENTRAL_MID_LABELS = CENTRAL_MID_ROLES.flatMap(r => FAMILY[r]);
   function tierFor(p, role) {
     const fam = FAMILY[role];
     if (fam.includes(labelOf(p.position_id))) return 0;
     if (altLabels(p).some(l => fam.includes(l))) return 1;
+    if (CENTRAL_MID_ROLES.includes(role) && [labelOf(p.position_id), ...altLabels(p)].some(l => CENTRAL_MID_LABELS.includes(l))) return 1;
     return null;
   }
   const scoreOf = (p, tier) => Number(p.overall || 0) - tier * OVR_ALT_PENALTY;

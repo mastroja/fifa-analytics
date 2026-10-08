@@ -8,6 +8,7 @@ Squad tab toggle: **List** / **Depth** / **Academy** (see academy_tracker.md). C
 - Strings: every position holds 1st, 2nd, 3rd... strings. 1st/2nd auto-fill (scarcest role first; an alt-position player needs +6 OVR to beat a natural one) unless pinned; 3rd and beyond are manual only.
 - Arranging: drag a player onto another to swap, or use the ✎ on a position: pick a string, then a player (natural / alt position / out of position, hover for details). "Reset order" clears the active lineup's pins.
 - Avatar rings show fit for the position: green = one of their main positions, yellow = an alternative position, red = neither. Alternative positions are small outlined chips beside the main badge (the one that fits the slot is highlighted).
+- Central midfield: a player at CDM, CM or CAM (main or alt) in any of those three slots is yellow (a close fit), not red, and can be auto-picked there at the usual alt-position penalty.
 - Gap flags: vacant, no backup, starter's contract expiring (<= 12 months) with no backup and no prospect (red) or with cover (info), plus Team Needs reasons (Aging, Regression, Underperforming, Limited Minutes, Potential Reached).
 - "What if I sell X": re-runs the assignment without X and highlights newly opened gaps.
 - Hover summary: age, OVR, potential, the six category totals (PAC/SHO/PAS/DRI/DEF/PHY, or the goalkeeper set), preferred foot, height, weak foot, skill moves, alt positions.
