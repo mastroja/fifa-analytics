@@ -14,3 +14,11 @@ The app is **FIFA Analytics** (package `fifa-analytics`), published to GitHub re
 
 ## Heads-up for the release notes
 Tell FC 26 players that this update is for FC 27 only, and that FC 26 is not supported by it. If you ever want a softer rollover, give FC 27 a new `appId` / `productName` / publish repo (see git history of this file for the setup that was tried).
+
+## Updater requirements (found while testing the 27.0.3 installer)
+- The update check is unauthenticated, so the releases repo **must be public**. `mastroja/fifa-companion-app` is currently private, so the packaged app logs `[AutoUpdater] Update check failed: 404` and never updates. Make the repo public, or publish releases to a separate public repo (change `build.publish`).
+- Each release needs both the installer and `latest.yml` as assets (electron-builder uploads both with `npm run release`).
+- A failed check is only a log line; it never blocks the app.
+
+## Installer test checklist (done for 27.0.3)
+Build with `npm run dist`; silent install (`/S /D=<folder>`), start menu and desktop shortcuts, uninstall registry entry, app starts and loads the migrated database, uninstall removes everything but the user's data folder. The installer is not code-signed, so Windows SmartScreen will warn on first run.

@@ -6,7 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const SKIP = new Set(['license.json']); // a license belongs to the app that activated it
+// a license belongs to the app that activated it; the Connected Career file is obsolete (feature removed)
+const SKIP = new Set(['license.json', 'connected_career_join.json']);
 
 // Returns the list of copied file names ([] when nothing was copied).
 function importLegacyUserData({ legacyDir, userDir, dbFileName = 'companion.sqlite' }) {

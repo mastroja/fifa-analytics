@@ -6307,7 +6307,8 @@ function setupAutoUpdater() {
     console.error('[AutoUpdater] Error checking for updates:', err);
   });
 
-  autoUpdater.checkForUpdates();
+  // A failed check (offline, rate limit, private repo) must be a log line, not an unhandled promise rejection.
+  autoUpdater.checkForUpdates().catch(err => console.error('[AutoUpdater] Update check failed:', err && err.message));
 }
 
 function createWindow() {
