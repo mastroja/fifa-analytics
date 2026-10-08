@@ -395,9 +395,19 @@ class DynamicLook {
 
   // Every editable player with whether they are picked (used when the scope is "selected players only").
   getPlayerPicks(saveId) {
-    return this.rows(`SELECT s.player_id, s.name, s.source, CASE WHEN d.player_id IS NULL THEN 0 ELSE 1 END AS selected
-      FROM player_editor_state s LEFT JOIN dynamic_look_selected d ON d.save_id = s.save_id AND d.player_id = s.player_id
-      WHERE s.save_id = ? AND s.editable = 1 ORDER BY s.name`, [saveId]);
+    const month = monthKeyOf(this.ctx.getCurrentDate && this.ctx.getCurrentDate()) || this.getSettings(saveId).lastMonth;
+    return this.rows(`SELECT s.player_id, s.name, s.source, s.state_json, p.dob, h.locked AS height_locked,
+        CASE WHEN d.player_id IS NULL THEN 0 ELSE 1 END AS selected
+      FROM player_editor_state s
+      LEFT JOIN dynamic_look_selected d ON d.save_id = s.save_id AND d.player_id = s.player_id
+      LEFT JOIN players p ON p.player_id = s.player_id
+      LEFT JOIN dynamic_look_height h ON h.save_id = s.save_id AND h.player_id = s.player_id
+      WHERE s.save_id = ? AND s.editable = 1 ORDER BY s.name`, [saveId]).map(r => {
+      let height = null;
+      try { height = JSON.parse(r.state_json).height || null; } catch (e) { /* keep null */ }
+      const age = month ? ageAt(r.dob, month) : null;
+      return { player_id: r.player_id, name: r.name, source: r.source, selected: r.selected, age, height, heightLocked: !!r.height_locked };
+    });
   }
 
   setPlayerPicks(saveId, playerIds, selected) {

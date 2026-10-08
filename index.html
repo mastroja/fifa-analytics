@@ -1048,6 +1048,13 @@
             </div>
           </div>
           <div class="settings-section">
+            <h4>Player customization</h4>
+            <div class="settings-row" title="Monthly automatic look changes, heights and growth, and undo, for the whole team.">
+              <span>Dynamic look: <b id="settings-dynamic-look-status" style="font-weight:600;color:var(--text-dim);">…</b></span>
+              <button class="refresh-btn" onclick="toggleSettingsPanel(false); DynamicLookUI.open()">Manage…</button>
+            </div>
+          </div>
+          <div class="settings-section">
             <h4>Youth Squad Career Mode</h4>
             <div class="settings-row" id="settings-youth-mode-row">
               <span id="settings-youth-mode-status" style="color: var(--text-dim);">Not enabled</span>
@@ -1770,5 +1777,6 @@
 
   <script src="app.js"></script>
   <script src="player_editor_ui.js"></script>
+  <script src="dynamic_look_ui.js"></script>
 </body>
 </html>

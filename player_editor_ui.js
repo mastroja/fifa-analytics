@@ -66,7 +66,7 @@
   const EYE_SWATCH = { 1: '#3b7dd8', 2: '#86bdea', 3: '#7a4a21', 4: '#a8743a', 5: '#8a6a2f', 6: '#3f8f4f', 7: '#93d093', 8: '#4a86cf', 9: '#3a2314', 10: '#1fa845' };
   const SKIN_SWATCH = { 10: '#f6d9c5', 20: '#efc7a8', 30: '#e2b08a', 40: '#d19a6b', 50: '#bf8456', 60: '#a46f46', 70: '#8a5a38', 80: '#6e4529', 90: '#573520', 100: '#3f2616' };
 
-  const TABS = [['look', 'Head'], ['body', 'Body'], ['kit', 'Kit & accessories'], ['boots', 'Boots'], ['ratings', 'Ratings'], ['pos', 'Positions'], ['play', 'Playstyles'], ['dyn', 'Dynamic look'], ['hist', 'History']];
+  const TABS = [['look', 'Head'], ['body', 'Body'], ['kit', 'Kit & accessories'], ['boots', 'Boots'], ['ratings', 'Ratings'], ['pos', 'Positions'], ['play', 'Playstyles'], ['hist', 'History']];
 
   let ed = null; // open editor session
   let staticData = null;
@@ -182,13 +182,6 @@
       .pe-chip { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--expand-bg); color: inherit; font-size: 12px; cursor: pointer; }
       .pe-chip:hover { border-color: var(--accent-color); }
       .pe-chip.was { border-style: dashed; }
-      .pe-dyn-feat { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border-color); cursor: pointer; }
-      .pe-dyn-players { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; max-height: 320px; overflow-y: auto; padding: 4px; border: 1px solid var(--border-color); border-radius: 8px; }
-      .pe-dyn-player { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 4px; cursor: pointer; }
-      .pe-height-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-      .pe-height-table th, .pe-height-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border-color); }
-      .pe-height-table th { color: var(--text-dim); font-weight: 600; }
-      .pe-dyn-switch { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
       .pe-randbar { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
       .pe-randbar .pe-chip { padding: 7px 16px; font-size: 13px; }
       .pe-chip.on { background: var(--accent-color); color: #0d1117; border-color: var(--accent-color); font-weight: 600; }
@@ -528,86 +521,7 @@
       <div class="pe-card"><h3>Personality &amp; AI traits</h3><div class="pe-ps-grid">${traits}</div></div>`;
   }
 
-  // ---------- dynamic look ----------
-  // Global for the save (not just this player): every editable player may change a little each in-game month.
-  const DYN_FEATURES = [
-    ['hair', 'Haircuts and new styles', 'Younger players change more often; styles stay within the ones suggested for their skin tone, and long hair usually gets cut.'],
-    ['beard', 'Beard growth and shaving', 'Adults can grow stubble into a full beard over months, trim it, or shave it off. About a third never grow one.'],
-    ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months; veterans from 35 slowly go silver.'],
-    ['boots', 'Boots', 'Mostly new-season switches, usually staying with the same brand. Only boots linked to a game id are used.'],
-    ['accessories', 'Accessories', 'Tape, wristbands and gloves come and go.'],
-    ['growth', 'Height, weight and growth', 'Youth players keep growing toward their own adult height each month; weight and body type follow. Anyone whose height you edited by hand is left alone.']
-  ];
   const fmtHeight = cm => (typeof formatHeight === 'function' ? formatHeight(String(cm)) : cm + ' cm');
-  function heightCard(d) {
-    const pv = d.heightPreview;
-    const pct = (a, n) => (n ? Math.round(100 * a / n) : 0);
-    let preview = '';
-    if (pv && pv.error) preview = `<div class="pe-banner">${esc(pv.error)}</div>`;
-    else if (pv) {
-      const b = pv.before, a = pv.after;
-      const row = (label, s) => `<tr><td>${label}</td><td>${s.n}</td><td>${esc(fmtHeight(Math.round(s.mean)))}</td><td>${Math.round(s.meanWeight || 0)} kg</td><td>${s.under} (${pct(s.under, s.n)}%)</td><td>${s.over}</td></tr>`;
-      preview = `<table class="pe-height-table"><thead><tr><th></th><th>Players</th><th>Avg height</th><th>Avg weight</th><th>Under 5'7"</th><th>Over 6'4"</th></tr></thead>
-          <tbody>${row('Now', b)}${row('After the model', a)}</tbody></table>
-        ${pv.changing === 0
-          ? `<div class="pe-hint" style="margin:10px 0 4px">Nothing to change: all ${pv.total} players already match the model, so Apply would do nothing.</div>`
-          : `<div class="pe-hint" style="margin:10px 0 4px">${pv.changing} of ${pv.total} players would change. Biggest changes first (age, now to after; the number in brackets is the player's expected adult height):</div>`}
-        ${pv.sample.map(s => `<div class="pe-hist-row"><span><b>${esc(s.name)}</b> <span class="pe-hint">age ${s.age}</span></span><span>${esc(fmtHeight(s.before))} to ${esc(fmtHeight(s.after))}, ${s.wBefore} to ${s.wAfter} kg <span class="pe-hint">(adult ${esc(fmtHeight(s.adult))})</span></span></div>`).join('')}`;
-    }
-    return `<div class="pe-card"><h3>Realistic heights</h3>
-        <p>Each player gets their own genetic adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", taller keepers and centre-backs, shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. A height is only ever raised, never lowered. Preview first; nothing changes until you press Apply. You can also do one player at a time from their Body tab.</p>
-        <div class="pe-row"><button class="pe-btn" data-dyn-height-preview>Preview realistic heights</button>
-          <button class="pe-btn primary" data-dyn-height-apply>Apply to all picked players now</button></div>
-        ${preview}</div>`;
-  }
-
-  function undoCard(d) {
-    const pv = d.undoPreview;
-    return `<div class="pe-card"><h3>Undo</h3>
-        <p>Put players back the way they were before the app first changed them. Both buttons restore through the game (F11), and the app shows the numbers first.</p>
-        <div class="pe-row"><button class="pe-btn" data-dyn-undo="shrunk">Restore players who got shorter</button>
-          <button class="pe-btn" data-dyn-undo="all" style="border-color:#f85149;color:#f85149">Undo ALL customization</button></div>
-        <div class="pe-hint">${pv ? (pv.error ? esc(pv.error) : `Right now: ${pv.shrunk.players} player${pv.shrunk.players === 1 ? '' : 's'} are shorter than they started; undoing everything would restore ${pv.all.columns} value${pv.all.columns === 1 ? '' : 's'} across ${pv.all.players} player${pv.all.players === 1 ? '' : 's'}.`) : ''}</div></div>`;
-  }
-
-  function tabDynamic() {
-    const d = ed.dyn;
-    if (!d) return `<div class="pe-card"><h3>Dynamic look</h3><p>Loading…</p></div>`;
-    if (d.error) return `<div class="pe-card"><h3>Dynamic look</h3><div class="pe-banner">${esc(d.error)}</div></div>`;
-    const s = d.settings || { enabled: false, features: {}, scope: 'all', lastMonth: null };
-    const feats = DYN_FEATURES.map(([k, label, hint]) => `<label class="pe-dyn-feat"><input type="checkbox" data-dyn-feature="${k}"${s.features[k] !== false ? ' checked' : ''}>
-      <span><b>${esc(label)}</b><br><span class="pe-hint">${esc(hint)}</span></span></label>`).join('');
-    const log = (d.log || []).length
-      ? d.log.map(l => `<div class="pe-hist-row"><span><b>${esc(l.player_name)}</b> · ${esc(l.summary)} <span class="pe-hint">(${esc(l.game_month)})</span></span>
-          <span class="pe-st ${esc(l.status || 'queued')}">${esc(l.status || 'queued')}</span></div>`).join('')
-      : '<div class="pe-hint">Nothing has changed yet.</div>';
-    const players = d.players || [];
-    const q = (d.q || '').toLowerCase();
-    const shownPlayers = players.filter(p => !q || String(p.name).toLowerCase().includes(q));
-    const pickedCount = players.filter(p => p.selected).length;
-    const list = s.scope === 'selected' ? `
-      <div class="pe-row" style="align-items:center;gap:10px;margin-bottom:8px">
-        <input class="pe-search" type="search" placeholder="Search players…" data-dyn-q value="${esc(d.q || '')}">
-        <button class="pe-chip" data-dyn-pick="all">Select shown</button>
-        <button class="pe-chip" data-dyn-pick="none">Clear shown</button>
-        <span class="pe-hint">${pickedCount} of ${players.length} selected</span></div>
-      <div class="pe-dyn-players">${shownPlayers.map(p => `<label class="pe-dyn-player"><input type="checkbox" data-dyn-player="${p.player_id}"${p.selected ? ' checked' : ''}> ${esc(p.name)} <span class="pe-hint">${p.source === 'academy' ? 'academy' : 'squad'}</span></label>`).join('') || '<div class="pe-hint">No players match.</div>'}</div>` : '';
-    return `<div class="pe-card"><h3>Dynamic player look</h3>
-        <p>Every in-game month, the players below may change a little. Changes are queued as normal edits and applied automatically through the F11 hotkey, so the game window comes forward briefly once a month. This applies to the whole save, not just this player.</p>
-        <label class="pe-dyn-switch"><input type="checkbox" data-dyn-enabled${s.enabled ? ' checked' : ''}> <b>Update looks automatically each month</b></label>
-        <div class="pe-hint" style="margin:6px 0 14px">${s.lastMonth ? `Last month played out: ${esc(s.lastMonth)}.` : 'Starts counting from the next in-game month after you turn it on.'}</div>
-        ${d.msg ? `<div class="pe-msg ${d.msgKind || ''}" style="margin-bottom:10px">${esc(d.msg)}</div>` : ''}</div>
-      <div class="pe-card"><h3>What can change</h3>${feats}</div>
-      ${heightCard(d)}
-      <div class="pe-card"><h3>Which players</h3>
-        <div class="pe-chips"><button class="pe-chip${s.scope === 'all' ? ' on' : ''}" data-dyn-scope="all">All editable players (${players.length})</button>
-          <button class="pe-chip${s.scope === 'selected' ? ' on' : ''}" data-dyn-scope="selected">Only players I pick</button></div>
-        ${list}
-        <div class="pe-row" style="margin-top:14px"><button class="pe-btn" data-dyn-run>Run this month now</button>
-          <span class="pe-hint" style="align-self:center">Plays the current in-game month with fresh randomness for the players above and applies it to the game now. Useful for trying it out.</span></div></div>
-      ${undoCard(d)}
-      <div class="pe-card"><h3>Recent changes</h3>${log}</div>`;
-  }
 
   function tabHistory() {
     if (!ed.edits.length) return `<div class="pe-card"><h3>History</h3><p>No edits yet for this player.</p></div>`;
@@ -642,7 +556,7 @@
     const prevScroll = panel ? panel.scrollTop : 0;
     const prevTab = panel ? panel.dataset.tab : null;
     const changes = changedKeys();
-    const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, dyn: tabDynamic, hist: tabHistory }[ed.tab]();
+    const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, hist: tabHistory }[ed.tab]();
     const staleBanner = ed.stale ? `<div class="pe-banner">${esc(ed.stale)}</div>` : '';
     dlg.innerHTML = `<div class="pe-shell">
       <div class="pe-top">
@@ -661,11 +575,6 @@
       </div></div>`;
     const np = dlg.querySelector('.pe-panel');
     if (np && prevTab === ed.tab) np.scrollTop = prevScroll;
-    if (ed.focusDynQ) {
-      ed.focusDynQ = false;
-      const di = dlg.querySelector('[data-dyn-q]');
-      if (di) { di.focus(); di.setSelectionRange(di.value.length, di.value.length); }
-    }
     if (ed.focusBootQ) {
       ed.focusBootQ = false;
       const qi = dlg.querySelector('[data-boot-q]');
@@ -835,59 +744,14 @@
     render();
   }
 
-  async function loadDynamic() {
-    if (!api().getDynamicLook) {
-      // the page was reloaded against an older app process: the new calls only exist after a full restart
-      ed.dyn = { error: 'This part needs the latest app version. Close the app completely and start it again (npm start), then reopen the editor.' };
-      if (ed.tab === 'dyn') render();
-      return;
-    }
-    try {
-      const r = await api().getDynamicLook();
-      ed.dyn = Object.assign({}, ed.dyn || {}, r, { error: null });
-      if (api().previewUndo) { try { ed.dyn.undoPreview = await api().previewUndo(); } catch (e) { /* hint only */ } }
-    } catch (e) {
-      ed.dyn = { error: 'Could not load the dynamic look settings: ' + ((e && e.message) || e) };
-    }
-    if (ed && ed.tab === 'dyn') render();
-  }
-  async function saveDynamic(patch) {
-    try {
-      const r = await api().setDynamicLook(patch);
-      if (r && r.success) { ed.dyn.settings = r.settings; ed.dyn.msg = ''; }
-      else { ed.dyn.msg = 'Could not save: no active save yet. Press Refresh in the app once so it knows which career is open.'; ed.dyn.msgKind = 'err'; }
-    } catch (e) {
-      ed.dyn.msg = 'Could not save: ' + ((e && e.message) || e); ed.dyn.msgKind = 'err';
-    }
-    render();
-  }
-
   // ---------- events ----------
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick],[data-dyn-height-preview],[data-dyn-height-apply],[data-model-height],[data-dyn-undo]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-model-height]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
-      if (t.dataset.dynUndo) {
-        const mode = t.dataset.dynUndo;
-        const pv = await api().previewUndo();
-        ed.dyn.undoPreview = pv;
-        if (!pv || pv.error) { render(); return; }
-        const n = mode === 'shrunk' ? pv.shrunk.players : pv.all.players;
-        if (n === 0) { ed.dyn.msg = mode === 'shrunk' ? 'No player is shorter than they started.' : 'Nothing to undo.'; ed.dyn.msgKind = 'ok'; render(); return; }
-        const text = mode === 'shrunk'
-          ? `Restore the original height, weight and body type of ${n} player${n === 1 ? '' : 's'} who ended up shorter than they started?`
-          : `Undo ALL customization for ${n} player${n === 1 ? '' : 's'} (${pv.all.columns} values: hair, kit, boots, height and everything else the app changed)?\n\nThis also switches the monthly dynamic look and growth off. The changes are written to the game through F11.`;
-        if (!confirm(text)) { render(); return; }
-        ed.dyn.msg = 'Restoring in the game…'; ed.dyn.msgKind = ''; render();
-        const res = await api().undoCustomization(mode);
-        ed.dyn.msg = res && res.success ? `Done: ${res.restored} player${res.restored === 1 ? '' : 's'} restored.` : ((res && res.error) || 'Failed.');
-        ed.dyn.msgKind = res && res.success ? 'ok' : 'err';
-        ed.dyn.undoPreview = null;
-        await loadDynamic(); render(); return;
-      }
       if (t.hasAttribute('data-model-height')) {
         const r = await api().planPlayerGrowth(ed.playerId);
         if (!r || r.error) { ed.msg = (r && r.error) || 'Could not work out a height.'; ed.msgKind = 'err'; render(); return; }
@@ -896,36 +760,6 @@
         ed.modelNote = `Adult height for this player: ${fmtHeight(r.adult)}. At ${r.age} they have grown to ${fmtHeight(ed.cur.height)}, weight ${ed.cur.weight} kg.`;
         ed.msg = Object.keys(r.changes).length ? 'Height and weight set. Save to apply (Reset undoes it).' : 'Already right for this player; nothing to change.'; ed.msgKind = 'ok';
         render(); return;
-      }
-      if (t.hasAttribute('data-dyn-height-preview')) {
-        ed.dyn.heightPreview = await api().previewHeightModel();
-        render(); return;
-      }
-      if (t.hasAttribute('data-dyn-height-apply')) {
-        const pv = ed.dyn.heightPreview || await api().previewHeightModel();
-        const n = pv && pv.after ? pv.after.n : 0;
-        if (!confirm(`Set height, weight and body type for ${n} players in the game, using each player's own growth model?\n\nThe game window comes forward briefly. Every change is saved as an edit you can undo from History. Players whose height you changed by hand are skipped.`)) return;
-        ed.dyn.msg = 'Applying heights in the game…'; ed.dyn.msgKind = ''; render();
-        const res = await api().applyHeightModel();
-        ed.dyn.msg = res && res.success ? `Done: ${res.changed} player${res.changed === 1 ? '' : 's'} updated.` : ((res && res.error) || 'Failed.');
-        ed.dyn.msgKind = res && res.success ? 'ok' : 'err';
-        ed.dyn.heightPreview = null;
-        await loadDynamic(); render(); return;
-      }
-      if (t.dataset.dynScope) { await saveDynamic({ scope: t.dataset.dynScope }); return; }
-      if (t.dataset.dynPick) {
-        const q = (ed.dyn.q || '').toLowerCase();
-        const ids = (ed.dyn.players || []).filter(p => !q || String(p.name).toLowerCase().includes(q)).map(p => p.player_id);
-        const r = await api().setDynamicLookPlayers(ids, t.dataset.dynPick === 'all');
-        if (r && r.success) ed.dyn.players = r.players;
-        render(); return;
-      }
-      if (t.hasAttribute('data-dyn-run')) {
-        ed.dyn = Object.assign({}, ed.dyn, { msg: 'Running… the game window will come forward briefly.', msgKind: '' }); render();
-        const res = await api().runDynamicLookNow();
-        ed.dyn.msg = res && res.success ? `Done: ${res.changed} player${res.changed === 1 ? '' : 's'} changed.` : ((res && res.error) || 'Failed.');
-        ed.dyn.msgKind = res && res.success ? 'ok' : 'err';
-        await loadDynamic(); render(); return;
       }
       if (t.dataset.random) { randomize(t.dataset.random); return; }
       if (t.dataset.unlink) {
@@ -949,7 +783,7 @@
       if (t.hasAttribute('data-save')) { await save(); return; }
       if (t.hasAttribute('data-toggle-gk')) { ed.showGk = !ed.showGk; render(); return; }
       if (t.hasAttribute('data-reset')) { ed.cur = Object.assign({}, ed.baseline); ed.orig = Object.assign({}, ed.baseline); ed.overallTouched = false; ed.msg = ''; render(); return; }
-      if (t.dataset.tab) { ed.tab = t.dataset.tab; render(); if (ed.tab === 'dyn') await loadDynamic(); return; }
+      if (t.dataset.tab) { ed.tab = t.dataset.tab; render(); return; }
       if (t.dataset.set) { const [k, v] = t.dataset.set.split(':'); ed.openDd = null; setValue(k, v); return; }
       if (t.dataset.filter) {
         const [kind, group, val] = t.dataset.filter.split(':');
@@ -972,7 +806,6 @@
     });
     dlg.addEventListener('input', (e) => {
       if (!ed) return;
-      if (e.target.hasAttribute('data-dyn-q')) { ed.dyn.q = e.target.value; ed.focusDynQ = true; render(); return; }
       if (!e.target.hasAttribute('data-boot-q')) return;
       ed.filters.boots.q = e.target.value;
       ed.focusBootQ = true;
@@ -981,14 +814,6 @@
     dlg.addEventListener('change', async (e) => {
       if (!ed) return;
       const el = e.target;
-      if (el.hasAttribute('data-dyn-enabled')) { await saveDynamic({ enabled: el.checked }); return; }
-      if (el.dataset.dynFeature) { await saveDynamic({ features: { [el.dataset.dynFeature]: el.checked } }); return; }
-      if (el.dataset.dynPlayer) {
-        const id = Number(el.dataset.dynPlayer);
-        const r = await api().setDynamicLookPlayers([id], el.checked);
-        if (r && r.success) ed.dyn.players = r.players;
-        render(); return;
-      }
       if (el.dataset.num) setValue(el.dataset.num, el.value);
       else if (el.dataset.sel) setValue(el.dataset.sel, el.value);
       else if (el.dataset.trait2) { ed.cur.trait2 = setBit(ed.cur.trait2, Number(el.dataset.trait2), el.checked); ed.msg = ''; render(); }
