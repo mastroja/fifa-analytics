@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('api', {
   runDynamicLookNow: () => ipcRenderer.invoke('run-dynamic-look-now'),
   previewHeightModel: () => ipcRenderer.invoke('preview-height-model'),
   planPlayerGrowth: (playerId) => ipcRenderer.invoke('plan-player-growth', playerId),
+  previewUndo: () => ipcRenderer.invoke('preview-undo'),
+  undoCustomization: (mode) => ipcRenderer.invoke('undo-customization', mode),
   applyHeightModel: () => ipcRenderer.invoke('apply-height-model'),
   onDynamicLookUpdated: (cb) => ipcRenderer.on('dynamic-look-updated', (_e, payload) => cb(payload)),
   releaseLoanedPlayers: (playerIds) => ipcRenderer.invoke('release-loaned-players', playerIds),

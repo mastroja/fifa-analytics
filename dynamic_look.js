@@ -159,12 +159,13 @@ function planGrowth({ playerId, state, ageYears, record }) {
   // before (prev_cm). Anything else means somebody changed it by hand (the editor): respect that for good.
   if (rec.applied_cm !== null && state.height !== rec.applied_cm && state.height !== rec.prev_cm) { rec.locked = 1; return { changes: weightOnly(), record: rec }; }
   if (rec.target_cm === null) { rec.target_cm = drawAdultHeight(playerId, state.preferredposition1); rec.tempo = drawTempo(playerId); }
-  const height = heightAt(rec.target_cm, ageYears, rec.tempo);
+  // The model only ever raises a height: a player already taller than the model says (or that the game made taller) keeps it.
+  const height = Math.max(state.height, heightAt(rec.target_cm, ageYears, rec.tempo));
   const bodytype = bodyTypeFor(height, state.bodytypecode);
   const weight = weightFor(playerId, height, bodytype, ageYears, rec.tempo);
   const changes = {};
   // grow in whole-cm steps but skip tiny wobbles, except for the first application
-  if (height !== state.height && (rec.applied_cm === null || Math.abs(height - state.height) >= 1)) changes.height = height;
+  if (height > state.height) changes.height = height;
   // weight (and body type) follow the height: whenever the height moves, on the first application, or if the weight has
   // drifted 2 kg or more from what suits this height and age
   if (changes.height !== undefined || rec.applied_cm === null || Math.abs(weight - state.weight) >= 2) {
@@ -506,6 +507,52 @@ class DynamicLook {
     return { changes: plan.changes, adult: fresh.target_cm, age: Math.floor(ageYears) };
   }
 
+  // ---- undo ----
+  // 'shrunk': put back height, weight and body type for players who ended up SHORTER than they started.
+  // 'all':    put back every column any applied edit changed (editor saves, dynamic look, height model), turn the monthly
+  //           look and growth off and forget the height model's records, so nothing re-applies itself.
+  previewUndo(saveId) {
+    const pe = this.ctx.playerEditor;
+    const all = pe.planRestore(saveId);
+    const shrunk = pe.planRestore(saveId, { onlyShrunk: true, columns: ['height', 'weight', 'bodytypecode'] });
+    return { all: { players: all.length, columns: all.reduce((s, p) => s + Object.keys(p.changes).length, 0) }, shrunk: { players: shrunk.length } };
+  }
+
+  async undo(saveId, mode) {
+    if (this.running) return { success: false, error: 'A look update is already running.' };
+    if (saveId !== this.ctx.getActiveSaveId()) return { success: false, error: 'That save is not the active one.' };
+    this.running = true;
+    try {
+      if (!(await this.ctx.pressSync())) return { success: false, error: 'Could not reach the game (is it running, and F11 bound to player_editor_sync.lua?).' };
+      const pe = this.ctx.playerEditor;
+      const plan = mode === 'shrunk' ? pe.planRestore(saveId, { onlyShrunk: true, columns: ['height', 'weight', 'bodytypecode'] }) : pe.planRestore(saveId);
+      const lastEdit = this.rows('SELECT COALESCE(MAX(id), 0) AS id FROM player_edits WHERE save_id = ?', [saveId])[0].id;
+      let restored = 0;
+      for (const p of plan) {
+        const res = pe.queueEdit(p.playerId, p.changes, { source: 'model' }); // restoring is not a manual edit: no height lock
+        if (res.success) restored++; else this.ctx.log(`[DynamicLook] could not restore ${p.name}: ${res.error}`);
+      }
+      const db = this.ctx.getDb();
+      if (mode === 'all') {
+        db.run("UPDATE player_edits SET status = 'undone' WHERE save_id = ? AND status = 'applied' AND id <= ?", [saveId, lastEdit]);
+        db.run('DELETE FROM dynamic_look_height WHERE save_id = ?', [saveId]);
+        db.run('DELETE FROM dynamic_look_players WHERE save_id = ?', [saveId]);
+        this.setSettings(saveId, { enabled: false, features: { growth: false } });
+      }
+      this.ctx.saveDatabaseToDisk();
+      let presses = 0;
+      while (presses < 6 && this.rows("SELECT COUNT(*) AS n FROM player_edits WHERE save_id = ? AND status = 'queued'", [saveId])[0].n > 0) {
+        presses++;
+        if (!(await this.ctx.pressApply())) break;
+      }
+      this.ctx.notify({ saveId, changed: restored });
+      return { success: true, restored };
+    } catch (err) {
+      this.ctx.log(`[DynamicLook] undo failed: ${err && err.stack ? err.stack : err}`);
+      return { success: false, error: String((err && err.message) || err) };
+    } finally { this.running = false; }
+  }
+
   // Apply the height model once, to everybody (this is the "rebalance heights" button).
   async applyHeights(saveId, currentDate) {
     const month = monthKeyOf(currentDate) || this.getSettings(saveId).lastMonth;
@@ -686,6 +733,16 @@ function register(ipcMain) {
     const saveId = ctx().getActiveSaveId();
     if (!saveId) return { error: 'No active save.' };
     return instance.previewHeights(saveId, ctx().getCurrentDate());
+  });
+  ipcMain.handle('preview-undo', () => {
+    const saveId = ctx().getActiveSaveId();
+    if (!saveId) return { error: 'No active save.' };
+    return instance.previewUndo(saveId);
+  });
+  ipcMain.handle('undo-customization', async (_e, mode) => {
+    const saveId = ctx().getActiveSaveId();
+    if (!saveId) return { success: false, error: 'No active save.' };
+    return instance.undo(saveId, mode === 'shrunk' ? 'shrunk' : 'all');
   });
   ipcMain.handle('plan-player-growth', (_e, playerId) => {
     const saveId = ctx().getActiveSaveId();

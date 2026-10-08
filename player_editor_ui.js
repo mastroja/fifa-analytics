@@ -553,10 +553,19 @@
         ${pv.sample.map(s => `<div class="pe-hist-row"><span><b>${esc(s.name)}</b> <span class="pe-hint">age ${s.age}</span></span><span>${esc(fmtHeight(s.before))} to ${esc(fmtHeight(s.after))}, ${s.wBefore} to ${s.wAfter} kg <span class="pe-hint">(adult ${esc(fmtHeight(s.adult))})</span></span></div>`).join('')}`;
     }
     return `<div class="pe-card"><h3>Realistic heights</h3>
-        <p>Each player gets their own genetic adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", taller keepers and centre-backs, shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. Preview first; nothing changes until you press Apply. You can also do one player at a time from their Body tab.</p>
+        <p>Each player gets their own genetic adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", taller keepers and centre-backs, shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. A height is only ever raised, never lowered. Preview first; nothing changes until you press Apply. You can also do one player at a time from their Body tab.</p>
         <div class="pe-row"><button class="pe-btn" data-dyn-height-preview>Preview realistic heights</button>
           <button class="pe-btn primary" data-dyn-height-apply>Apply to all picked players now</button></div>
         ${preview}</div>`;
+  }
+
+  function undoCard(d) {
+    const pv = d.undoPreview;
+    return `<div class="pe-card"><h3>Undo</h3>
+        <p>Put players back the way they were before the app first changed them. Both buttons restore through the game (F11), and the app shows the numbers first.</p>
+        <div class="pe-row"><button class="pe-btn" data-dyn-undo="shrunk">Restore players who got shorter</button>
+          <button class="pe-btn" data-dyn-undo="all" style="border-color:#f85149;color:#f85149">Undo ALL customization</button></div>
+        <div class="pe-hint">${pv ? (pv.error ? esc(pv.error) : `Right now: ${pv.shrunk.players} player${pv.shrunk.players === 1 ? '' : 's'} are shorter than they started; undoing everything would restore ${pv.all.columns} value${pv.all.columns === 1 ? '' : 's'} across ${pv.all.players} player${pv.all.players === 1 ? '' : 's'}.`) : ''}</div></div>`;
   }
 
   function tabDynamic() {
@@ -594,6 +603,7 @@
         ${list}
         <div class="pe-row" style="margin-top:14px"><button class="pe-btn" data-dyn-run>Run this month now</button>
           <span class="pe-hint" style="align-self:center">Plays the current in-game month with fresh randomness for the players above and applies it to the game now. Useful for trying it out.</span></div></div>
+      ${undoCard(d)}
       <div class="pe-card"><h3>Recent changes</h3>${log}</div>`;
   }
 
@@ -833,6 +843,7 @@
     try {
       const r = await api().getDynamicLook();
       ed.dyn = Object.assign({}, ed.dyn || {}, r, { error: null });
+      if (api().previewUndo) { try { ed.dyn.undoPreview = await api().previewUndo(); } catch (e) { /* hint only */ } }
     } catch (e) {
       ed.dyn = { error: 'Could not load the dynamic look settings: ' + ((e && e.message) || e) };
     }
@@ -853,10 +864,28 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick],[data-dyn-height-preview],[data-dyn-height-apply],[data-model-height]');
+      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-dyn-run],[data-dyn-scope],[data-dyn-pick],[data-dyn-height-preview],[data-dyn-height-apply],[data-model-height],[data-dyn-undo]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
+      if (t.dataset.dynUndo) {
+        const mode = t.dataset.dynUndo;
+        const pv = await api().previewUndo();
+        ed.dyn.undoPreview = pv;
+        if (!pv || pv.error) { render(); return; }
+        const n = mode === 'shrunk' ? pv.shrunk.players : pv.all.players;
+        if (n === 0) { ed.dyn.msg = mode === 'shrunk' ? 'No player is shorter than they started.' : 'Nothing to undo.'; ed.dyn.msgKind = 'ok'; render(); return; }
+        const text = mode === 'shrunk'
+          ? `Restore the original height, weight and body type of ${n} player${n === 1 ? '' : 's'} who ended up shorter than they started?`
+          : `Undo ALL customization for ${n} player${n === 1 ? '' : 's'} (${pv.all.columns} values: hair, kit, boots, height and everything else the app changed)?\n\nThis also switches the monthly dynamic look and growth off. The changes are written to the game through F11.`;
+        if (!confirm(text)) { render(); return; }
+        ed.dyn.msg = 'Restoring in the game…'; ed.dyn.msgKind = ''; render();
+        const res = await api().undoCustomization(mode);
+        ed.dyn.msg = res && res.success ? `Done: ${res.restored} player${res.restored === 1 ? '' : 's'} restored.` : ((res && res.error) || 'Failed.');
+        ed.dyn.msgKind = res && res.success ? 'ok' : 'err';
+        ed.dyn.undoPreview = null;
+        await loadDynamic(); render(); return;
+      }
       if (t.hasAttribute('data-model-height')) {
         const r = await api().planPlayerGrowth(ed.playerId);
         if (!r || r.error) { ed.msg = (r && r.error) || 'Could not work out a height.'; ed.msgKind = 'err'; render(); return; }

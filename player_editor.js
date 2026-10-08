@@ -173,6 +173,40 @@ function queueEdit(playerId, changes, opts) {
   return { success: true, queued: queuedCount, pendingPath: PENDING_PATH };
 }
 
+// What each player had BEFORE the first edit that ever touched a column: the oldest recorded "old" value per column
+// across every edit that reached the game ('applied', or 'undone' which was applied once and then reverted by its own
+// inverse edit). Returns { playerId: { column: originalValue } } for this save.
+function computeOriginals(saveId) {
+  const out = {};
+  rowsOf("SELECT player_id, old_json FROM player_edits WHERE save_id = ? AND status IN ('applied', 'undone') ORDER BY id ASC", [saveId])
+    .forEach(e => {
+      const old = JSON.parse(e.old_json);
+      const mine = out[e.player_id] = out[e.player_id] || {};
+      Object.keys(old).forEach(k => { if (!(k in mine)) mine[k] = old[k]; });
+    });
+  return out;
+}
+
+// The edits that would put players back: only columns whose current value differs from the original.
+// opts.columns limits the columns; opts.onlyShrunk keeps only players whose height is now below the original.
+function planRestore(saveId, opts) {
+  opts = opts || {};
+  const plan = [];
+  const originals = computeOriginals(saveId);
+  Object.keys(originals).forEach(pid => {
+    const cur = currentState(Number(pid), saveId);
+    if (!cur || !cur.editable) return;
+    if (opts.onlyShrunk && !(originals[pid].height !== undefined && cur.state.height < originals[pid].height)) return;
+    const changes = {};
+    Object.keys(originals[pid]).forEach(k => {
+      if (opts.columns && !opts.columns.includes(k)) return;
+      if (FIELD_LIMITS[k] && cur.state[k] !== originals[pid][k]) changes[k] = originals[pid][k];
+    });
+    if (Object.keys(changes).length) plan.push({ playerId: Number(pid), name: cur.name, changes, current: cur.state });
+  });
+  return plan;
+}
+
 // Queue the inverse of an applied edit and mark the original undone.
 function undoEdit(editId) {
   const saveId = ctx.getActiveSaveId();
@@ -316,6 +350,6 @@ function register(ipcMain) {
 }
 
 module.exports = {
-  configure, register, importEditorExport, handleWriteLog, validateChanges, queueEdit, undoEdit, getCatalog, getBootLinks, writePendingFile,
+  configure, register, importEditorExport, handleWriteLog, validateChanges, queueEdit, undoEdit, getCatalog, getBootLinks, writePendingFile, computeOriginals, planRestore,
   EXPORT_PATH, WRITE_LOG_PATH, PENDING_PATH, FIELD_LIMITS, ATTRIBUTES
 };
