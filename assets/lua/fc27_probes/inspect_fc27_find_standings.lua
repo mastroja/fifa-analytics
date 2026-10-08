@@ -1,23 +1,25 @@
 -- ============================================================
--- FC 27 STANDINGS / FIXTURES FINDER — stage 5.
+-- FC 27 STANDINGS / FIXTURES FINDER — stage 6 (structure detector).
 --
--- Open problem: FC 26's live standings and fixtures sat in two lists on FCEDataManager (+0x88 standings,
--- +0x60 fixtures; items 0x18 bytes, team id at +0x04 of a standings item, fixture items hold a date,
--- competition object id and home/away STANDING indexes). In FC 27 those offsets return garbage and stage 4
--- (inspect_fc27_find_fce_lists.lua) found no list-shaped object under FCEDataManager at all. The DB tables
--- `fixtures` / `leagueteamlinks` are stale default data, so the live data is still in memory somewhere else.
+-- Stage 5 (the first version of this file) scanned the schedule-related managers for league team ids and found no
+-- list: hits were scattered across big allocator pools (FCEDataObjectManager obj+0x188 / +0x1E8, NextMatchManager
+-- obj+0x10, MatchImportanceManager +0x1C0->+0x8, 3.8-10 MB each) at irregular spacing, but FCEDataObjectManager
+-- +0x1E8 did hold qwords with TWO team ids packed together (e.g. 1797|1807), which looks like home|away pairs.
 --
--- This stage does what stage 3 did for player stats, but for the managers that plausibly own the schedule:
--- FixtureManager, StandingsViewManager, ActiveCompetitionsManager, CalendarManager, NextMatchManager,
--- SeasonSituationSystem, LeagueUtils, ... For each it finds eastl-style vector triples (same strict arena filter as
--- stage 3) and scans their contents for the team ids of the user's league (leagueteamlinks, ~24 teams). A real
--- standings list has MANY DIFFERENT team ids at a regular stride (FC 26: 0x18, team id at +0x04), so the
--- "deltas between consecutive hits" line is the tell. The context dump around the first hits is there to match
--- field layout (rank/points/played ... next to the team id).
+-- This stage stops looking for single ids and detects the two lists by SHAPE, scanning each pool in full:
+--   FIXTURES  (FC 26 item = 0x18 bytes): item+0x00 is mDate as a YYYYMMDD int. A fixture list therefore shows a run
+--             of >= 8 values at a constant 0x18 stride that are all valid dates in the save's year +/- 1.
+--   STANDINGS (FC 26 item = 0x18 bytes): item+0x04 is mTeamId. A standings list shows a run of >= 6 values at a
+--             constant 0x18 stride that are team ids of the user's league (leagueteamlinks), >= 4 of them distinct.
+-- Both are checked with the item start 8-aligned and 4-aligned. Each candidate run is reported with the address, its
+-- offset inside the pool/manager path, and the decoded fields of its first items, so the layout can be confirmed
+-- against known values (Man City's fixtures, standings points).
+--
+-- Reads stay inside vectors whose begin/end are both in the heap arena (same strict filter as stages 3-5), in chunks,
+-- with a global read budget, flushing the report after every chunk, so a crash still leaves the last read on disk.
 --
 -- Run via Live Editor's Lua Engine (NOT bound to F10), in a career save, ideally a few matchdays in.
--- Report: %USERPROFILE%\Desktop\FC Tests\LE_FC27_find_standings.txt
--- Flushed after every vector scan, so a crash still leaves the last read on disk.
+-- Report: %USERPROFILE%\Desktop\FC Tests\LE_FC27_find_standings.txt   (this overwrites the stage 5 report)
 -- ============================================================
 
 require 'imports/other/helpers'
@@ -37,10 +39,14 @@ local function log(line) table.insert(report, line) end
 local ARENA_LO, ARENA_HI = 0x66000000, 0x6B000000
 local OBJ_BYTES = 0x2C8
 local MAX_PTRS = 30
-local MAX_VEC_SCAN = 0x80000        -- bytes scanned per vector
+local MAX_VEC_SCAN = 0x1800000      -- bytes scanned per vector (24 MB, enough for the big pools)
 local MAX_VECS_PER_MANAGER = 12
 local MAX_HITS_PER_VEC = 40
-local TOTAL_READ_BUDGET = 2500000   -- qword reads across the whole run
+local CHUNK_QWORDS = 131072        -- 1 MB per chunk
+local OVERLAP_QWORDS = 3 * 40      -- so a run straddling a chunk boundary is still seen
+local MIN_DATE_RUN, MIN_TEAM_RUN = 8, 6
+local MAX_CANDIDATES_PER_VEC = 12
+local TOTAL_READ_BUDGET = 9000000   -- qword reads across the whole run
 local reads_used = 0
 
 local function in_arena(v)
@@ -49,9 +55,8 @@ end
 
 -- looked up by enum NAME so a missing enum in some Live Editor version just skips that manager
 local MANAGER_NAMES = {
-    "FixtureManager", "StandingsViewManager", "ActiveCompetitionsManager", "CalendarManager", "NextMatchManager",
-    "SeasonSituationSystem", "SeasonStatsManager", "InterestingResultManager", "MatchImportanceManager",
-    "FCEDataObjectManager", "EndOfSeasonManager", "CompetitionObjectivesManager", "LeagueUtils", "FixtureUtils", "TeamUtils",
+    "FCEDataObjectManager", "NextMatchManager", "MatchImportanceManager", "StandingsViewManager", "FixtureManager",
+    "ActiveCompetitionsManager", "CalendarManager", "SeasonSituationSystem", "SeasonStatsManager", "InterestingResultManager",
 }
 local MANAGERS = {}
 for _, n in ipairs(MANAGER_NAMES) do
@@ -94,58 +99,117 @@ local function qread(addr)
     return nil
 end
 
--- Scan [b, e) for squad ids; returns hits list and distinct-id count.
+local today_year = 2026
+do
+    local ok, d = pcall(GetCurrentDate)
+    if ok and d and d.year then today_year = d.year end
+end
+local DATE_LO, DATE_HI = (today_year - 1) * 10000 + 101, (today_year + 1) * 10000 + 1231
+local function date_ok(v)
+    if v < DATE_LO or v > DATE_HI then return false end
+    local m, d = (v // 100) % 100, v % 100
+    return m >= 1 and m <= 12 and d >= 1 and d <= 31
+end
+local function half_of(q, i, h)
+    local v = q[i]
+    if h == 0 then return v & 0xFFFFFFFF end
+    return (v >> 32) & 0xFFFFFFFF
+end
+
+-- Detect fixture-shaped and standings-shaped runs inside one chunk of qwords q[0..n-1] (chunk start address cb).
+local function detect_in_chunk(q, n, cb, path, found)
+    for h = 0, 1 do
+        -- fixtures: dates at constant 3-qword (0x18) stride
+        local i = 0
+        while i < n - 3 do
+            if date_ok(half_of(q, i, h)) then
+                local count, j = 1, i + 3
+                while j < n and date_ok(half_of(q, j, h)) do count = count + 1; j = j + 3 end
+                if count >= MIN_DATE_RUN and #found < MAX_CANDIDATES_PER_VEC then
+                    found[#found + 1] = { kind = "FIXTURES", addr = cb + i * 8 + h * 4, count = count, path = path }
+                end
+                i = (count >= MIN_DATE_RUN) and j or (i + 1)
+            else
+                i = i + 1
+            end
+        end
+        -- standings: league team ids at constant 3-qword stride
+        i = 0
+        while i < n - 3 do
+            if squad_ids[half_of(q, i, h)] then
+                local count, j, distinct, seen = 1, i + 3, 1, { [half_of(q, i, h)] = true }
+                while j < n and squad_ids[half_of(q, j, h)] do
+                    local id = half_of(q, j, h)
+                    if not seen[id] then seen[id] = true; distinct = distinct + 1 end
+                    count = count + 1; j = j + 3
+                end
+                if count >= MIN_TEAM_RUN and distinct >= 4 and #found < MAX_CANDIDATES_PER_VEC then
+                    -- the team id sits at item+0x04, so the item starts 4 bytes before the id
+                    found[#found + 1] = { kind = "STANDINGS", addr = cb + i * 8 + h * 4 - 4, count = count, distinct = distinct, path = path }
+                end
+                i = (count >= MIN_TEAM_RUN and distinct >= 4) and j or (i + 1)
+            else
+                i = i + 1
+            end
+        end
+    end
+end
+
+-- Decode and log the first items of a candidate run (FC 26 field layout; compare against known values).
+local function describe(c)
+    log(string.format("    *** %s candidate at 0x%X (%s): run of %d%s ***", c.kind, c.addr, c.path, c.count,
+        c.distinct and (", " .. c.distinct .. " distinct team ids") or ""))
+    for k = 0, 5 do
+        local a0 = c.addr + k * 0x18
+        local w0, w1, w2 = qread(a0), qread(a0 + 8), qread(a0 + 16)
+        if w0 == nil then log("      read error"); break end
+        local function u32(w, hi) if hi then return (w >> 32) & 0xFFFFFFFF end return w & 0xFFFFFFFF end
+        local function u16(w, sh) return (w >> sh) & 0xFFFF end
+        if c.kind == "FIXTURES" then
+            log(string.format("      item %d: date=%d comp=%d home=%d away=%d  raw %08X %08X | %08X %08X | %08X %08X", k,
+                u32(w0, false), u16(w1, 0), u16(w1, 16), u16(w1, 32), u32(w0, true), u32(w0, false), u32(w1, true), u32(w1, false), u32(w2, true), u32(w2, false)))
+        else
+            log(string.format("      item %d: id=%d comp=%d team=%d idx=%d  raw %08X %08X | %08X %08X | %08X %08X", k,
+                u16(w0, 0), u16(w0, 16), u32(w0, true), w1 & 0xFF, u32(w0, true), u32(w0, false), u32(w1, true), u32(w1, false), u32(w2, true), u32(w2, false)))
+        end
+    end
+end
+
+-- Scan [b, e) in chunks looking for the two list shapes.
 local function scan_vector(b, e, path, obj)
     local span = e - b
     local scan = math.min(span, MAX_VEC_SCAN)
     log(string.format("  vector @ %s: begin=0x%X end=0x%X span=%d bytes (scanning %d)", path, b, e, span, scan))
     flush_report()
 
-    local hits, distinct, ndistinct = {}, {}, 0
-    for off = 0, scan - 8, 8 do
+    local found = {}
+    local pos = 0 -- qword index
+    local total_q = scan // 8
+    while pos < total_q do
         if reads_used >= TOTAL_READ_BUDGET then log("  !! global read budget exhausted"); break end
-        local v = qread(b + off)
-        if v == nil then log(string.format("  read error at +0x%X, stopping this vector", off)); break end
-        local lo, hi = v & 0xFFFFFFFF, (v >> 32) & 0xFFFFFFFF
-        local hit_id, half = nil, nil
-        if squad_ids[lo] then hit_id, half = lo, "lo" elseif squad_ids[hi] then hit_id, half = hi, "hi" end
-        if hit_id then
-            table.insert(hits, { off = off, id = hit_id, half = half })
-            if not distinct[hit_id] then distinct[hit_id] = true; ndistinct = ndistinct + 1 end
-            if #hits >= MAX_HITS_PER_VEC then break end
+        local n = math.min(CHUNK_QWORDS, total_q - pos)
+        local q, ok = {}, true
+        for i = 0, n - 1 do
+            local v = qread(b + (pos + i) * 8)
+            if v == nil then ok = false; log(string.format("  read error at +0x%X, stopping this vector", (pos + i) * 8)); break end
+            q[i] = v
         end
+        if not ok then break end
+        detect_in_chunk(q, n, b + pos * 8, path, found)
+        if pos + n >= total_q then break end
+        pos = pos + n - OVERLAP_QWORDS
     end
 
-    if #hits == 0 then
-        log("    no team-id hits")
+    if #found == 0 then
+        log("    no fixture- or standings-shaped runs")
         flush_report()
         return
     end
-
-    log(string.format("    *** %d hits, %d distinct team ids ***", #hits, ndistinct))
-    local offs = {}
-    for i = 1, math.min(#hits, 14) do
-        offs[#offs + 1] = string.format("+0x%X(%s id=%d)", hits[i].off, hits[i].half, hits[i].id)
-    end
-    log("    hit offsets: " .. table.concat(offs, ", "))
-    if #hits >= 2 then
-        local deltas = {}
-        for i = 2, math.min(#hits, 10) do deltas[#deltas + 1] = string.format("0x%X", hits[i].off - hits[i - 1].off) end
-        log("    deltas between consecutive hits (stride hint): " .. table.concat(deltas, ", "))
-    end
-
-    -- context dump around the first two hits (record start guess = hit - 0x10)
-    for i = 1, math.min(#hits, 2) do
-        local start = math.max(0, hits[i].off - 0x10)
-        log(string.format("    context around hit %d (vector+0x%X), each row = one qword (hi lo):", i, start))
-        for off = start, start + 0x60 - 8, 8 do
-            local v = qread(b + off)
-            if v == nil then log("      read error"); break end
-            local lo, hi = v & 0xFFFFFFFF, (v >> 32) & 0xFFFFFFFF
-            local mark = ""
-            if off == hits[i].off then mark = "  <== team id" end
-            log(string.format("      +0x%03X  %08X %08X   lo=%-10d hi=%-10d%s", off, hi, lo, lo, hi, mark))
-        end
+    -- the overlap can report one run twice; drop exact duplicates
+    local seen = {}
+    for _, c in ipairs(found) do
+        local key = c.kind .. ":" .. c.addr
+        if not seen[key] then seen[key] = true; describe(c) end
     end
     flush_report()
 end
@@ -201,7 +265,8 @@ local function scan_manager(label, type_id)
     end
 end
 
-log("FC27 standings/fixtures finder, stage 5")
+log("FC27 standings/fixtures finder, stage 6 (structure detector)")
+log(string.format("date window %d..%d, min runs: dates %d, teams %d", DATE_LO, DATE_HI, MIN_DATE_RUN, MIN_TEAM_RUN))
 local dok, d = pcall(GetCurrentDate)
 if dok and d then log(string.format("GetCurrentDate(): %04d-%02d-%02d", d.year, d.month, d.day)) end
 log("League team ids loaded: " .. squad_count)

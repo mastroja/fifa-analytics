@@ -23,7 +23,7 @@ heap range the manager objects live in (0x66000000-0x6B000000), pointer-followin
 | `inspect_fc27_stats_memory_stage2.lua` | Stage 2: follows arena pointers one level, flags squad ids | medium |
 | `inspect_fc27_find_player_records.lua` | Stage 3: searches 16 more managers' vectors for squad ids | medium |
 | `inspect_fc27_find_fce_lists.lua` | Stage 4: looks for list objects under `FCEDataManager`; also tallies the match-rating table | medium |
-| `inspect_fc27_find_standings.lua` | Stage 5: scans the fixture / standings / competition / calendar managers for the user's league team ids (a standings list = many different team ids at a regular stride) | medium |
+| `inspect_fc27_find_standings.lua` | Stages 5-6: scans the schedule-related managers' big pools for fixture-shaped runs (YYYYMMDD dates at a 0x18 stride) and standings-shaped runs (the user's league team ids at a 0x18 stride) | medium (reads only inside arena-bounded vectors, chunked, flushed) |
 
 ## What was learned (v27.1.2, tested 2026-10-05/06)
 
@@ -62,13 +62,24 @@ competition column and no goals/assists, so it only approximates apps and averag
 3. Only then consider the memory scripts (set `FC27_MEMORY_OFFSETS_VERIFIED` back to `true` in
    `export_all.lua` only after new offsets are confirmed standalone).
 
-## Standings / fixtures hunt (stage 5)
+## Standings / fixtures hunt (stages 5-6)
 
-State: `FCEDataManager` (0x68166E40 in the stage 4 run) has 19 arena pointers but no list-shaped object
-(count@+0x1C, begin@+0x28), so FC 26's `+0x60` fixtures / `+0x88` standings are not just shifted. The lists are
-probably owned by a different manager. `inspect_fc27_find_standings.lua` scans `FixtureManager` (46),
-`StandingsViewManager` (108), `ActiveCompetitionsManager` (20), `CalendarManager` (24), `NextMatchManager` (67),
-`SeasonSituationSystem` (101) and a few others. **What to look for in the report:** a vector whose hits are
-many different league team ids at one constant stride (FC 26 stride was 0x18 with the team id at +0x04).
-Once found, put the manager / offsets into `MEM_LAYOUT` in `export_all.lua` (the standings struct reads are already
-written there), run it standalone, and only then set `FC27_MEMORY_OFFSETS_VERIFIED = true`.
+Stage 4: `FCEDataManager` (0x68166E40) has 19 arena pointers but no list-shaped object (count@+0x1C, begin@+0x28), so
+FC 26's `+0x60` fixtures / `+0x88` standings are not just shifted.
+
+Stage 5 (2026-09-01 save, user team 10 = Man City) scanned FixtureManager (46), StandingsViewManager (108),
+ActiveCompetitionsManager (20), CalendarManager (24), NextMatchManager (67), SeasonSituationSystem (101),
+SeasonStatsManager (102), InterestingResultManager (51), MatchImportanceManager (62), FCEDataObjectManager (42),
+EndOfSeasonManager (37), CompetitionObjectivesManager (132): **no list with team ids at a constant stride.**
+FixtureManager, CalendarManager and (almost) all the "view" managers hold no arena pointers or vectors at all, so
+they are thin wrappers. The only big pools are FCEDataObjectManager (+0x188 10 MB, +0x1E8 4.9 MB), NextMatchManager
+(+0x10, 10 MB) and MatchImportanceManager (+0x1C0->+0x8, 3.8 MB). FCEDataObjectManager +0x1E8 contains qwords with two
+team ids packed (e.g. 1797|1807, 1962, 1803...) which looks like home|away pairs - the best lead so far. LeagueUtils /
+FixtureUtils / TeamUtils have no instance.
+
+Stage 6 (the current script) stops looking for single ids and detects the lists by SHAPE over those pools in full:
+fixtures = a run of >= 8 valid YYYYMMDD dates at a 0x18 stride (`mDate` is a YYYYMMDD int, as the app parses it), standings =
+a run of >= 6 league team ids at a 0x18 stride. It prints the decoded first items of every candidate. Once a candidate
+matches reality (Man City's fixtures / the real table), derive the path from the manager (or the pool's address pattern),
+put it into `MEM_LAYOUT` in `export_all.lua` (the struct reads are written there), run standalone, and only then set
+`FC27_MEMORY_OFFSETS_VERIFIED = true`. Expect a minute or two of run time (up to 9M qword reads).
