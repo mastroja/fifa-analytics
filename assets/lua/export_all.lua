@@ -435,6 +435,45 @@ do
             end
         end
 
+        -- FC 27 fallback: GetPlayersStats() returns no rows there (see assets/lua/fc27_probes/README.md), so goals /
+        -- assists / clean sheets / cards have no source, but the DB table career_playermatchratinghistory (one row per
+        -- player per match: date YYYYMMDD, minsplayed, whole-number rating) is live. From it we can restore appearances
+        -- and an approximate average rating for this season. The rating is stored as a whole number, so the average
+        -- runs a little off the in-game one (e.g. 6.67 vs 6.49); it is reported as its own competition row so the
+        -- breakdown makes the source obvious.
+        if #all_stats == 0 then
+            local ok_rt, rating_table = pcall(function() return LE.db:GetTable("career_playermatchratinghistory") end)
+            local ok_cd, cd = pcall(GetCurrentDate)
+            if ok_rt and rating_table and ok_cd and cd and cd.year then
+                local season_start = ((cd.month >= 7) and cd.year or (cd.year - 1)) * 10000 + 701
+                local tally = {}
+                local rec, n = rating_table:GetFirstRecord(), 0
+                while rec and rec > 0 and n < 20000 do
+                    n = n + 1
+                    local pid = rating_table:GetRecordFieldValue(rec, "playerid")
+                    local date = rating_table:GetRecordFieldValue(rec, "date")
+                    local mins = rating_table:GetRecordFieldValue(rec, "minsplayed")
+                    local rating = rating_table:GetRecordFieldValue(rec, "rating")
+                    if pid and result[pid] ~= nil and date and date >= season_start and mins and mins > 0 then
+                        local t = tally[pid]
+                        if not t then t = { apps = 0, rating_sum = 0 }; tally[pid] = t end
+                        t.apps = t.apps + 1
+                        t.rating_sum = t.rating_sum + (rating or 0)
+                    end
+                    rec = rating_table:GetNextValidRecord()
+                end
+                for pid, t in pairs(tally) do
+                    local player = result[pid]
+                    player.appearances = player.appearances + t.apps
+                    table.insert(player.competitions, {
+                        comp_name = "All competitions (from match ratings)",
+                        appearances = t.apps, goals = 0, assists = 0, clean_sheets = 0, saves = 0,
+                        yellow_cards = 0, red_cards = 0, avg_rating = t.rating_sum / t.apps
+                    })
+                end
+            end
+        end
+
         -- avg_rating was previously just whatever competition happened to
         -- be processed last (a plain overwrite, not an average at all) —
         -- now a proper appearances-weighted average across every
@@ -1186,29 +1225,70 @@ do
         return ""
     end
 
+    -- Memory layout of the two career-mode lists. The values are FC 26's, which FC 27 moved (see
+    -- assets/lua/fc27_probes/README.md, stage 5, for the hunt for the new ones). Keeping every offset here means that
+    -- once a probe confirms them, only this table changes and FC27_MEMORY_OFFSETS_VERIFIED can be flipped.
+    local MEM_LAYOUT = {
+        standings = { list = 0x88, itemsBegin = 0x28, count = 0x1C, itemSize = 0x18 },
+        fixtures  = { list = 0x60, itemsBegin = 0x28, count = 0x1C, itemSize = 0x18 },
+        maxItems  = 100000,
+    }
+
+    -- Every value read from memory is sanity-checked before it is used as the base of the next read: a bad pointer
+    -- crashes the game natively (pcall cannot catch it), see feedback_live_editor_data_safety.
+    local function plausible_pointer(v)
+        return type(v) == "number" and v > 0x10000 and v < 0x7FFFFFFFFFFF and v % 8 == 0
+    end
+
+    -- Returns itemsBegin, itemCount for one of the lists, or nil when anything about it looks wrong.
+    local function read_list(layout)
+        local manager = GetFCEDataManager()
+        if not plausible_pointer(manager) then return nil end
+        local list = MEMORY:ReadPointer(manager + layout.list)
+        if not plausible_pointer(list) then return nil end
+        local itemsBegin = MEMORY:ReadPointer(list + layout.itemsBegin)
+        local count = MEMORY:ReadInt(list + layout.count)
+        if not plausible_pointer(itemsBegin) or count <= 0 or count > MEM_LAYOUT.maxItems then return nil end
+        return itemsBegin, count
+    end
+
+    -- One standings row by its list index (a fixture refers to its two teams by standing index). Returns the full
+    -- StandingsData struct the game keeps (FC 26 layout, same as Live Editor's bundled export_fixtures.lua); an empty
+    -- table when the offsets are unverified or the index is out of range, so callers just see "no data".
     local function GetStandingsByIndex(idx)
         local StandingsData = {}
         if not FC27_MEMORY_OFFSETS_VERIFIED then return StandingsData end
-        local FCEDataManager = GetFCEDataManager()
-        local StandingsDataList = MEMORY:ReadPointer(FCEDataManager + 0x88)
-        local itemSize = 0x18
-        local mBegin = MEMORY:ReadPointer(StandingsDataList + 0x28)
-        local mCurrent = mBegin + (itemSize * idx)
+        if type(idx) ~= "number" or idx < 0 then return StandingsData end
+        local itemsBegin, count = read_list(MEM_LAYOUT.standings)
+        if not itemsBegin or idx >= count then return StandingsData end
 
+        local mCurrent = itemsBegin + (MEM_LAYOUT.standings.itemSize * idx)
+        StandingsData["mId"] = MEMORY:ReadShort(mCurrent + 0x00)
+        StandingsData["mCompObjId"] = MEMORY:ReadShort(mCurrent + 0x02)
         StandingsData["mTeamId"] = MEMORY:ReadInt(mCurrent + 0x04)
+        StandingsData["mTeamIndex"] = MEMORY:ReadChar(mCurrent + 0x08)
+        StandingsData["mHomeWins"] = MEMORY:ReadChar(mCurrent + 0x09)
+        StandingsData["mHomeDraws"] = MEMORY:ReadChar(mCurrent + 0x0A)
+        StandingsData["mHomeLosses"] = MEMORY:ReadChar(mCurrent + 0x0B)
+        StandingsData["mHomeGoalsFor"] = MEMORY:ReadChar(mCurrent + 0x0C)
+        StandingsData["mHomeGoalsAgainst"] = MEMORY:ReadChar(mCurrent + 0x0D)
+        StandingsData["mAwayWins"] = MEMORY:ReadChar(mCurrent + 0x0E)
+        StandingsData["mAwayDraws"] = MEMORY:ReadChar(mCurrent + 0x0F)
+        StandingsData["mAwayLosses"] = MEMORY:ReadChar(mCurrent + 0x10)
+        StandingsData["mAwayGoalsFor"] = MEMORY:ReadChar(mCurrent + 0x11)
+        StandingsData["mAwayGoalsAgainst"] = MEMORY:ReadChar(mCurrent + 0x12)
+        StandingsData["mPoints"] = MEMORY:ReadShort(mCurrent + 0x14)
         return StandingsData
     end
 
     local function GetActiveCareerFixtures()
         local result = {}
         if not FC27_MEMORY_OFFSETS_VERIFIED then return result end
-        local FCEDataManager = GetFCEDataManager()
-        local FixtureDataList = MEMORY:ReadPointer(FCEDataManager + 0x60)
-        if not FixtureDataList or FixtureDataList == 0 then return result end
+        local mBegin, item_count = read_list(MEM_LAYOUT.fixtures)
+        if not mBegin then return result end
 
-        local itemSize = 0x18
-        local mBegin = MEMORY:ReadPointer(FixtureDataList + 0x28)
-        local max_items_count = MEMORY:ReadInt(FixtureDataList + 0x1C) - 1
+        local itemSize = MEM_LAYOUT.fixtures.itemSize
+        local max_items_count = item_count - 1
 
         for i = 0, max_items_count do
             local mCurrent = mBegin + (itemSize * i)

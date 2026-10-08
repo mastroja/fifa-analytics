@@ -42,9 +42,9 @@ const transferExportPath = 'C:\\Users\\Public\\ea_fc_transfers_export.json';
 const watchlistInputPath = 'C:\\Users\\Public\\ea_fc_watchlist_input.json';
 const watchlistStatusPath = 'C:\\Users\\Public\\ea_fc_watchlist_status.json';
 const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
-const playerEditor = require('./player_editor');
-const dynamicLook = require('./dynamic_look');
-const squadNumbers = require('./squad_numbers');
+const playerEditor = require('./js/player_editor');
+const dynamicLook = require('./js/dynamic_look');
+const squadNumbers = require('./js/squad_numbers');
 const leagueStatsExportPath = 'C:\\Users\\Public\\ea_fc_league_stats_export.json';
 
 // activeSaveId/currentSeasonId track whichever save/season the app is
@@ -2009,6 +2009,77 @@ function getYouthAcademy(saveId = activeSaveId) {
     }));
 }
 
+// Academy tracker: every prospect ever snapshotted for this save, with their per-season history and a status:
+//   'academy'  - still in the current academy roster (see getYouthAcademy)
+//   'promoted' - has a senior-squad row in any season
+//   'left'     - neither (released / aged out / sold)
+// Snapshot rows are written once per season (importYouthAcademy upserts on player_id+season_id), so history is
+// one point per season, the latest being the live value.
+function getAcademyTracker(saveId = activeSaveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`
+    SELECT p.player_id, p.name, p.position_id, p.dob, se.id, se.year_label,
+           y.overall, y.potential_low, y.potential_high, y.months_in_squad
+    FROM youth_academy_snapshot y
+    JOIN players p ON p.player_id = y.player_id
+    JOIN seasons se ON se.id = y.season_id
+    WHERE se.save_id = ${Number(saveId)}
+    ORDER BY se.id ASC;
+  `);
+  if (res.length === 0) return [];
+
+  const inAcademy = new Set(getYouthAcademy(saveId).map(a => a.player_id));
+  const promoted = new Set();
+  const pr = db.exec(`SELECT DISTINCT s.player_id FROM player_season_stats s JOIN seasons se ON se.id = s.season_id WHERE se.save_id = ${Number(saveId)};`);
+  if (pr.length > 0) pr[0].values.forEach(([pid]) => promoted.add(pid));
+
+  const byPlayer = new Map();
+  res[0].values.forEach(([pid, name, pos, dob, seasonId, season, ovr, low, high, months]) => {
+    if (!byPlayer.has(pid)) byPlayer.set(pid, { player_id: pid, name, position_id: pos, dob, history: [] });
+    byPlayer.get(pid).history.push({ season_id: seasonId, season, overall: ovr, potential_low: low, potential_high: high, months_in_squad: months });
+  });
+  return [...byPlayer.values()].map(t => ({
+    ...t,
+    status: inAcademy.has(t.player_id) ? 'academy' : promoted.has(t.player_id) ? 'promoted' : 'left'
+  }));
+}
+
+function getAcademyWatchlist(saveId = activeSaveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`SELECT player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at FROM academy_watchlist WHERE save_id = ${Number(saveId)} ORDER BY added_at DESC;`);
+  if (res.length === 0) return [];
+  return res[0].values.map(([player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at]) =>
+    ({ player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at }));
+}
+
+// Adds the prospect (freezing their current numbers as the baseline) or removes them if already watched.
+function toggleAcademyWatch(playerId, saveId = activeSaveId) {
+  if (!db || !saveId || !playerId) return { success: false };
+  const existing = db.exec(`SELECT 1 FROM academy_watchlist WHERE save_id = ${Number(saveId)} AND player_id = ${Number(playerId)};`);
+  if (existing.length > 0) {
+    db.run('DELETE FROM academy_watchlist WHERE save_id = ? AND player_id = ?;', [saveId, playerId]);
+    saveDatabaseToDisk();
+    return { success: true, watched: false };
+  }
+  const latest = db.exec(`
+    SELECT y.season_id, y.overall, y.potential_low, y.potential_high
+    FROM youth_academy_snapshot y JOIN seasons se ON se.id = y.season_id
+    WHERE se.save_id = ${Number(saveId)} AND y.player_id = ${Number(playerId)}
+    ORDER BY se.id DESC LIMIT 1;`);
+  const [seasonId, ovr, low, high] = latest.length > 0 ? latest[0].values[0] : [null, null, null, null];
+  db.run('INSERT INTO academy_watchlist (save_id, player_id, base_overall, base_pot_low, base_pot_high, base_season_id) VALUES (?, ?, ?, ?, ?, ?);',
+    [saveId, playerId, ovr, low, high, seasonId]);
+  saveDatabaseToDisk();
+  return { success: true, watched: true };
+}
+
+function setAcademyWatchNote(playerId, note, saveId = activeSaveId) {
+  if (!db || !saveId || !playerId) return { success: false };
+  db.run('UPDATE academy_watchlist SET note = ? WHERE save_id = ? AND player_id = ?;', [String(note || '').slice(0, 500) || null, saveId, playerId]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
 // Trophies actually won during this save — a competition result of
 // "Winner" in season_competition_results. Cups reach that text once the
 // final is won (see export_all.lua's round-progress logic); leagues only
@@ -2226,6 +2297,52 @@ function getPlaystyleSuggestions(playerId) {
   const res = db.exec(`SELECT playstyle_name, tier, detected_at FROM playstyle_suggestions WHERE player_id = ${playerId} AND status = 'added' ORDER BY detected_at ASC;`);
   if (res.length === 0) return [];
   return res[0].values.map(([name, tier, detectedAt]) => ({ name, plus: tier === 'plus', detectedAt }));
+}
+
+// Challenge Mode — see challenge_transfer_bans in schema.sql and
+// challenge.js. Bans are returned newest first.
+function getChallengeBans(saveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`SELECT id, start_date, end_date, reason, cancelled_at FROM challenge_transfer_bans WHERE save_id = ${Number(saveId)} ORDER BY start_date DESC, id DESC;`);
+  if (res.length === 0) return [];
+  return res[0].values.map(([id, startDate, endDate, reason, cancelledAt]) => ({ id, startDate, endDate, reason, cancelledAt }));
+}
+
+function addChallengeBan(saveId, startDate, endDate, reason) {
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  if (!db || !saveId || !iso.test(startDate || '') || !iso.test(endDate || '') || endDate < startDate) return { success: false };
+  db.run('INSERT INTO challenge_transfer_bans (save_id, start_date, end_date, reason) VALUES (?, ?, ?, ?);', [saveId, startDate, endDate, reason || null]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
+// Lifts a ban early (kept in history, not deleted).
+function cancelChallengeBan(saveId, banId) {
+  if (!db || !saveId || !banId) return { success: false };
+  db.run("UPDATE challenge_transfer_bans SET cancelled_at = datetime('now') WHERE id = ? AND save_id = ? AND cancelled_at IS NULL;", [banId, saveId]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
+// Every captured deal for the save, uncollapsed (unlike getTransferFees,
+// which keeps only the latest per player+type) — the Challenge dashboard
+// needs every signing/sale in a season, not just each player's latest.
+// deal_date is rewritten MM-DD-YYYY -> YYYY-MM-DD so it compares directly
+// against in-game ISO dates; blank/unparseable dates come back as ''.
+function getChallengeDeals(saveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`
+    SELECT t.player_id, p.name, t.from_team_name, t.to_team_name, t.deal_type, t.fee,
+      CASE WHEN t.deal_date LIKE '__-__-____'
+        THEN substr(t.deal_date,7,4) || '-' || substr(t.deal_date,1,2) || '-' || substr(t.deal_date,4,2)
+        ELSE '' END AS iso_date
+    FROM transfer_fees t LEFT JOIN players p ON p.player_id = t.player_id
+    WHERE t.save_id = ${Number(saveId)}
+    ORDER BY iso_date ASC;
+  `);
+  if (res.length === 0) return [];
+  return res[0].values.map(([playerId, name, fromTeam, toTeam, dealType, fee, date]) =>
+    ({ playerId, name, fromTeam, toTeam, dealType, fee, date }));
 }
 
 // "Untouchable" tag for Youth Squad Career Mode's Overall Cap Watch box —
@@ -4565,7 +4682,7 @@ function importFifaData(jsonPayload) {
         p.alt_positions || '',
         p.nationality || '',
         p.dob || '',
-        p.height || '',
+        capHeightCm(p.height),
         p.weight || '',
         p.preferred_foot || '',
         p.photo_id || p.player_id,
@@ -4887,6 +5004,15 @@ const HEADSHOT_SKINTONE_BLACK_THRESHOLD = 7;
 // FC 26 exported skintonecode as 1-10; FC 27 exports 10-100 in steps of 10
 // (plus the odd off-grid value). Everything in the app keys off the 1-10
 // scale, so fold the 10-100 scale down at ingest. Values <= 10 pass through.
+// No player is stored taller than 6'9" (206 cm); a bad game value (e.g. 8'5") is capped on import. Non-numeric input
+// is passed through unchanged (empty string if missing).
+const MAX_HEIGHT_CM = 206;
+function capHeightCm(raw) {
+  const n = parseFloat(String(raw ?? '').replace(/[^\d.]/g, ''));
+  if (!n) return raw || '';
+  return n > MAX_HEIGHT_CM ? String(MAX_HEIGHT_CM) : raw;
+}
+
 function normalizeSkintoneCode(raw) {
   const n = Number(raw);
   if (!n || n < 0) return null;
@@ -5216,6 +5342,41 @@ function getAllTimeSquadStats(saveId = activeSaveId) {
       avg_rating: totalApps > 0 ? (row[40] || 0) / totalApps : 0,
       updated_at: row[41],
       youth_reveal_tier: row[42]
+    };
+  });
+}
+
+// All-Time XI: every player with a row in any of this save's seasons, each represented by their PEAK season
+// (highest overall; the attributes/potential/etc. are from that same season) plus career totals for the club.
+// Ranking and the "ever played for the club" filter are done by the renderer (js/depth_chart.js).
+function getAllTimeXI(saveId = activeSaveId) {
+  if (!db || !saveId) return [];
+  const sid = Number(saveId);
+  const res = db.exec(`
+    SELECT p.player_id, p.name, p.position_id, p.alt_positions, p.dob, p.height, p.preferred_foot,
+           s.overall, s.potential, s.skill_moves, s.weak_foot, s.attributes_json, se.year_label,
+           agg.apps, agg.goals, agg.assists, agg.seasons
+    FROM players p
+    JOIN player_season_stats s ON s.player_id = p.player_id
+    JOIN seasons se ON se.id = s.season_id AND se.save_id = ${sid}
+    JOIN (
+      SELECT ps.player_id, MAX(ps.overall) AS mo, SUM(ps.appearances) AS apps, SUM(ps.goals) AS goals,
+             SUM(ps.assists) AS assists, COUNT(*) AS seasons
+      FROM player_season_stats ps
+      JOIN seasons s2 ON s2.id = ps.season_id AND s2.save_id = ${sid}
+      GROUP BY ps.player_id
+    ) agg ON agg.player_id = p.player_id AND s.overall = agg.mo
+    GROUP BY p.player_id
+    ORDER BY s.overall DESC;
+  `);
+  if (res.length === 0) return [];
+  return res[0].values.map(r => {
+    let attributes = {};
+    try { attributes = JSON.parse(r[11] || '{}'); } catch (e) { /* leave empty */ }
+    return {
+      player_id: r[0], name: r[1], position_id: r[2], alt_positions: r[3], dob: r[4], height: r[5], preferred_foot: r[6],
+      overall: r[7], potential: r[8], skill_moves: r[9], weak_foot: r[10], attributes,
+      peak_season: r[12], appearances: r[13] || 0, goals: r[14] || 0, assists: r[15] || 0, seasons: r[16] || 0
     };
   });
 }
@@ -5820,6 +5981,7 @@ function deleteSave(saveId) {
   db.run('DELETE FROM season_competition_results WHERE season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [saveId]);
   db.run('DELETE FROM youth_academy_snapshot WHERE season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [saveId]);
   db.run('DELETE FROM academy_graduate_overrides WHERE save_id = ?;', [saveId]);
+  db.run('DELETE FROM academy_watchlist WHERE save_id = ?;', [saveId]);
   db.run('DELETE FROM transfer_fees WHERE save_id = ?;', [saveId]);
   db.run('DELETE FROM player_awards WHERE season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [saveId]);
   db.run('DELETE FROM season_end_reviews WHERE save_id = ?;', [saveId]);
@@ -5860,6 +6022,7 @@ function deletePlayer(playerId) {
   db.run('DELETE FROM player_awards WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM former_player_snapshots WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM academy_graduate_overrides WHERE player_id = ?;', [playerId]);
+  db.run('DELETE FROM academy_watchlist WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM transfer_fees WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM players WHERE player_id = ?;', [playerId]);
   saveDatabaseToDisk();
@@ -6131,7 +6294,7 @@ function createWindow() {
     // default icon.
     icon: path.join(__dirname, 'assets', 'app-icon', 'icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'js', 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true
     }
@@ -6157,6 +6320,10 @@ ipcMain.handle('get-manager-ppg', () => getManagerSeasonPPG());
 ipcMain.handle('get-team-record-seasons', () => getTeamRecordSeasons());
 ipcMain.handle('get-inferred-transfers', (_event, saveId) => getInferredTransfers(saveId));
 ipcMain.handle('get-transfer-fees', (_event, saveId) => getTransferFees(saveId));
+ipcMain.handle('get-challenge-bans', (_event, saveId) => getChallengeBans(saveId));
+ipcMain.handle('add-challenge-ban', (_event, saveId, startDate, endDate, reason) => addChallengeBan(saveId, startDate, endDate, reason));
+ipcMain.handle('cancel-challenge-ban', (_event, saveId, banId) => cancelChallengeBan(saveId, banId));
+ipcMain.handle('get-challenge-deals', (_event, saveId) => getChallengeDeals(saveId));
 ipcMain.handle('get-player-transfer-history', (_event, playerId, saveId) => getPlayerTransferHistory(playerId, saveId));
 ipcMain.handle('get-player-injury-history', (_event, playerId, saveId) => getPlayerInjuryHistory(playerId, saveId));
 ipcMain.handle('get-injury-report', (_event, saveId) => getInjuryReport(saveId));
@@ -6173,6 +6340,11 @@ ipcMain.handle('delete-player', (_event, playerId) => deletePlayer(playerId));
 ipcMain.handle('get-season-competition-results', (_event, seasonId) => getSeasonCompetitionResults(seasonId));
 ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
+ipcMain.handle('get-all-time-xi', (_event, saveId) => getAllTimeXI(saveId));
+ipcMain.handle('get-academy-tracker', (_event, saveId) => getAcademyTracker(saveId));
+ipcMain.handle('get-academy-watchlist', (_event, saveId) => getAcademyWatchlist(saveId));
+ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => toggleAcademyWatch(playerId, saveId));
+ipcMain.handle('set-academy-watch-note', (_event, playerId, note, saveId) => setAcademyWatchNote(playerId, note, saveId));
 playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
 playerEditor.register(ipcMain);
 
@@ -6224,6 +6396,7 @@ dynamicLook.register(ipcMain);
 // Reserve squad numbers (31+) for players promoted from the academy.
 squadNumbers.instance.configure({
   getDb: () => db, saveDatabaseToDisk, playerEditor,
+  isYouthMode: saveId => { const r = db.exec(`SELECT youth_mode_enabled FROM saves WHERE id = ${Number(saveId)};`); return r.length > 0 && r[0].values.length > 0 && r[0].values[0][0] === 1; },
   getGraduateIds: saveId => getAcademyGraduateIds(saveId),
   pressSync: () => serialized(async () => {
     const saveId = activeSaveId, before = editorStateStamp(saveId);
@@ -6238,7 +6411,6 @@ squadNumbers.instance.configure({
   notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('player-editor-updated', { save_id: payload.saveId, count: payload.changed, kind: 'write-log' }); },
   log: msg => console.log(msg)
 });
-squadNumbers.register(ipcMain, () => activeSaveId);
 ipcMain.handle('enable-youth-mode', (_event, saveId) => enableYouthMode(saveId));
 ipcMain.handle('clear-former-players', (_event, saveId) => clearFormerPlayers(saveId));
 ipcMain.handle('get-pending-season-review', (_event, saveId) => getPendingSeasonReview(saveId));
@@ -6283,33 +6455,6 @@ ipcMain.handle('mark-news-edition-read', (_event, editionId) => markNewsEditionR
 ipcMain.handle('list-news-images', (_event, newsType) => listNewsImages(newsType));
 ipcMain.handle('get-opponent-roster-for-match', (_event, seasonId, opponentTeamName) => getOpponentRosterForMatch(seasonId || currentSeasonId, opponentTeamName));
 ipcMain.handle('save-match-events', (_event, seasonId, matchDate, competition, opponent, events) => saveMatchEvents(seasonId || currentSeasonId, matchDate, competition, opponent, events));
-
-// ------------------------------------------------------------------
-// Connected Career (optional sync module -- see connected_career/,
-// which owns all of this feature's own logic). This only registers
-// the functions it's allowed to reach into the app with, plus a few
-// IPC handlers the Settings panel's "Connected Career" section calls
-// through; it doesn't run anything on its own or affect normal app
-// use otherwise.
-// ------------------------------------------------------------------
-try {
-  const connectedCareer = require('./connected_career');
-  connectedCareer.init({
-    getSquadFromDB,
-    getCurrentSeasonId: () => currentSeasonId,
-    userDataPath: app.getPath('userData'),
-  });
-  ipcMain.handle('connected-career-status', () => connectedCareer.getStatus());
-  ipcMain.handle('connected-career-join', (_event, code, owner) => connectedCareer.join(code, owner));
-  ipcMain.handle('connected-career-sync-now', () => connectedCareer.syncNow());
-  ipcMain.handle('connected-career-leave', () => connectedCareer.leave());
-  ipcMain.handle('connected-career-export-squad-for-mirroring', () => connectedCareer.exportSquadForMirroring());
-  ipcMain.handle('connected-career-push-full-rows', () => connectedCareer.pushFullRowsNow());
-  ipcMain.handle('connected-career-pull-mirror-creates', () => connectedCareer.pullMirrorCreatesNow());
-  ipcMain.handle('connected-career-confirm-mirror-results', () => connectedCareer.confirmMirrorResultsNow());
-} catch (err) {
-  console.error('[Connected Career] Failed to initialize -- Connected Career features unavailable this session.', err.message);
-}
 
 app.whenReady().then(async () => {
   await initDatabase();

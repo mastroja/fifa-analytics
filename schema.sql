@@ -900,3 +900,36 @@ CREATE TABLE IF NOT EXISTS squad_numbers_used (
     numbers_json TEXT NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Challenge Mode "Transfer Ban" modifier — a self-imposed, user-chosen
+-- freeze on incoming signings for a stretch of in-game time (see
+-- js/challenge.js). One row per ban, so past bans stay visible in the
+-- Challenge drawer's history. Dates are in-game ISO (YYYY-MM-DD) so they
+-- compare directly against currentIngameDate. cancelled_at set = the user
+-- lifted the ban early; the app never enforces anything, it only tracks
+-- the ban and flags incoming deals dated inside it.
+CREATE TABLE IF NOT EXISTS challenge_transfer_bans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    reason TEXT,
+    cancelled_at TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(save_id) REFERENCES saves(id)
+);
+
+-- Regen watchlist: academy prospects the user is following. base_* freeze the prospect's overall / potential range
+-- (and season) at the moment they were added, so the tracker can show "since added" movement and alerts.
+CREATE TABLE IF NOT EXISTS academy_watchlist (
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    base_overall INTEGER,
+    base_pot_low INTEGER,
+    base_pot_high INTEGER,
+    base_season_id INTEGER,
+    note TEXT,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (save_id, player_id),
+    FOREIGN KEY(save_id) REFERENCES saves(id)
+);

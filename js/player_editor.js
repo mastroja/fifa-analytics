@@ -1,12 +1,12 @@
 // Player editor backend (generic / regen / academy players only).
 //
-// Data flow (see PLAYER_EDITOR_DESIGN.md):
+// Data flow (see assets/design_docs/PLAYER_EDITOR_DESIGN.md):
 //   game --assets/lua/export_player_editor.lua--> ea_fc_player_editor_export.json --> importEditorExport
 //   Save --> queueEdit --> ea_fc_player_edits_pending.json --assets/lua/apply_player_edits.lua--> game
 //   apply_player_edits.lua --> ea_fc_player_edits_write_log.json --> handleWriteLog
 //
 // There is no live RPC into Live Editor, so applying an edit is always "queue a file, then the
-// Lua writer runs" (manually at first). Same configure() pattern as connected_career/app_bridge.js.
+// Lua writer runs" (manually at first). Same configure() pattern the other main-process modules use.
 
 const fs = require('fs');
 const path = require('path');
@@ -14,7 +14,7 @@ const path = require('path');
 const EXPORT_PATH = 'C:\\Users\\Public\\ea_fc_player_editor_export.json';
 const PENDING_PATH = 'C:\\Users\\Public\\ea_fc_player_edits_pending.json';
 const WRITE_LOG_PATH = 'C:\\Users\\Public\\ea_fc_player_edits_write_log.json';
-const CATALOG_PATH = path.join(__dirname, 'assets', 'player_customization', 'catalog.json');
+const CATALOG_PATH = path.join(__dirname, '..', 'assets', 'player_customization', 'catalog.json');
 const MAX_EDITS_PER_RUN = 25; // must match assets/lua/apply_player_edits.lua
 
 const ATTRIBUTES = [
@@ -40,7 +40,7 @@ const FIELD_LIMITS = {
   eyecolorcode: [1, 10], eyedetail: [0, 6], eyebrowcode: [0, 3000000],
   accessorycode1: [0, 1100], accessorycode2: [0, 1100], accessorycode3: [0, 1100], accessorycode4: [0, 1100],
   accessorycolourcode1: [0, 99], accessorycolourcode2: [0, 99], accessorycolourcode3: [0, 99], accessorycolourcode4: [0, 99],
-  bodytypecode: [1, 11], height: [140, 220], weight: [40, 120],
+  bodytypecode: [1, 11], height: [140, 206], weight: [40, 120],
   shoetypecode: [0, 562], jerseynumber: [1, 99],
   jerseyfit: [0, 2], jerseysleevelengthcode: [0, 4], jerseystylecode: [0, 1], socklengthcode: [0, 3]
 };
@@ -318,12 +318,12 @@ function handleWriteLog(payload) {
 // Boot pictures are not tied to game ids on their own. A link maps a picture (its catalog key, e.g.
 // "nike/boot_006_....png") to the game's shoetypecode. User links live in boot_links.json in the app's data folder;
 // assets/data/boots_id_map.json can ship defaults. A user value of null removes a shipped link.
-function bootLinksPath() { return path.join(ctx.userDataPath || __dirname, 'boot_links.json'); }
+function bootLinksPath() { return path.join(ctx.userDataPath || path.join(__dirname, '..'), 'boot_links.json'); }
 function readJsonObject(file) {
   try { const v = JSON.parse(fs.readFileSync(file, 'utf8')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
 }
 function getBootLinks() {
-  const shipped = readJsonObject(path.join(__dirname, 'assets', 'data', 'boots_id_map.json'));
+  const shipped = readJsonObject(path.join(__dirname, '..', 'assets', 'data', 'boots_id_map.json'));
   const user = readJsonObject(bootLinksPath());
   const merged = Object.assign({}, shipped, user);
   Object.keys(merged).forEach(k => { if (merged[k] === null) delete merged[k]; });
@@ -361,8 +361,8 @@ function register(ipcMain) {
   ipcMain.handle('get-player-editor-static', () => {
     try {
       return {
-        formula: JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'data', 'overall_formula.json'), 'utf8')),
-        labels: JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'data', 'editor_labels.json'), 'utf8')),
+        formula: JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'data', 'overall_formula.json'), 'utf8')),
+        labels: JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'data', 'editor_labels.json'), 'utf8')),
         limits: FIELD_LIMITS
       };
     } catch (e) {

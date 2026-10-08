@@ -42,7 +42,7 @@ playstyles added; height/weight follow the app's metric/imperial setting; skin t
 
 No live RPC into Live Editor exists. Two proven channels: (a) the app focuses the game window and sends
 a hotkey (`triggerLiveEditorRefresh` in `main.js`, F10 → `export_all.lua`), and (b) a JSON file that a
-Lua script reads (`connected_career/apply_sync_updates.lua`). The editor combines them:
+Lua script reads (`assets/lua/player_editor_sync.lua`). The editor combines them:
 
 ```
  Player page: [Edit player] ─▶ fields unlock ─▶ user edits ─▶ [Save] / [Cancel]

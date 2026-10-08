@@ -585,8 +585,12 @@ let currentCalendar = [];
     // Player height/weight come from the game as "183 cm" / "78 kg" —
     // converted to feet'inches" and lbs for imperial display; metric just
     // normalizes/rounds the game's own units back out.
+    // No player is shown taller than 6'9" (206 cm): a bad value saved in the game (e.g. 8'5") is capped on display.
+    const MAX_HEIGHT_CM = 206;
+    const capHeightCm = cm => Math.min(cm, MAX_HEIGHT_CM);
+
     function formatHeightImperial(heightStr) {
-      const cm = parseFloat(String(heightStr || '').replace(/[^\d.]/g, ''));
+      const cm = capHeightCm(parseFloat(String(heightStr || '').replace(/[^\d.]/g, '')));
       if (!cm) return heightStr || 'N/A';
       const totalInches = cm / 2.54;
       let feet = Math.floor(totalInches / 12);
@@ -602,7 +606,7 @@ let currentCalendar = [];
     }
 
     function formatHeightMetric(heightStr) {
-      const cm = parseFloat(String(heightStr || '').replace(/[^\d.]/g, ''));
+      const cm = capHeightCm(parseFloat(String(heightStr || '').replace(/[^\d.]/g, '')));
       return cm ? `${Math.round(cm)} cm` : (heightStr || 'N/A');
     }
 
@@ -1322,6 +1326,12 @@ let currentCalendar = [];
     }
 
     function switchTab(tabName) {
+      // Opening Squad from another tab starts on the List view; coming back from a player profile keeps whichever
+      // view (List / Depth / Academy) the user was on.
+      const leavingTab = document.querySelector('.tab-content.active');
+      if (tabName === 'squad' && leavingTab && leavingTab.id !== 'squad-tab' && leavingTab.id !== 'profile-tab' && typeof SquadViews !== 'undefined' && SquadViews.mode() !== 'list') {
+        SquadViews.setView('list');
+      }
       if (tabName !== 'profile') {
         previousActiveTab = tabName;
         document.getElementById('main-nav-tabs').style.display = 'flex';
@@ -3443,7 +3453,47 @@ let currentCalendar = [];
       `;
     }
 
+    // ---- Squad filter (shared component: js/player_filters.js) -------------
+    const parsePotentialValue = pot => {
+      if (pot === null || pot === undefined || pot === '') return null;
+      const m = String(pot).match(/\d+/g); // academy players carry a "70-78" range — filter on its top end
+      return m ? Number(m[m.length - 1]) : null;
+    };
+    const contractExpiryYear = p => { const m = String(p.contract_expiry || '').match(/\d{4}/); return m ? Number(m[0]) : null; };
+    const GROUP_CHIPS = [{ value: 'GK', label: 'GK' }, { value: 'DEF', label: 'DEF' }, { value: 'MID', label: 'MID' }, { value: 'ATT', label: 'ATT' }];
+
+    const squadFilter = PlayerFilters.create({
+      key: 'squad',
+      mount: 'squad-filter-mount',
+      onChange: () => renderTableRows(),
+      fields: [
+        { id: 'group', label: 'Position', type: 'chips', options: GROUP_CHIPS, get: p => getPositionInfo(p.position_id).group },
+        { id: 'age', label: 'Age', type: 'range', get: p => computeAge(p.dob) },
+        { id: 'overall', label: 'Overall', type: 'range', get: p => p.overall },
+        { id: 'potential', label: 'Potential', type: 'range', get: p => parsePotentialValue(p.potential) },
+        { id: 'delta', label: 'OVR change (at least)', type: 'min', get: p => p.overall_delta },
+        { id: 'apps', label: 'Appearances', type: 'range', get: p => Number(p.appearances || 0) },
+        { id: 'goals', label: 'Goals (at least)', type: 'min', get: p => Number(p.goals || 0) },
+        { id: 'assists', label: 'Assists (at least)', type: 'min', get: p => Number(p.assists || 0) },
+        { id: 'ga', label: 'Goals + assists (at least)', type: 'min', get: p => Number(p.ga || 0) },
+        { id: 'cs', label: 'Clean sheets (at least)', type: 'min', get: p => Number(p.clean_sheets || 0) },
+        { id: 'rating', label: 'Avg rating (at least)', type: 'min', step: 0.1, get: p => Number(p.avg_rating || 0) },
+        { id: 'cards', label: 'Yellow cards (at least)', type: 'min', get: p => Number(p.yellow_cards || 0) },
+        { id: 'contract', label: 'Contract expires (year)', type: 'range', get: contractExpiryYear },
+        { id: 'injured', label: 'Fitness', type: 'toggle', toggleLabel: 'Injured only', get: p => !!p.injury }
+      ],
+      presets: [
+        { label: 'Under 21', set: { age: { max: 20 } } },
+        { label: 'Prime 24–29', set: { age: { min: 24, max: 29 } } },
+        { label: '30+', set: { age: { min: 30 } } },
+        { label: 'Injured', set: { injured: true } },
+        { label: 'Contract ending', set: () => ({ contract: { max: currentInGameYear() } }) },
+        { label: 'No appearances', set: { apps: { min: 0, max: 0 } } }
+      ]
+    });
+
     function renderTableRows() {
+      if (typeof SquadViews !== 'undefined' && SquadViews.mode() !== 'list') return; // Depth/Age views own the tab
       const tbody = document.getElementById('stats-body');
       tbody.innerHTML = '';
 
@@ -3454,14 +3504,16 @@ let currentCalendar = [];
       let filtered = squadTableRows.filter(p => {
         if (!includeLoaned && p.__clubStatus === 'loan') return false;
         if (!includeTransferred && p.__clubStatus === 'transferred') return false;
+        if (!squadFilter.matches(p)) return false;
         if (!query) return true;
         const nameMatch = (p.name || '').toLowerCase().includes(query);
         const posMatch = (p.pos_label || '').toLowerCase().includes(query);
         return nameMatch || posMatch;
       });
 
+      squadFilter.setSummary(filtered.length, squadTableRows.length);
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" class="empty-state">No players match your search criteria.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" class="empty-state">No players match your search${squadFilter.activeCount() ? ' and filters' : ' criteria'}.</td></tr>`;
         return;
       }
 
@@ -4089,6 +4141,7 @@ Live Editor will end each loan and then release the player from your club to fre
       }
 
       careerTotalsCache = null;
+      if (typeof SquadViews !== 'undefined') SquadViews.refresh();
       renderHomeDashboard();
       filterAndRenderTransfers(); // Loaned view reads currentPlayers directly
     }
@@ -4241,6 +4294,32 @@ Live Editor will end each loan and then release the player from your club to fre
       renderPastPlayersRows();
     }
 
+    // ---- Former Players filter (same shared component as the Squad tab) ----
+    const pastPlayersFilter = PlayerFilters.create({
+      key: 'former',
+      mount: 'past-filter-mount',
+      onChange: () => renderPastPlayersRows(),
+      getRows: () => currentPastPlayers,
+      fields: [
+        { id: 'group', label: 'Position', type: 'chips', options: GROUP_CHIPS, get: p => getPositionInfo(p.position_id).group },
+        { id: 'age', label: 'Age now', type: 'range', get: p => p.__age },
+        { id: 'overall', label: 'Current OVR', type: 'range', get: p => p.overall },
+        { id: 'club', label: 'Current club', type: 'text', get: p => p.current_club },
+        { id: 'fee', label: 'Sold for', type: 'range', step: 1000, get: p => p.__soldFor },
+        { id: 'hasfee', label: 'Transfer fee', type: 'toggle', toggleLabel: 'Known fee only', get: p => !!p.__soldFor },
+        { id: 'value', label: 'Current value', type: 'range', step: 1000, get: p => p.__value },
+        { id: 'years', label: 'Years at club', type: 'range', get: p => p.years_active },
+        { id: 'joined', label: 'Joined season', type: 'select', options: rows => [...new Set(rows.map(p => p.joined_season).filter(Boolean))].sort(), get: p => p.joined_season },
+        { id: 'departed', label: 'Departed season', type: 'select', options: rows => [...new Set(rows.map(p => p.departed_season).filter(Boolean))].sort(), get: p => p.departed_season }
+      ],
+      presets: [
+        { label: 'Sold for a fee', set: { hasfee: true } },
+        { label: 'Now 80+ OVR', set: { overall: { min: 80 } } },
+        { label: 'Under 23 now', set: { age: { max: 22 } } },
+        { label: 'Stayed 3+ years', set: { years: { min: 3 } } }
+      ]
+    });
+
     // Pulled apart from the fetch above so sortPastPlayers can just
     // re-render the already-cached list instead of re-fetching.
     function renderPastPlayersRows() {
@@ -4254,7 +4333,7 @@ Live Editor will end each loan and then release the player from your club to fre
 
       // Precompute the derived fields sorting/display both need, once,
       // rather than recomputing per comparison during sort.
-      const rows = currentPastPlayers.map(p => {
+      let rows = currentPastPlayers.map(p => {
         const age = computeAge(p.dob);
         // wage_at_departure is the best available proxy for a current-club
         // wage we have no way to know — value is still just an estimate.
@@ -4262,6 +4341,14 @@ Live Editor will end each loan and then release the player from your club to fre
         const soldFor = getTransferFeeForPlayer(p.player_id);
         return { ...p, __age: age, __value: value, __soldFor: soldFor };
       });
+
+      const allRows = rows;
+      rows = rows.filter(p => pastPlayersFilter.matches(p));
+      pastPlayersFilter.setSummary(rows.length, allRows.length);
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="empty-state">No former players match your filters.</td></tr>`;
+        return;
+      }
 
       rows.sort((a, b) => {
         let valA = a[pastPlayersSortColumn];
@@ -4393,6 +4480,7 @@ Live Editor will end each loan and then release the player from your club to fre
       if (!window.api || !window.api.getTransferFees) return;
       currentTransferFees = (await window.api.getTransferFees(currentSaveId)) || [];
       filterAndRenderTransfers();
+      refreshChallenge();
       // Redraw-only (currentPastPlayers itself hasn't changed, only the fee
       // lookup it's about to use) — renderPastPlayersTable would re-fetch
       // past players over IPC for no reason.
@@ -4714,165 +4802,6 @@ Live Editor will end each loan and then release the player from your club to fre
       const currencySelect = document.getElementById('settings-currency-select');
       if (currencySelect) currencySelect.value = currentCurrency;
     })();
-
-    // ------------------------------------------------------------------
-    // Connected Career — join-by-code sync toggle in the Settings panel.
-    // Everything real happens in the main process (connected_career/,
-    // reached only through window.api.connectedCareer*); this is purely
-    // the status display + join dialog wiring.
-    // ------------------------------------------------------------------
-    function formatConnectedCareerSyncTime(timestamp) {
-      if (!timestamp) return '';
-      try {
-        return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } catch (e) {
-        return '';
-      }
-    }
-
-    function renderConnectedCareerStatus(status) {
-      const notJoinedRow = document.getElementById('connected-career-not-joined-row');
-      const joinedRow = document.getElementById('connected-career-joined-row');
-      const mirrorRow = document.getElementById('connected-career-mirror-row');
-      if (!notJoinedRow || !joinedRow) return;
-
-      if (!status || !status.joined) {
-        notJoinedRow.style.display = '';
-        joinedRow.style.display = 'none';
-        if (mirrorRow) mirrorRow.style.display = 'none';
-        return;
-      }
-
-      notJoinedRow.style.display = 'none';
-      joinedRow.style.display = '';
-      if (mirrorRow) mirrorRow.style.display = 'flex';
-
-      const dot = document.getElementById('connected-career-status-dot');
-      const text = document.getElementById('connected-career-status-text');
-      const wrap = document.getElementById('connected-career-status-wrap');
-      if (wrap) wrap.title = `Code: ${status.leagueCode} · ${status.ownerId === 'gavin' ? 'Gavin' : 'Me'}`;
-
-      if (dot) dot.className = 'connected-career-dot' + (status.lastSyncOk === true ? ' synced' : status.lastSyncOk === false ? ' error' : '');
-      if (text) {
-        if (status.lastSyncOk === true) {
-          text.textContent = `Synced ${formatConnectedCareerSyncTime(status.lastSyncAt)}`;
-        } else if (status.lastSyncOk === false) {
-          text.textContent = `Sync failed: ${status.lastSyncError || 'unknown error'}`;
-        } else {
-          text.textContent = 'Not synced yet';
-        }
-      }
-    }
-
-    async function refreshConnectedCareerUI() {
-      if (!window.api || !window.api.connectedCareerStatus) return;
-      try {
-        const status = await window.api.connectedCareerStatus();
-        renderConnectedCareerStatus(status);
-      } catch (e) { /* main process not ready yet — leave the default "not connected" view */ }
-    }
-
-    function openConnectedCareerJoinDialog() {
-      const dialog = document.getElementById('connected-career-join-dialog');
-      const errorEl = document.getElementById('connected-career-join-error');
-      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
-      if (dialog && !dialog.open) dialog.showModal();
-    }
-
-    function closeConnectedCareerJoinDialog() {
-      const dialog = document.getElementById('connected-career-join-dialog');
-      if (dialog && dialog.open) dialog.close();
-    }
-
-    async function submitConnectedCareerJoin() {
-      const codeInput = document.getElementById('connected-career-code-input');
-      const ownerSelect = document.getElementById('connected-career-owner-select');
-      const errorEl = document.getElementById('connected-career-join-error');
-      const code = codeInput ? codeInput.value.trim() : '';
-      const owner = ownerSelect ? ownerSelect.value : 'me';
-
-      if (!code) {
-        if (errorEl) { errorEl.textContent = 'Enter a league code first.'; errorEl.style.display = ''; }
-        return;
-      }
-      if (!window.api || !window.api.connectedCareerJoin) return;
-
-      try {
-        await window.api.connectedCareerJoin(code, owner);
-        closeConnectedCareerJoinDialog();
-        await refreshConnectedCareerUI();
-      } catch (e) {
-        if (errorEl) { errorEl.textContent = e.message || 'Failed to join.'; errorEl.style.display = ''; }
-      }
-    }
-
-    async function onConnectedCareerSyncNow() {
-      const btn = document.getElementById('connected-career-sync-btn');
-      if (!window.api || !window.api.connectedCareerSyncNow) return;
-      if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
-      try {
-        const result = await window.api.connectedCareerSyncNow();
-        renderConnectedCareerStatus(result.status);
-      } catch (e) {
-        await refreshConnectedCareerUI();
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Sync Now'; }
-      }
-    }
-
-    async function onConnectedCareerLeave() {
-      if (!window.api || !window.api.connectedCareerLeave) return;
-      const confirmed = confirm('Leave this Connected Career? You can rejoin with the same code any time.');
-      if (!confirmed) return;
-      await window.api.connectedCareerLeave();
-      await refreshConnectedCareerUI();
-    }
-
-    async function onConnectedCareerExportSquad() {
-      const statusEl = document.getElementById('connected-career-mirror-status');
-      if (!window.api || !window.api.connectedCareerExportSquadForMirroring) return;
-      try {
-        const result = await window.api.connectedCareerExportSquadForMirroring();
-        if (statusEl) statusEl.textContent = `Requested export for ${result.queuedCount} player(s) — now run export_player_full_row.lua in Live Editor's Lua Engine.`;
-      } catch (e) {
-        if (statusEl) statusEl.textContent = `Failed: ${e.message}`;
-      }
-    }
-
-    async function onConnectedCareerPushFullRows() {
-      const statusEl = document.getElementById('connected-career-mirror-status');
-      if (!window.api || !window.api.connectedCareerPushFullRows) return;
-      try {
-        const result = await window.api.connectedCareerPushFullRows();
-        if (statusEl) statusEl.textContent = `Pushed ${result.pushedCount} full row(s) to Firebase. If 0, make sure you ran export_player_full_row.lua first.`;
-      } catch (e) {
-        if (statusEl) statusEl.textContent = `Failed: ${e.message}`;
-      }
-    }
-
-    async function onConnectedCareerPullMirrorCreates() {
-      const statusEl = document.getElementById('connected-career-mirror-status');
-      if (!window.api || !window.api.connectedCareerPullMirrorCreates) return;
-      try {
-        const result = await window.api.connectedCareerPullMirrorCreates();
-        if (statusEl) statusEl.textContent = `Queued ${result.queuedCount} player(s) to mirror — now run create_mirrored_players.lua in Live Editor's Lua Engine.`;
-      } catch (e) {
-        if (statusEl) statusEl.textContent = `Failed: ${e.message}`;
-      }
-    }
-
-    async function onConnectedCareerConfirmMirrorResults() {
-      const statusEl = document.getElementById('connected-career-mirror-status');
-      if (!window.api || !window.api.connectedCareerConfirmMirrorResults) return;
-      try {
-        const result = await window.api.connectedCareerConfirmMirrorResults();
-        if (statusEl) statusEl.textContent = `Confirmed mapping for ${result.confirmedCount} player(s) — future attribute syncs will target their real local id.`;
-      } catch (e) {
-        if (statusEl) statusEl.textContent = `Failed: ${e.message}`;
-      }
-    }
-
-    refreshConnectedCareerUI();
 
     function setRefreshButtonState(isRefreshing) {
       const btn = document.getElementById('refresh-btn');
@@ -7112,40 +7041,6 @@ Live Editor will end each loan and then release the player from your club to fre
       renderTopStatWidget('appearances', 'home-top-appearances-body', true);
     }
 
-    function renderExpiringContractsTable() {
-      // __clubStatus === 'transferred' means the player has actually left
-      // the club — their old contract_expiry can still be sitting on the
-      // stale row (last known before the sale), which would otherwise
-      // list someone no longer even on the books. Loaned players stay
-      // eligible: the parent club still holds their contract.
-      const ranked = currentPlayers
-        .filter(p => p.contract_expiry && p.__clubStatus !== 'transferred')
-        .map(p => ({ ...p, __monthsLeft: computeMonthsUntilExpiry(p.contract_expiry) }))
-        .filter(p => p.__monthsLeft !== null && p.__monthsLeft <= 18)
-        .map(p => ({ ...p, __value: estimateMarketValue(p.overall, p.potential, computeAge(p.dob || p.birthdate), p.wage) }))
-        .sort((a, b) => String(a.contract_expiry).localeCompare(String(b.contract_expiry)));
-
-      renderExpandableList('home-expiring-body', ranked, (visible) => `
-        <table class="sub-table">
-          <thead><tr><th>Player</th><th>Expires</th><th>Months Left</th><th>Wage</th><th>Value</th></tr></thead>
-          <tbody>
-            ${visible.map(p => {
-              const monthsLeft = p.__monthsLeft;
-              return `
-                <tr class="clickable-name" onclick="openPlayerProfile('${p.player_id ?? p.name}')">
-                  <td>${p.name}</td>
-                  <td>${p.contract_expiry}</td>
-                  <td>${monthsLeft !== null ? monthsLeft : 'N/A'}</td>
-                  <td>${formatWageAmount(p.wage)}/wk</td>
-                  <td style="color: var(--accent-color); font-weight:600;">${formatMoney(p.__value)}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `, 'No contract data loaded.');
-    }
-
     // How outlying a flagged player's issue actually is, so the widget
     // can surface only the handful that matter most instead of every
     // player who technically clears one of the loose thresholds below.
@@ -7194,10 +7089,9 @@ Live Editor will end each loan and then release the player from your club to fre
     // outlying cases are shown (see computeNeedsSeverity) — this is meant
     // to flag the sharpest squad gaps at a glance, not list everyone who
     // loosely clears a threshold.
-    function renderTeamNeedsWatchlist() {
-      const container = document.getElementById('home-needs-watchlist-body');
-      if (!container) return;
-
+    // Every squad player with at least one watchlist reason (see the rules above), most outlying first. Feeds the
+    // Squad Gaps card and the Depth chart's gap flags (js/depth_chart.js) — the old Team Needs card is gone.
+    function computeTeamNeeds() {
       // Excludes anyone not actually at the club right now — 'transferred'
       // (left mid-season, see __clubStatus in transformPlayersForTable)
       // and 'loan' (out playing elsewhere) shouldn't be flagged as a squad
@@ -7241,39 +7135,9 @@ Live Editor will end each loan and then release the player from your club to fre
         return reasons.length > 0 ? { ...p, __age: age, __reasons: reasons } : null;
       }).filter(Boolean)
         .map(p => ({ ...p, __severity: computeNeedsSeverity(p, avgSquadAppearances, medianSquadWage) }))
-        .sort((a, b) => b.__severity - a.__severity)
-        .slice(0, 5);
+        .sort((a, b) => b.__severity - a.__severity);
 
-      if (flagged.length === 0) {
-        container.innerHTML = `<div class="empty-state" style="padding: 12px;">No squad gaps flagged right now.</div>`;
-        return;
-      }
-
-      container.innerHTML = `
-        <table class="sub-table">
-          <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Age</th><th>Value</th><th>Wage</th><th>Reason</th><th>Suggested Target</th></tr></thead>
-          <tbody>
-            ${flagged.map(p => {
-              const posInfo = getPositionInfo(p.position_id);
-              const value = estimateMarketValue(p.overall, p.potential, p.__age, p.wage);
-              const targetOvr = Math.max(75, (p.overall || 75) - 2);
-              const hint = `${posInfo.label}, age 23-27, OVR ${targetOvr}+ · budget ~${formatMoney(value)}`;
-              return `
-                <tr class="clickable-name" onclick="openPlayerProfile('${p.player_id ?? p.name}')">
-                  <td>${p.name}</td>
-                  <td><span class="pos-badge pos-${posInfo.group}">${posInfo.label}</span></td>
-                  <td>${p.overall || 0}</td>
-                  <td>${p.__age ?? 'N/A'}</td>
-                  <td style="color: var(--accent-color); font-weight:600;">${formatMoney(value)}</td>
-                  <td>${formatWageAmount(p.wage)}/wk</td>
-                  <td>${p.__reasons.join(', ')}</td>
-                  <td style="color: var(--text-dim); font-size: 12px;">${hint}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `;
+      return flagged;
     }
 
     // A "promising" potential varies by division — an 81-potential player
@@ -7495,9 +7359,6 @@ Live Editor will end each loan and then release the player from your club to fre
     // onYouthModeButtonClick below), but its active state still needs to
     // be visible without opening Settings — the header badge covers that.
     function updateYouthModeButton() {
-      const headerBadge = document.getElementById('youth-mode-header-badge');
-      if (headerBadge) headerBadge.style.display = currentYouthModeEnabled ? 'inline-block' : 'none';
-
       const statusEl = document.getElementById('settings-youth-mode-status');
       if (statusEl) {
         statusEl.textContent = currentYouthModeEnabled ? '🎓 Active (permanent)' : 'Not enabled';
@@ -7508,17 +7369,6 @@ Live Editor will end each loan and then release the player from your club to fre
 
       const rulesBtn = document.getElementById('settings-youth-mode-rules-btn');
       if (rulesBtn) rulesBtn.style.display = currentYouthModeEnabled ? '' : 'none';
-
-      // The header's own single entry point is "My Rules" (below) —
-      // the plain full-reference button now only lives in Settings
-      // (settings-youth-mode-rules-btn above), to avoid two
-      // near-identical buttons sitting in the header at once. Always
-      // visible whenever Youth Mode is on (not gated to a transfer-window
-      // date) — per the user, it should "just stay up there". The
-      // once-per-season auto-popup is separate — see
-      // renderYouthSeasonRulesReminder.
-      const seasonReminderBtn = document.getElementById('youth-mode-season-reminder-btn');
-      if (seasonReminderBtn) seasonReminderBtn.style.display = currentYouthModeEnabled ? 'inline-block' : 'none';
     }
 
     // Builds the "Squad Rating Cap" table straight from
@@ -7732,90 +7582,6 @@ Live Editor will end each loan and then release the player from your club to fre
     function closeYouthRulesDialog() {
       const dialog = document.getElementById('youth-rules-dialog');
       if (dialog && dialog.open) dialog.close();
-    }
-
-    // "My Rules" — just the one cap row, signing-type row, and transfer
-    // rule that actually apply to this team, instead of the full reference
-    // tables above. Reuses resolveYouthRulesHighlightContext's resolved
-    // indices (current league for the cap/signing rows, last season's
-    // result for the transfer rule) to pick the single applicable row out
-    // of the same underlying data the full dialog uses.
-    async function renderYouthMyRulesBody() {
-      const body = document.getElementById('youth-my-rules-body');
-      if (!body) return;
-
-      body.innerHTML = `<p class="youth-rules-note">Loading…</p>`;
-
-      const { capIndex, transferSectionIndex, transferRowIndex } = await resolveYouthRulesHighlightContext();
-      const capRows = buildYouthRulesCapRows();
-      const signingRows = buildYouthSigningTypeRows(capRows);
-      const capRow = capIndex !== null ? capRows[capIndex] : null;
-      const signingRow = capIndex !== null ? signingRows[capIndex] : null;
-      const transferSection = transferSectionIndex !== null ? YOUTH_TRANSFER_RULES[transferSectionIndex] : null;
-      const transferOutcome = transferSection && transferRowIndex !== null ? transferSection.rules[transferRowIndex] : null;
-
-      if (!capRow && !transferOutcome) {
-        body.innerHTML = `<p class="youth-rules-note">Nothing to show yet — no recognized league on record for this save.</p>`;
-        return;
-      }
-
-      body.innerHTML = `
-        ${capRow ? `
-          <div class="youth-rules-section">
-            <h4>📊 ${capRow.label}</h4>
-            <table class="youth-rules-cap-table">
-              <thead><tr><th class="num">Avg OVR</th><th class="num">Max OVR</th><th class="num">Allowed Over</th></tr></thead>
-              <tbody><tr><td class="num">${capRow.avg}</td><td class="num">${capRow.maxDisplay}</td><td class="num">${capRow.allowanceDisplay}</td></tr></tbody>
-            </table>
-            <p class="youth-rules-note">Checked at the end of each season — go over the allowance and you'll get a warning naming who to sell.</p>
-          </div>
-        ` : ''}
-        ${signingRow ? `
-          <div class="youth-rules-section">
-            <h4>🧾 Signing Types by OVR</h4>
-            <table class="youth-rules-cap-table">
-              <thead><tr><th class="num">Prospect</th><th class="num">Squad Player</th><th class="num">Marquee</th></tr></thead>
-              <tbody><tr><td class="num">${signingRow.prospect}</td><td class="num">${signingRow.squad}</td><td class="num">${signingRow.marquee}</td></tr></tbody>
-            </table>
-          </div>
-        ` : ''}
-        ${transferOutcome ? `
-          <div class="youth-rules-section">
-            <h4>📝 Transfer Rule <span style="font-weight: 400; font-size: 12px; color: var(--text-dim);">(${transferSection.league}, based on last season's result)</span></h4>
-            <ul class="season-review-players">
-              <li><span>${transferOutcome[0]}</span><span>${transferOutcome[1]}</span></li>
-            </ul>
-          </div>
-        ` : ''}
-      `;
-    }
-
-    async function openYouthMyRulesDialog() {
-      const dialog = document.getElementById('youth-my-rules-dialog');
-      if (dialog && !dialog.open) dialog.showModal();
-      await renderYouthMyRulesBody();
-
-      // Opening it (whether via the header button or the auto-check below)
-      // counts as "seen" for the season — stops the header button's pulse.
-      const seasonLabel = computeCurrentSeasonLabel();
-      if (seasonLabel) {
-        try { localStorage.setItem(youthSeasonReminderStorageKey(), seasonLabel); } catch (e) { /* no persistence available */ }
-      }
-      const btn = document.getElementById('youth-mode-season-reminder-btn');
-      if (btn) btn.classList.remove('youth-reminder-pulse');
-    }
-
-    function closeYouthMyRulesDialog() {
-      const dialog = document.getElementById('youth-my-rules-dialog');
-      if (dialog && dialog.open) dialog.close();
-    }
-
-    // Swaps My Rules for the full reference dialog rather than stacking
-    // them — closing one native <dialog> before showModal()-ing another
-    // keeps only one on the top layer at a time.
-    function openFullYouthRulesFromMyRules() {
-      closeYouthMyRulesDialog();
-      openYouthRulesDialog();
     }
 
     async function onYouthModeButtonClick() {
@@ -8183,40 +7949,6 @@ Live Editor will end each loan and then release the player from your club to fre
       `, 'No injuries recorded this season.');
     }
 
-    // New-season reminder for Youth Squad Career Mode's rules (who we can
-    // sign, who we must sell, our squad cap) — separate from the
-    // overrated-squad VIOLATION warning above, which only fires when
-    // there's an actual problem. This is a plain reminder that fires every
-    // season regardless of violations: the header "⚠️ Squad Rules" button
-    // stays up permanently whenever Youth Mode is on (see
-    // updateYouthModeButton), and this just handles auto-popping the "My
-    // Rules" dialog once per season. Tracked via localStorage (same
-    // pattern as the monthly warning-popup re-trigger above) rather than a
-    // new DB column/migration, since this is purely a client-side "have I
-    // shown this yet" flag.
-    function youthSeasonReminderStorageKey() {
-      return `youthSeasonReminderShown:${currentSaveId}`;
-    }
-
-    // No auto-popup (too intrusive, per the user) — instead the header
-    // button just pulses/blinks (see .youth-reminder-pulse) until it's
-    // actually clicked open at least once this season, at which point
-    // openYouthMyRulesDialog marks it seen and the pulse stops.
-    function renderYouthSeasonRulesReminder() {
-      const btn = document.getElementById('youth-mode-season-reminder-btn');
-      if (!btn) return;
-      if (!currentYouthModeEnabled) { btn.classList.remove('youth-reminder-pulse'); return; }
-
-      const seasonLabel = computeCurrentSeasonLabel();
-      let alreadySeen = false;
-      try {
-        alreadySeen = localStorage.getItem(youthSeasonReminderStorageKey()) === seasonLabel;
-      } catch (e) {
-        alreadySeen = false; // localStorage unavailable — just never pulses
-      }
-      btn.classList.toggle('youth-reminder-pulse', !!seasonLabel && !alreadySeen);
-    }
-
     // Session-only memory of which (playerId, styleName) alerts have
     // already triggered the attention-grabbing popup (see
     // showPlaystyleAlertPopup) — resets on app restart, same idea as
@@ -8324,8 +8056,6 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     function renderYouthModeWarning() {
-      renderYouthSeasonRulesReminder();
-
       const banner = document.getElementById('youth-mode-warning-banner');
       if (!banner) return;
 
@@ -9340,6 +9070,7 @@ Live Editor will end each loan and then release the player from your club to fre
           </tbody>
         </table>
       `, 'No youth academy data loaded.');
+      if (typeof SquadViews !== 'undefined') SquadViews.refresh();
     }
 
     function refreshYouthAcademy() {
@@ -9392,11 +9123,213 @@ Live Editor will end each loan and then release the player from your club to fre
       `;
     }
 
+    // ===== Challenge Mode ================================================
+    // One shared status object (see js/challenge.js) feeds all four entry
+    // points: the Home card, the header chip, the Transfers Hub banners and
+    // the slide-over drawer. refreshChallenge() is the only place that
+    // builds it; renderChallengeUI() only reads it.
+    let challengeStatus = null;
+    let challengeCtx = null; // rule rows shown in the drawer
+    let challengeBans = [];
+    let challengeDeals = [];
+
+    function challengeEscape(str) {
+      return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function refreshChallenge() {
+      if (!currentYouthModeEnabled || !currentSaveId || !window.api || !window.api.getChallengeDeals || !window.Challenge) {
+        challengeStatus = null;
+        renderChallengeUI();
+        return;
+      }
+      const saveAtStart = currentSaveId;
+      const [bans, deals, ctx] = await Promise.all([
+        window.api.getChallengeBans(saveAtStart),
+        window.api.getChallengeDeals(saveAtStart),
+        resolveYouthRulesHighlightContext()
+      ]);
+      if (saveAtStart !== currentSaveId) return; // user switched saves mid-fetch
+      challengeBans = bans || [];
+      challengeDeals = deals || [];
+
+      const capRows = buildYouthRulesCapRows();
+      const capRow = ctx.capIndex !== null ? capRows[ctx.capIndex] : null;
+      const signingRow = ctx.capIndex !== null ? buildYouthSigningTypeRows(capRows)[ctx.capIndex] : null;
+      const section = ctx.transferSectionIndex !== null ? YOUTH_TRANSFER_RULES[ctx.transferSectionIndex] : null;
+      const outcome = section && ctx.transferRowIndex !== null ? section.rules[ctx.transferRowIndex] : null;
+      challengeCtx = { capRow, signingRow, section, outcome };
+
+      const club = (getMostCommonClubName() || '').toLowerCase();
+      const norm = name => (name || '').toLowerCase() === club ? club : name;
+      const today = toSortableDateStr(currentIngameDate || new Date());
+      challengeStatus = window.Challenge.computeChallengeStatus({
+        today,
+        club,
+        ruleText: outcome ? outcome[1] : null,
+        outcomeLabel: outcome ? outcome[0] : null,
+        deals: challengeDeals.map(d => ({ ...d, fromTeam: norm(d.fromTeam), toTeam: norm(d.toTeam) })),
+        bans: challengeBans,
+        bands: capRow ? { avg: capRow.avg, max: capRow.maxNum } : null,
+        overallOf: id => { const p = currentPlayers.find(x => x.player_id == id); return p ? Number(p.overall) : null; }
+      });
+      renderChallengeUI();
+    }
+
+    function renderChallengeUI() {
+      const st = challengeStatus;
+      const card = document.getElementById('challenge-card');
+      const bannerBox = document.getElementById('challenge-transfer-banners');
+
+      if (!st) {
+        if (card) card.style.display = 'none';
+        if (bannerBox) bannerBox.innerHTML = '';
+        return;
+      }
+      if (card) {
+        const h = st.headline, p = h.progress;
+        const pct = p && p.total ? Math.round((p.done / p.total) * 100) : 0;
+        card.style.display = '';
+        const quiet = h.kind === 'clear' || h.kind === 'none';
+        card.className = `challenge-card tone-${h.tone}${quiet ? ' compact' : ''}`;
+        card.innerHTML = quiet
+          ? `<div class="challenge-card-label"><span>🎯 Challenge · ${challengeEscape(h.kind === 'clear' ? 'All clear this season' : h.title)}</span><span>Details ›</span></div>`
+          : `
+          <div class="challenge-card-label"><span>🎯 Challenge Status</span><span>Details ›</span></div>
+          <div class="challenge-card-title">${challengeEscape(h.title)}</div>
+          <div class="challenge-card-detail">${challengeEscape(h.detail)}</div>
+          ${p ? `<div class="challenge-progress"><div style="width: ${pct}%"></div></div><div class="challenge-progress-label">${challengeEscape(p.label)}</div>` : ''}
+        `;
+      }
+      if (bannerBox) {
+        bannerBox.innerHTML = st.banners.map(b => `<div class="challenge-banner tone-${b.tone}">${challengeEscape(b.text)}</div>`).join('');
+      }
+      renderChallengeDrawer();
+    }
+
+    function openChallengeDrawer() {
+      renderChallengeDrawer();
+      document.getElementById('challenge-drawer').classList.add('open');
+      document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'false');
+      document.getElementById('challenge-drawer-backdrop').classList.add('open');
+    }
+
+    function closeChallengeDrawer() {
+      document.getElementById('challenge-drawer').classList.remove('open');
+      document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'true');
+      document.getElementById('challenge-drawer-backdrop').classList.remove('open');
+    }
+
+    function renderChallengeDrawer() {
+      const body = document.getElementById('challenge-drawer-body');
+      const st = challengeStatus;
+      if (!body) return;
+      if (!st) { body.innerHTML = '<p class="youth-rules-note">Challenge Mode needs Youth Mode enabled and a synced save.</p>'; return; }
+      const e = challengeEscape;
+      const slotRows = [];
+      if (st.signings) {
+        st.signings.signed.forEach(s => slotRows.push(`<div class="challenge-row done"><span>✅ ${e(s.name || 'Player')} <em>(${s.cls})</em></span><span>${e(s.date)}</span></div>`));
+        ['marquee', 'squad', 'prospect'].forEach(c => {
+          for (let i = 0; i < st.signings.remaining[c]; i++) {
+            slotRows.push(`<div class="challenge-row"><span>${st.ban.active ? '🚫' : '🟢'} ${c[0].toUpperCase() + c.slice(1)} signing available</span><span>${st.ban.active ? 'on hold' : 'open'}</span></div>`);
+          }
+        });
+        if (st.signings.hasChoice) slotRows.push(`<div class="challenge-row"><span>Rule offers a choice: ${st.signings.options.map(o => ['marquee', 'squad', 'prospect'].filter(c => o[c]).map(c => `${o[c]} ${c}`).join(' + ')).join(' OR ')}</span><span></span></div>`);
+      }
+      if (st.sells) {
+        st.sells.sold.forEach(s => slotRows.push(`<div class="challenge-row done"><span>✅ Sold ${e(s.name || 'player')}</span><span>${e(s.date)}</span></div>`));
+        for (let i = 0; i < st.sells.remaining; i++) {
+          slotRows.push(`<div class="challenge-row"><span>${st.sells.overdue ? '🔴' : '🟠'} Sell a player</span><span>by ${e(st.sells.deadline)}</span></div>`);
+        }
+      }
+
+      const ban = st.ban;
+      const banStatus = ban.active
+        ? `<div class="challenge-banner tone-danger">Active until <strong>${e(ban.active.endDate)}</strong> (${ban.daysLeft} days left)${ban.active.reason ? ` — ${e(ban.active.reason)}` : ''}
+             <div style="margin-top: 8px;"><button class="refresh-btn" style="padding: 4px 12px; font-size: 13px;" onclick="cancelChallengeBanClick(${ban.active.id})">Lift ban early</button></div></div>`
+        : ban.upcoming ? `<div class="challenge-banner tone-warn">Scheduled ${e(ban.upcoming.startDate)} → ${e(ban.upcoming.endDate)}</div>` : '';
+      const violations = ban.violations.map(v => `<div class="challenge-row"><span>⚠️ ${e(v.name || 'Player')} signed during ban</span><span>${e(v.date)}</span></div>`).join('');
+      const pastBans = ban.history.filter(b => !(ban.active && b.id === ban.active.id)).map(b =>
+        `<div class="challenge-row"><span>${e(b.startDate)} → ${e(b.endDate)}${b.reason ? ` · ${e(b.reason)}` : ''}</span><span>${b.cancelledAt ? 'lifted early' : b.endDate < st.today ? 'served' : ''}</span></div>`).join('');
+
+      const ctx = challengeCtx || {};
+      const deals = [...(st.signings ? st.signings.signed.map(d => ({ ...d, dir: 'In' })) : []), ...(st.sells ? st.sells.sold.map(d => ({ ...d, dir: 'Out' })) : [])]
+        .sort((a, b) => a.date.localeCompare(b.date));
+      body.innerHTML = `
+        <div class="challenge-card tone-${st.headline.tone}" style="cursor: default;">
+          <div class="challenge-card-title">${e(st.headline.title)}</div>
+          <div class="challenge-card-detail">${e(st.headline.detail)}</div>
+          ${st.headline.progress ? `<div class="challenge-progress"><div style="width: ${st.headline.progress.total ? Math.round(st.headline.progress.done / st.headline.progress.total * 100) : 0}%"></div></div><div class="challenge-progress-label">${e(st.headline.progress.label)}</div>` : ''}
+        </div>
+        ${slotRows.length ? `<div class="challenge-section"><h4>📋 Obligations this season</h4>${slotRows.join('')}</div>` : ''}
+        <div class="challenge-section">
+          <h4>🚫 Transfer Ban modifier</h4>
+          <p class="youth-rules-note" style="margin: 0 0 6px;">Optional. Freeze incoming signings (and loans) for a stretch of in-game time. Sales still count. Nothing is enforced — deals dated inside a ban are flagged.</p>
+          ${banStatus}
+          ${violations}
+          ${ban.active ? '' : `
+            <div class="challenge-ban-form">
+              <input type="number" id="challenge-ban-count" min="1" max="10" value="1" />
+              <select id="challenge-ban-unit">
+                <option value="windows">transfer window(s)</option>
+                <option value="months">month(s)</option>
+                <option value="seasons">season(s)</option>
+              </select>
+              <input type="text" id="challenge-ban-reason" placeholder="Reason (optional)" maxlength="80" />
+              <button class="refresh-btn" style="padding: 6px 14px; font-size: 13px;" onclick="startChallengeBanClick()">Start ban</button>
+            </div>`}
+          ${pastBans ? `<div style="margin-top: 10px;">${pastBans}</div>` : ''}
+        </div>
+        <div class="challenge-section">
+          <h4>📝 This season's rules</h4>
+          ${ctx.outcome ? `<div class="challenge-row"><span>${e(ctx.outcome[0])}</span><span>${e(ctx.outcome[1])}</span></div><p class="youth-rules-note">Based on last season's result (${e(ctx.section.league)}).</p>` : '<p class="youth-rules-note">No recorded result from last season yet.</p>'}
+          ${ctx.signingRow ? `<div class="challenge-row"><span>Prospect</span><span>${e(ctx.signingRow.prospect)}</span></div><div class="challenge-row"><span>Squad player</span><span>${e(ctx.signingRow.squad)}</span></div><div class="challenge-row"><span>Marquee</span><span>${e(ctx.signingRow.marquee)}</span></div>` : ''}
+          ${ctx.capRow ? `<div class="challenge-row"><span>${e(ctx.capRow.label)} OVR cap</span><span>${e(ctx.capRow.maxDisplay)} (${e(ctx.capRow.allowanceDisplay)} allowed over)</span></div>` : ''}
+          <p style="margin-top: 8px;"><a href="#" onclick="event.preventDefault(); closeChallengeDrawer(); openYouthRulesDialog();" style="color: var(--accent-color); font-size: 13px;">View full rules reference ›</a></p>
+        </div>
+        <div class="challenge-section">
+          <h4>🕘 This season's deals</h4>
+          ${deals.length
+            ? deals.map(d => `<div class="challenge-row"><span>${d.dir === 'In' ? '⬅️' : '➡️'} ${e(d.name || 'Player')}</span><span>${e(d.date)}</span></div>`).join('')
+            : '<p class="youth-rules-note">No permanent signings or sales recorded since June 1.</p>'}
+        </div>
+      `;
+    }
+
+    async function startChallengeBanClick() {
+      if (!currentSaveId || !window.api || !challengeStatus) return;
+      const count = document.getElementById('challenge-ban-count').value;
+      const unit = document.getElementById('challenge-ban-unit').value;
+      const reason = document.getElementById('challenge-ban-reason').value.trim();
+      const start = challengeStatus.today;
+      const end = window.Challenge.computeBanEnd(start, unit, count);
+      if (!end) return;
+      const res = await window.api.addChallengeBan(currentSaveId, start, end, reason);
+      if (res && res.success) await refreshChallenge();
+    }
+
+    async function cancelChallengeBanClick(banId) {
+      if (!currentSaveId || !window.api) return;
+      const res = await window.api.cancelChallengeBan(currentSaveId, banId);
+      if (res && res.success) await refreshChallenge();
+    }
+
+    // Youth Pipeline card: Future Stars and the academy roster share one
+    // card (both bodies stay rendered; this only flips which is visible).
+    function setYouthPipelineView(view) {
+      const academy = view === 'academy';
+      document.getElementById('home-youth-body').style.display = academy ? 'none' : '';
+      document.getElementById('home-youth-academy-body').style.display = academy ? '' : 'none';
+      document.getElementById('youth-pipeline-stars-btn').classList.toggle('active', !academy);
+      document.getElementById('youth-pipeline-academy-btn').classList.toggle('active', academy);
+    }
+
     function renderHomeDashboard() {
       renderHomeHeader();
       renderHomeTicker();
       maybeShowNextTrophyWinPopup(); // retry a queued trophy popup that got blocked by another dialog earlier
       renderYouthModeWarning();
+      refreshChallenge();
       renderPlaystyleAlerts();
       renderYouthModeDangerZone();
       renderSquadAgeProfile();
@@ -9410,10 +9343,9 @@ Live Editor will end each loan and then release the player from your club to fre
       renderManagerPPGWidget();
       renderTrophiesWidget();
       renderTopStatsWidgets();
-      renderExpiringContractsTable();
       renderPromisingYouthTable();
       renderYouthAcademyTable();
-      renderTeamNeedsWatchlist();
+      if (typeof SquadViews !== 'undefined') SquadViews.renderGapsCard();
     }
 
     if (window.api) {

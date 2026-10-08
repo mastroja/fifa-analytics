@@ -1,6 +1,6 @@
 // Player editor UI (generic / regen / academy players only). Loaded after app.js; relies on app.js
 // globals available at call time: currentUnits ('imperial' | 'metric'), POSITION_MAP.
-// Backend: player_editor.js (IPC). Design: PLAYER_EDITOR_DESIGN.md.
+// Backend: player_editor.js (IPC). Design: assets/design_docs/PLAYER_EDITOR_DESIGN.md.
 //
 // Flow: profile "Edit player" -> sync from game (F11) -> tabbed editor dialog -> Save queues only the
 // CHANGED game columns and presses F11 again so assets/lua/player_editor_sync.lua writes them.
@@ -123,7 +123,7 @@
   function filterCatalog(list, kind, categoryOnly) {
     const f = ed.filters[kind];
     let out = list;
-    if (f.cat === 'suggested') { const cats = suggestedCats(); out = out.filter(h => h.cat === null || cats.includes(h.cat)); }
+    if (f.cat === 'suggested') { const cats = suggestedCats(); out = out.filter(h => cats.includes(h.cat)); } // uncategorised styles live under "Other"
     else if (f.cat === 'other') out = out.filter(h => h.cat === null);
     else if (f.cat !== 'all') out = out.filter(h => h.cat === Number(f.cat));
     if (!categoryOnly && f.length !== 'all') out = out.filter(h => h.length === f.length);
@@ -299,11 +299,11 @@
     const catOptions = [];
     if (kind === 'hair') {
       const sug = suggestedCats();
-      const sugCount = list.filter(h => h.cat === null || sug.includes(h.cat)).length;
+      const sugCount = list.filter(h => sug.includes(h.cat)).length;
       catOptions.push({ value: 'suggested', label: `Suggested for skin tone (${sugCount})` });
       catOptions.push({ value: 'all', label: `All (${list.length})` });
       [1, 2, 3].forEach(n => { if (catCounts[n]) catOptions.push({ value: n, label: `${CAT_LABEL[n]} (${catCounts[n]})` }); });
-      if (catCounts.other) catOptions.push({ value: 'other', label: `Uncategorised (${catCounts.other})` });
+      if (catCounts.other) catOptions.push({ value: 'other', label: `Other (${catCounts.other})` });
     }
 
     // lengths that exist inside the chosen category; drop the length filter if it no longer applies
@@ -404,7 +404,7 @@
     const c = ed.cur;
     let hInputs, wInputs;
     if (units() === 'metric') {
-      hInputs = numberField('Height (cm)', 'height', 140, 220);
+      hInputs = numberField('Height (cm)', 'height', 140, 206);
       wInputs = numberField('Weight (kg)', 'weight', 40, 120);
     } else {
       const totalIn = c.height / 2.54;

@@ -26,21 +26,13 @@
     },
     "files": [
       "main.js",
-      "preload.js",
-      "player_editor.js",
-      "dynamic_look.js",
-      "squad_numbers.js",
-      "player_editor_ui.js",
-      "dynamic_look_ui.js",
       "index.html",
-      "app.js",
+      "js/**/*",
       "schema.sql",
-      "assets/**/*",
-      "connected_career/**/*"
+      "assets/**/*"
     ],
     "asarUnpack": [
-      "assets/**/*",
-      "connected_career/**/*"
+      "assets/**/*"
     ],
     "publish": {
       "provider": "github",
@@ -55,7 +47,6 @@
   "dependencies": {
     "chokidar": "^5.0.0",
     "electron-updater": "^6.8.9",
-    "firebase": "^12.3.0",
     "sql.js": "^1.14.2"
   },
   "allowScripts": {

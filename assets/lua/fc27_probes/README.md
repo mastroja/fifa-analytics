@@ -23,6 +23,8 @@ heap range the manager objects live in (0x66000000-0x6B000000), pointer-followin
 | `inspect_fc27_stats_memory_stage2.lua` | Stage 2: follows arena pointers one level, flags squad ids | medium |
 | `inspect_fc27_find_player_records.lua` | Stage 3: searches 16 more managers' vectors for squad ids | medium |
 | `inspect_fc27_find_fce_lists.lua` | Stage 4: looks for list objects under `FCEDataManager`; also tallies the match-rating table | medium |
+| `inspect_fc27_find_standings.lua` | Stages 5-6: scans the schedule-related managers' big pools for fixture-shaped runs (YYYYMMDD dates at a 0x18 stride) and standings-shaped runs (the user's league team ids at a 0x18 stride) | medium (reads only inside arena-bounded vectors, chunked, flushed) |
+| `inspect_fc27_next_match.lua` | Stage 7: dumps the small result/next-match managers (NextMatchManager, SimResultsManager, InterestingResultManager, StandingsViewManager, ...) and their pointer targets, tagging league team ids and dates in four encodings, to find where one fixture lives | medium (arena / near-object pointers only) |
 
 ## What was learned (v27.1.2, tested 2026-10-05/06)
 
@@ -60,3 +62,39 @@ competition column and no goals/assists, so it only approximates apps and averag
 2. Re-run `inspect_fc27_db_schema.lua` and diff against the previous report for table changes.
 3. Only then consider the memory scripts (set `FC27_MEMORY_OFFSETS_VERIFIED` back to `true` in
    `export_all.lua` only after new offsets are confirmed standalone).
+
+## Standings / fixtures hunt (stages 5-6)
+
+Stage 4: `FCEDataManager` (0x68166E40) has 19 arena pointers but no list-shaped object (count@+0x1C, begin@+0x28), so
+FC 26's `+0x60` fixtures / `+0x88` standings are not just shifted.
+
+Stage 5 (2026-09-01 save, user team 10 = Man City) scanned FixtureManager (46), StandingsViewManager (108),
+ActiveCompetitionsManager (20), CalendarManager (24), NextMatchManager (67), SeasonSituationSystem (101),
+SeasonStatsManager (102), InterestingResultManager (51), MatchImportanceManager (62), FCEDataObjectManager (42),
+EndOfSeasonManager (37), CompetitionObjectivesManager (132): **no list with team ids at a constant stride.**
+FixtureManager, CalendarManager and (almost) all the "view" managers hold no arena pointers or vectors at all, so
+they are thin wrappers. The only big pools are FCEDataObjectManager (+0x188 10 MB, +0x1E8 4.9 MB), NextMatchManager
+(+0x10, 10 MB) and MatchImportanceManager (+0x1C0->+0x8, 3.8 MB). FCEDataObjectManager +0x1E8 contains qwords with two
+team ids packed (e.g. 1797|1807, 1962, 1803...) which looks like home|away pairs - the best lead so far. LeagueUtils /
+FixtureUtils / TeamUtils have no instance.
+
+Stage 6 (the current script) stops looking for single ids and detects the lists by SHAPE over those pools in full:
+fixtures = a run of >= 8 valid YYYYMMDD dates at a 0x18 stride (`mDate` is a YYYYMMDD int, as the app parses it), standings =
+a run of >= 6 league team ids at a 0x18 stride. It prints the decoded first items of every candidate. Once a candidate
+matches reality (Man City's fixtures / the real table), derive the path from the manager (or the pool's address pattern),
+put it into `MEM_LAYOUT` in `export_all.lua` (the struct reads are written there), run standalone, and only then set
+`FC27_MEMORY_OFFSETS_VERIFIED = true`. Expect a minute or two of run time (up to 9M qword reads).
+
+**Stage 6 result (2026-10-08, save dated 2026-09-01):** scanned FCEDataObjectManager +0x188/+0x1E8, NextMatchManager +0x10 and
+MatchImportanceManager +0x1C0 in full (3.7M qword reads). No run of YYYYMMDD dates at a 0x18 stride anywhere (no fixture
+list in that encoding/stride), and the single STANDINGS-shaped hit (0x67B520FC, FCEDataObjectManager +0x188) is a false
+positive: a team-id-sorted array of 8-byte (team id, ~62) pairs (127/62, 135/61, 143/62, 1797/61, 1802/62 ...), i.e. a
+team rating table, not standings. So standings and fixtures are not in those pools in the FC 26 shapes. Stage 7 goes at
+it from the other end: dump the small next-match / results managers and see how one fixture is stored.
+
+**Stage 7 result (2026-10-08):** dumped NextMatchManager, SimResultsManager, InterestingResultManager, StandingsViewManager,
+ActiveCompetitionsManager, SeasonSituationSystem and FixtureManager plus their pointer targets (1600 lines). Dates ARE
+YYYYMMDD ints in memory, but they only turn up inside allocator / hash-map / tree nodes (event and news-like objects: 20260826,
+20260828, 20260830 near random hash values), and NextMatchManager just stores the current date (+0x2C0 = 20260901). No struct holds
+a home/away team pair next to a date, so no fixture record was found. The memory hunt for standings / fixtures is paused here;
+see `assets/design_docs/fc27_port_status.md`.
