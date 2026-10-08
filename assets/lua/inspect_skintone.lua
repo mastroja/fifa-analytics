@@ -4,7 +4,7 @@
 -- do NOT fold into export_all.lua/export_squad.lua until confirmed.
 --
 -- Goal: the "players" table has a real "skintonecode" field (confirmed
--- via connected_career/test_create_player_v2.lua's CreatePlayer example,
+-- via the CreatePlayer example in the old connected_career scripts (kept on the v2.0.0 branch),
 -- which set skintonecode = "3" — but that's just DOC.MD's own worked
 -- example value, not an explanation of what the numbers mean). Nothing
 -- in Live Editor's docs or bundled scripts documents skintonecode's

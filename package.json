@@ -29,12 +29,10 @@
       "index.html",
       "js/**/*",
       "schema.sql",
-      "assets/**/*",
-      "connected_career/**/*"
+      "assets/**/*"
     ],
     "asarUnpack": [
-      "assets/**/*",
-      "connected_career/**/*"
+      "assets/**/*"
     ],
     "publish": {
       "provider": "github",
@@ -49,7 +47,6 @@
   "dependencies": {
     "chokidar": "^5.0.0",
     "electron-updater": "^6.8.9",
-    "firebase": "^12.3.0",
     "sql.js": "^1.14.2"
   },
   "allowScripts": {

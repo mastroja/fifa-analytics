@@ -6,7 +6,7 @@
 //   apply_player_edits.lua --> ea_fc_player_edits_write_log.json --> handleWriteLog
 //
 // There is no live RPC into Live Editor, so applying an edit is always "queue a file, then the
-// Lua writer runs" (manually at first). Same configure() pattern as connected_career/app_bridge.js.
+// Lua writer runs" (manually at first). Same configure() pattern the other main-process modules use.
 
 const fs = require('fs');
 const path = require('path');

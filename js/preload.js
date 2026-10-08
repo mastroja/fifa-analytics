@@ -102,14 +102,6 @@ contextBridge.exposeInMainWorld('api', {
   markNewsEditionRead: (editionId) => ipcRenderer.invoke('mark-news-edition-read', editionId),
   listNewsImages: (newsType) => ipcRenderer.invoke('list-news-images', newsType),
 
-  connectedCareerStatus: () => ipcRenderer.invoke('connected-career-status'),
-  connectedCareerJoin: (code, owner) => ipcRenderer.invoke('connected-career-join', code, owner),
-  connectedCareerSyncNow: () => ipcRenderer.invoke('connected-career-sync-now'),
-  connectedCareerLeave: () => ipcRenderer.invoke('connected-career-leave'),
-  connectedCareerExportSquadForMirroring: () => ipcRenderer.invoke('connected-career-export-squad-for-mirroring'),
-  connectedCareerPushFullRows: () => ipcRenderer.invoke('connected-career-push-full-rows'),
-  connectedCareerPullMirrorCreates: () => ipcRenderer.invoke('connected-career-pull-mirror-creates'),
-  connectedCareerConfirmMirrorResults: () => ipcRenderer.invoke('connected-career-confirm-mirror-results'),
 
   onSquadUpdated: (callback) => ipcRenderer.on('squad-updated', (_event, data) => callback(data)),
   onCareerStatsUpdated: (callback) => ipcRenderer.on('career-stats-updated', (_event, data) => callback(data)),
