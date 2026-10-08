@@ -12,7 +12,7 @@ This app depends on a specific combination of game version + Live Editor version
 |---|---|
 | EA Sports FC 27 (Steam) | Build `1.0.141.12554` |
 | FC 27 Live Editor | `v27.1.3` |
-| FIFA Analytics | `27.0.0` |
+| FIFA Analytics | `27.0.1` |
 
 
 ## 1. Pin your game version (do this FIRST)
@@ -42,7 +42,7 @@ If your game has *already* auto-updated past the pinned build, Steam's client do
 
 ### Where things live
 
-- **Database**: `%APPDATA%\fifa-career-companion\companion.sqlite` — this is where every save's full history lives.
+- **Database**: `%APPDATA%\fc27-career-companion\companion.sqlite` (the first time it starts, saves from the FC 26 version's folder, `%APPDATA%\fifa-career-companion`, are copied across; the FC 26 app keeps its own) — this is where every save's full history lives.
 - **Export files**: `C:\Users\Public\ea_fc_*.json` — regenerated fresh each F10 press.
 
 ## 4. Launch the game through Live Editor
@@ -60,7 +60,7 @@ This companion app gets all its data from `assets/lua/export_all.lua`
 1. In Live Editor, find the **Lua Engine** / **Hotkeys** section
 2. Point it at `export_all.lua`:
      ```
-     C:\Users\<your username>\AppData\Local\Programs\FIFA Analytics\resources\app.asar.unpacked\assets\lua\export_all.lua
+     C:\Users\<your username>\AppData\Local\Programs\FIFA Analytics FC27\resources\app.asar.unpacked\assets\lua\export_all.lua
      ```
 3. Assign it to **F10**.
 

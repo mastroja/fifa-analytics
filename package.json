@@ -1,19 +1,19 @@
 {
-  "name": "fifa-career-companion",
-  "version": "27.0.0",
+  "name": "fc27-career-companion",
+  "version": "27.0.1",
   "description": "FIFA Analytics — analytics companion for EA FC Career Mode",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "bump": "node scripts/bump-version.js",
-    "test": "node scripts/license/test_license.js && node scripts/test_depth_chart.js",
+    "test": "node scripts/license/test_license.js && node scripts/test_depth_chart.js && node scripts/test_legacy_data.js",
     "check": "node --check main.js && node --check js/app.js && node --check js/depth_chart.js && node --check js/academy_tracker.js && node --check js/license.js && node --check js/license_ui.js && node --check js/player_editor.js && node --check js/player_editor_ui.js && node --check js/preload.js",
     "dist": "electron-builder --win nsis",
     "release": "electron-builder --win nsis --publish always"
   },
   "build": {
-    "appId": "com.fifa.companion",
-    "productName": "FIFA Analytics",
+    "appId": "com.fifa.companion.fc27",
+    "productName": "FIFA Analytics FC27",
     "win": {
       "target": "nsis",
       "icon": "assets/app-icon/icon.ico"
@@ -23,7 +23,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "FIFA Analytics",
+      "shortcutName": "FIFA Analytics FC27",
       "installerIcon": "assets/app-icon/icon.ico",
       "uninstallerIcon": "assets/app-icon/icon.ico"
     },
@@ -40,7 +40,7 @@
     "publish": {
       "provider": "github",
       "owner": "mastroja",
-      "repo": "fifa-companion-app"
+      "repo": "fifa-analytics-fc27"
     }
   },
   "devDependencies": {
