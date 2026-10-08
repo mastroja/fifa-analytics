@@ -27,3 +27,6 @@ Audited 2026-10-08 against the app database (the two FC 27 saves, Swansea 2026/2
 
 ## Blocked on Live Editor
 Everything marked Missing except contract fields and dynamic overall is blocked on either a newer Live Editor (re-bind `GetPlayersStats`, competition names, add real standings / fixtures access) or finding the FC 27 memory layout. Check each new Live Editor release's `changelog.txt`, then re-run `inspect_fc27_api_availability.lua` and compare against this table.
+
+## "Not available in FC 27 yet" notes
+`export_all.lua` now tags its squad export with `"game":"FC27"`; `importFifaData` stores it in `saves.game_version` (migration in main.js, column in schema.sql) and the renderer exposes it as `currentSaveGame` / `isFc27Save()` (`js/app.js`). On an FC 27 save, these Home widgets say why they are empty instead of a bare "No data": Upcoming Match, League Table, Team Record, PPG, Trophies, Top Goals, Top Assists. Appearances is not flagged (it has the approximate match-rating fallback). A save only becomes "FC27" after its next F10 sync with the updated script; saves from before that keep the generic messages.

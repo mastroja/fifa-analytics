@@ -1,3 +1,9 @@
+    // 'FC27' once a sync from the FC 27 export has been seen for the selected save (see saves.game_version). Drives the
+    // "not available in FC 27 yet" notes on Home widgets whose data Live Editor does not provide for that game.
+    let currentSaveGame = null;
+    function isFc27Save() { return currentSaveGame === 'FC27'; }
+    function fc27Message(what) { return `ⓘ Not available in FC 27 yet — ${what}`; }
+
 let currentCalendar = [];
     let currentIngameDate = null;
     // Every completed fixture in the user's primary competition — not
@@ -4552,6 +4558,7 @@ Live Editor will end each loan and then release the player from your club to fre
       const selected = saves.find(s => String(s.id) === select.value);
       if (selected) {
         currentSaveId = selected.id;
+        currentSaveGame = selected.game_version || null;
         currentYouthModeEnabled = !!selected.youth_mode_enabled;
         updateYouthModeButton();
         renderYouthModeWarning();
@@ -4580,6 +4587,7 @@ Live Editor will end each loan and then release the player from your club to fre
       allTimeCompetitionsCache.clear();
 
       currentSaveId = bundle.save_id;
+      currentSaveGame = bundle.game_version || null;
       currentYouthModeEnabled = !!bundle.youth_mode_enabled;
       updateYouthModeButton();
       if (bundle.pending_season_review) renderSeasonReviewDialog(bundle.pending_season_review);
@@ -5408,7 +5416,7 @@ Live Editor will end each loan and then release the player from your club to fre
 
       const match = showLast ? lastPlayed : upcoming;
       if (!match) {
-        container.innerHTML = `<div class="empty-state" style="padding: 12px;">${showLast ? 'No matches played yet.' : 'No upcoming fixtures scheduled.'}</div>`;
+        container.innerHTML = `<div class="empty-state" style="padding: 12px;">${isFc27Save() ? fc27Message("Live Editor doesn't provide fixtures or results for FC 27.") : (showLast ? 'No matches played yet.' : 'No upcoming fixtures scheduled.')}</div>`;
         if (watermarkEl) watermarkEl.style.backgroundImage = '';
         return;
       }
@@ -5692,7 +5700,7 @@ Live Editor will end each loan and then release the player from your club to fre
       }
 
       if (!leagueStandings || leagueStandings.length === 0) {
-        container.innerHTML = `<div class="empty-state" style="padding: 12px;">Standings not available yet — Live Editor doesn't export league position data.</div>`;
+        container.innerHTML = `<div class="empty-state" style="padding: 12px;">${isFc27Save() ? fc27Message("Live Editor doesn't provide league standings for FC 27.") : "Standings not available yet — Live Editor doesn't export league position data."}</div>`;
         return;
       }
 
@@ -6462,6 +6470,10 @@ Live Editor will end each loan and then release the player from your club to fre
         record = { ...totals, goalDiff: totals.goalsFor - totals.goalsAgainst };
       }
 
+      if (isFc27Save() && record.played === 0) {
+        container.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1; padding: 12px;">${fc27Message("Live Editor doesn't provide match results for FC 27.")}</div>`;
+        return;
+      }
       const gdString = record.goalDiff > 0 ? `+${record.goalDiff}` : `${record.goalDiff}`;
       container.innerHTML = `
         <div class="stat-box-item"><span>Played</span><strong>${record.played}</strong></div>
@@ -6810,7 +6822,7 @@ Live Editor will end each loan and then release the player from your club to fre
       }
 
       if (!historicalHtml && !wonHtml) {
-        container.innerHTML = `<div class="empty-state" style="padding: 12px;">No trophies yet.</div>`;
+        container.innerHTML = `<div class="empty-state" style="padding: 12px;">${isFc27Save() ? fc27Message("trophies won this save need competition results, which Live Editor doesn't provide for FC 27.") : 'No trophies yet.'}</div>`;
         return;
       }
 
@@ -6922,7 +6934,7 @@ Live Editor will end each loan and then release the player from your club to fre
       }
 
       if (!managerPpgCache || managerPpgCache.length === 0) {
-        container.innerHTML = `<div class="empty-state" style="padding: 12px;">Play through a season to start tracking PPG.</div>`;
+        container.innerHTML = `<div class="empty-state" style="padding: 12px;">${isFc27Save() ? fc27Message("PPG needs match results, which Live Editor doesn't provide for FC 27.") : 'Play through a season to start tracking PPG.'}</div>`;
         return;
       }
 
@@ -7032,7 +7044,8 @@ Live Editor will end each loan and then release the player from your club to fre
           <span class="comp-name">${idx + 1}. ${p.name}</span>
           <span class="comp-standing">${p[statKey] || 0}</span>
         </div>
-      `).join(''), 'No data yet.');
+      `).join(''), (isFc27Save() && (statKey === 'goals' || statKey === 'assists'))
+        ? fc27Message(`Live Editor doesn't provide ${statKey} for FC 27.`) : 'No data yet.');
     }
 
     function renderTopStatsWidgets() {
@@ -7585,6 +7598,7 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     async function onYouthModeButtonClick() {
+      if (typeof License !== 'undefined' && !License.isPro('youth-mode')) { License.upsell('youth-mode'); return; }
       if (currentYouthModeEnabled) return;
       if (!currentSaveId || !window.api || !window.api.enableYouthMode) return;
 
@@ -9208,6 +9222,7 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     function openChallengeDrawer() {
+      if (typeof License !== 'undefined' && !License.isPro('youth-mode')) { License.upsell('youth-mode'); return; }
       renderChallengeDrawer();
       document.getElementById('challenge-drawer').classList.add('open');
       document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'false');

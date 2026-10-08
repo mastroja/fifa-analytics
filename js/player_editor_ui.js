@@ -913,7 +913,7 @@
       const b = document.createElement('button');
       b.className = 'pe-edit-btn';
       b.textContent = 'Edit player';
-      b.onclick = () => open(playerId, b);
+      b.onclick = () => { if (window.License && !License.isPro('player-editor')) { License.upsell('player-editor'); return; } open(playerId, b); };
       injectStyles();
       slot.appendChild(b);
     } catch (e) { /* editor data not available yet; no button */ }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const chokidar = require('chokidar');
@@ -45,6 +45,13 @@ const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
 const playerEditor = require('./js/player_editor');
 const dynamicLook = require('./js/dynamic_look');
 const squadNumbers = require('./js/squad_numbers');
+const licenseLib = require('./js/license');
+const licenseConfig = require('./js/license_config');
+// Pro licensing (see js/license.js). With no public key configured it is off and everything is unlocked.
+const license = licenseLib.create({
+  userDataPath: app.getPath('userData'),
+  openExternal: url => { if (/^https:\/\//.test(String(url))) shell.openExternal(url); }
+});
 const leagueStatsExportPath = 'C:\\Users\\Public\\ea_fc_league_stats_export.json';
 
 // activeSaveId/currentSeasonId track whichever save/season the app is
@@ -226,6 +233,13 @@ async function initDatabase() {
   // disk — same ignore-already-exists migration pattern as above.
   try {
     db.run(`ALTER TABLE saves ADD COLUMN youth_mode_enabled INTEGER DEFAULT 0;`);
+  } catch (e) {
+    // column already exists, safe to ignore
+  }
+
+  // See game_version in schema.sql — same ignore-already-exists migration pattern as above.
+  try {
+    db.run(`ALTER TABLE saves ADD COLUMN game_version TEXT;`);
   } catch (e) {
     // column already exists, safe to ignore
   }
@@ -4342,6 +4356,9 @@ function importFifaData(jsonPayload) {
   // date, resolving from it here is always correct, not a compromise.
   if (jsonPayload.save_uid) {
     resolveActiveSave(jsonPayload.save_uid, null, null, jsonPayload.current_date);
+    if (jsonPayload.game && activeSaveId) {
+      db.run('UPDATE saves SET game_version = ? WHERE id = ? AND (game_version IS NULL OR game_version <> ?);', [String(jsonPayload.game), activeSaveId, String(jsonPayload.game)]);
+    }
   } else if (!currentSeasonId) {
     refreshCurrentSeasonFromCalendar();
   } else {
@@ -5893,7 +5910,7 @@ function getTeamRecordSeasons(saveId = activeSaveId) {
 function getSavesList() {
   if (!db) return [];
   const res = db.exec(`
-    SELECT s.id, s.club_name, s.manager_name, s.save_uid, ss.synced_at, s.youth_mode_enabled
+    SELECT s.id, s.club_name, s.manager_name, s.save_uid, ss.synced_at, s.youth_mode_enabled, s.game_version
     FROM saves s
     LEFT JOIN save_snapshots ss ON ss.save_id = s.id
     ORDER BY s.id ASC;
@@ -5906,7 +5923,8 @@ function getSavesList() {
     save_uid: row[3],
     last_synced_at: row[4],
     is_live: row[0] === liveSyncedSaveId,
-    youth_mode_enabled: row[5] === 1
+    youth_mode_enabled: row[5] === 1,
+    game_version: row[6] || null
   }));
 }
 
@@ -5928,6 +5946,8 @@ function selectSave(saveId) {
   const youthRes = db.exec(`SELECT youth_mode_enabled FROM saves WHERE id = ${saveId};`);
   const youthModeEnabled = youthRes.length > 0 && youthRes[0].values.length > 0
     && youthRes[0].values[0][0] === 1;
+  const gameRes = db.exec(`SELECT game_version FROM saves WHERE id = ${saveId};`);
+  const gameVersion = (gameRes.length > 0 && gameRes[0].values.length > 0 && gameRes[0].values[0][0]) || null;
 
   let calendar = null;
   let calendarIsSnapshot = false;
@@ -5962,6 +5982,7 @@ function selectSave(saveId) {
     seasons: getSeasonsList(saveId),
     youth_academy: getYouthAcademy(saveId),
     youth_mode_enabled: youthModeEnabled,
+    game_version: gameVersion,
     pending_season_review: getPendingSeasonReview(saveId)
   };
 }
@@ -6343,9 +6364,15 @@ ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId))
 ipcMain.handle('get-all-time-xi', (_event, saveId) => getAllTimeXI(saveId));
 ipcMain.handle('get-academy-tracker', (_event, saveId) => getAcademyTracker(saveId));
 ipcMain.handle('get-academy-watchlist', (_event, saveId) => getAcademyWatchlist(saveId));
-ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => toggleAcademyWatch(playerId, saveId));
-ipcMain.handle('set-academy-watch-note', (_event, playerId, note, saveId) => setAcademyWatchNote(playerId, note, saveId));
-playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
+ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => license.isPro('academy-tracker') ? toggleAcademyWatch(playerId, saveId) : { success: false, error: 'Pro feature' });
+ipcMain.handle('set-academy-watch-note', (_event, playerId, note, saveId) => license.isPro('academy-tracker') ? setAcademyWatchNote(playerId, note, saveId) : { success: false, error: 'Pro feature' });
+ipcMain.handle('license-info', () => license.info());
+ipcMain.handle('license-activate', (_event, token) => license.activate(token));
+ipcMain.handle('license-clear', () => license.clear());
+ipcMain.handle('license-patreon-login', () => license.patreonLogin());
+ipcMain.handle('license-cancel-login', () => { license.cancelLogin(); return true; });
+ipcMain.handle('license-open-membership', () => { if (licenseConfig.MEMBERSHIP_URL && /^https:\/\//.test(licenseConfig.MEMBERSHIP_URL)) shell.openExternal(licenseConfig.MEMBERSHIP_URL); return true; });
+playerEditor.configure({ isPro: feature => license.isPro(feature), getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
 playerEditor.register(ipcMain);
 
 // Dynamic player look (dynamic_look.js): monthly appearance changes, applied through the F11 editor sync.
@@ -6455,6 +6482,10 @@ ipcMain.handle('mark-news-edition-read', (_event, editionId) => markNewsEditionR
 ipcMain.handle('list-news-images', (_event, newsType) => listNewsImages(newsType));
 ipcMain.handle('get-opponent-roster-for-match', (_event, seasonId, opponentTeamName) => getOpponentRosterForMatch(seasonId || currentSeasonId, opponentTeamName));
 ipcMain.handle('save-match-events', (_event, seasonId, matchDate, competition, opponent, events) => saveMatchEvents(seasonId || currentSeasonId, matchDate, competition, opponent, events));
+
+// Renew a Patreon-issued license in the background (offline or server errors change nothing).
+license.renew();
+setInterval(() => license.renew(), 12 * 60 * 60 * 1000).unref();
 
 app.whenReady().then(async () => {
   await initDatabase();

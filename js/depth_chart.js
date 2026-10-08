@@ -169,6 +169,11 @@
 
   const gapKey = (slot, f) => slot.id + ':' + f.type;
 
+  // Pro gating (js/license_ui.js). With licensing off, or no License object, everything is allowed.
+  const proOk = f => !root.License || root.License.isPro(f);
+  const allow = f => proOk(f) || (root.License.upsell(f), false);
+  const lockMark = f => (root.License ? root.License.lock(f) : '');
+
   // ---- state --------------------------------------------------------------
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -410,20 +415,20 @@ ${academySection}</aside>
   function controlsHtml() {
     const l = active();
     const seniors = poolFor(l);
-    const chips = lineups.list.filter(x => !x.hidden).map(x => `<button class="home-toggle-btn${x.id === l.id ? ' active' : ''}" onclick="SquadViews.setLineup('${x.id}')">${esc(x.name)}</button>`).join('')
+    const chips = lineups.list.filter(x => !x.hidden).map(x => `<button class="home-toggle-btn${x.id === l.id ? ' active' : ''}" onclick="SquadViews.setLineup('${x.id}')">${esc(x.name)}${x.id === 'xi' ? '' : lockMark('depth-extras')}</button>`).join('')
       + (l.core ? '' : `<button class="dc-x" title="Delete this lineup" onclick="SquadViews.deleteLineup('${l.id}')">✕</button>`)
       + (creating
         ? `<span class="dc-new-form"><input id="dc-new-name" type="text" maxlength="30" placeholder="Lineup name" onkeydown="if(event.key==='Enter')SquadViews.createLineup(); if(event.key==='Escape')SquadViews.cancelCreate();">
            <label title="Auto-fill without the Starting XI's starters"><input id="dc-new-reserve" type="checkbox"> reserves</label>
            <button class="home-toggle-btn" onclick="SquadViews.createLineup()">Add</button><button class="home-toggle-btn" onclick="SquadViews.cancelCreate()">Cancel</button></span>`
-        : `<button class="home-toggle-btn" title="Create another lineup (e.g. cup XI, youth team)" onclick="SquadViews.startCreate()">＋ New</button>`);
+        : `<button class="home-toggle-btn" title="Create another lineup (e.g. cup XI, youth team)" onclick="SquadViews.startCreate()">＋ New${lockMark('depth-extras')}</button>`);
     const sellOptions = seniors.slice().sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0))
       .map(p => `<option value="${esc(p.player_id)}"${sameId(p.player_id, sellId) ? ' selected' : ''}>${esc(p.name)} (${p.overall || '?'})</option>`).join('');
     const hasPins = Object.keys(l.pins).length > 0 || (l.removed || []).length > 0;
-    const trophy = `<button class="dc-trophy${l.alltime ? ' on' : ''}" title="All-Time XI: the best players ever to play for the club" onclick="SquadViews.setLineup('alltime')">🏆 All-Time XI</button>`;
+    const trophy = `<button class="dc-trophy${l.alltime ? ' on' : ''}" title="All-Time XI: the best players ever to play for the club" onclick="SquadViews.setLineup('alltime')">🏆 All-Time XI${lockMark('depth-extras')}</button>`;
     return `<div class="home-toggle dc-lineups">${chips}</div>${trophy}
       <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
-      ${l.alltime ? '' : `<label class="dc-ctl">What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>`}
+      ${l.alltime ? '' : `<label class="dc-ctl">What if I sell${lockMark('depth-extras')} <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>`}
       ${hasPins ? '<button class="home-toggle-btn" onclick="SquadViews.resetOrder()">Reset order</button>' : ''}`;
   }
 
@@ -643,6 +648,7 @@ ${academySection}</aside>
     if (mode !== 'depth') { edit = null; refreshModal(); }
   }
   function setView(m) {
+    if (m === 'academy' && !allow('academy-tracker')) return;
     mode = m; applyMode();
     if (m === 'list') { renderControls(); if (root.renderTableRows) root.renderTableRows(); } else render();
   }
@@ -657,11 +663,11 @@ ${academySection}</aside>
     },
     setView,
     setFormation(f) { if (!FORMATIONS[f]) return; active().formation = f; saveLineups(); renderAll(); },
-    setSell(id) { sellId = id; render(); },
+    setSell(id) { if (id && !allow('depth-extras')) { render(); return; } sellId = id; render(); },
     resetOrder() { const l = active(); l.pins = {}; l.removed = []; saveLineups(); renderAll(); },
     setAllTimeData(rows) { allTimeRows = prepAllTime(rows); },
-    setLineup(id) { if (!lineupById(id)) return; if (id === 'alltime') sellId = ''; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
-    startCreate() { creating = true; renderControls(); },
+    setLineup(id) { if (!lineupById(id)) return; if (id !== 'xi' && !allow('depth-extras')) return; if (id === 'alltime') sellId = ''; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
+    startCreate() { if (!allow('depth-extras')) return; creating = true; renderControls(); },
     cancelCreate() { creating = false; renderControls(); },
     createLineup() {
       const name = ($('dc-new-name') || {}).value;
@@ -686,6 +692,14 @@ ${academySection}</aside>
     },
     assign(pid) { if (edit) { movePlayer(pid, null, { slot: edit.slot, idx: edit.idx }); } },
     clearString, removeFrom,
+    // Called by License.refresh(): if the license lapsed while a Pro lineup / view is showing, fall back to the free one.
+    applyLicense() {
+      let changed = false;
+      if (lineups.active !== 'xi' && !proOk('depth-extras')) { lineups.active = 'xi'; sellId = ''; edit = null; changed = true; }
+      if (mode === 'academy' && !proOk('academy-tracker')) { mode = 'list'; applyMode(); changed = true; }
+      if (changed) { if (mode === 'list') { if (root.renderTableRows) root.renderTableRows(); renderControls(); } else render(); }
+      else if (mode === 'depth') renderControls();
+    },
     init() {
       loadLineups();
       wireHost();

@@ -20,8 +20,8 @@
 assert(IsInCM(), "Script must be executed in career mode")
 
 -- ============================================================
--- FC 27 COMPAT (Live Editor v27.1.2) — see assets/inspect_fc27_*.lua
--- probes for the evidence behind each line below.
+-- FC 27 COMPAT (Live Editor v27.1.2 / v27.1.3) — see assets/lua/fc27_probes/
+-- for the probe scripts and the evidence behind each line below.
 --
 -- GetPlayersStats / GetCompetitionNameByObjID are native v1 functions
 -- that FC 27's Live Editor doesn't provide (yet). Stubbed so every
@@ -502,7 +502,7 @@ do
     end
 
     local function serialize_to_json(tbl, current_date)
-        local json = string.format('{"save_uid":"%s","current_date":"%s","players":[', save_uid:gsub('"', '\\"'), current_date)
+        local json = string.format('{"game":"FC27","save_uid":"%s","current_date":"%s","players":[', save_uid:gsub('"', '\\"'), current_date)
         for i, p in ipairs(tbl) do
             local attr = p.attributes or {}
             json = json .. string.format(
