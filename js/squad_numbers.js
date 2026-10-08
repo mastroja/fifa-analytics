@@ -1,5 +1,6 @@
 // Reserve squad numbers for academy promotions.
 //
+// Not an option: it runs exactly when the save has Youth Mode on (ctx.isYouthMode), and never otherwise.
 // A player promoted from the youth academy always gets a "reserve" shirt number: a random one above 30 that nobody in
 // the squad is wearing. It runs after a squad sync, finds academy graduates who are now in the senior squad and have
 // not been handled yet, and queues a normal editor edit (jerseynumber) which Live Editor applies through the F11
@@ -14,7 +15,7 @@ const RESERVE_MAX = 99;
 class SquadNumbers {
   constructor() { this.ctx = null; this.running = false; }
 
-  // ctx: { getDb, saveDatabaseToDisk, playerEditor, getGraduateIds(saveId), pressSync(), pressApply(), notify(), log() }
+  // ctx: { getDb, saveDatabaseToDisk, isYouthMode(saveId), playerEditor, getGraduateIds(saveId), pressSync(), pressApply(), notify(), log() }
   configure(ctx) { this.ctx = ctx; }
 
   rows(sql, params) {
@@ -22,17 +23,7 @@ class SquadNumbers {
     try { stmt.bind(params || []); const out = []; while (stmt.step()) out.push(stmt.getAsObject()); return out; } finally { stmt.free(); }
   }
 
-  isEnabled(saveId) {
-    const r = this.rows('SELECT enabled FROM squad_number_settings WHERE save_id = ?', [saveId])[0];
-    return r ? !!r.enabled : true; // on by default
-  }
-
-  setEnabled(saveId, enabled) {
-    this.ctx.getDb().run(`INSERT INTO squad_number_settings (save_id, enabled, baselined) VALUES (?, ?, 0)
-      ON CONFLICT(save_id) DO UPDATE SET enabled = excluded.enabled`, [saveId, enabled ? 1 : 0]);
-    this.ctx.saveDatabaseToDisk();
-    return this.isEnabled(saveId);
-  }
+  isEnabled(saveId) { return !!(this.ctx && this.ctx.isYouthMode(saveId)); }
 
   isBaselined(saveId) {
     const r = this.rows('SELECT baselined FROM squad_number_settings WHERE save_id = ?', [saveId])[0];
@@ -110,16 +101,4 @@ class SquadNumbers {
 
 const instance = new SquadNumbers();
 
-function register(ipcMain, getActiveSaveId) {
-  ipcMain.handle('get-squad-number-settings', () => {
-    const saveId = getActiveSaveId();
-    return saveId ? { enabled: instance.isEnabled(saveId) } : { enabled: true, noSave: true };
-  });
-  ipcMain.handle('set-squad-number-settings', (_e, enabled) => {
-    const saveId = getActiveSaveId();
-    if (!saveId) return { success: false };
-    return { success: true, enabled: instance.setEnabled(saveId, !!enabled) };
-  });
-}
-
-module.exports = { instance, register, RESERVE_MIN, RESERVE_MAX };
+module.exports = { instance, RESERVE_MIN, RESERVE_MAX };

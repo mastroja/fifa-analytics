@@ -40,8 +40,6 @@ contextBridge.exposeInMainWorld('api', {
   getBootLinks: () => ipcRenderer.invoke('get-boot-links'),
   setBootLink: (key, shoeId) => ipcRenderer.invoke('set-boot-link', key, shoeId),
   triggerEditorSync: () => ipcRenderer.invoke('trigger-editor-sync'),
-  getSquadNumberSettings: () => ipcRenderer.invoke('get-squad-number-settings'),
-  setSquadNumberSettings: (enabled) => ipcRenderer.invoke('set-squad-number-settings', enabled),
   getDynamicLook: () => ipcRenderer.invoke('get-dynamic-look'),
   setDynamicLook: (patch) => ipcRenderer.invoke('set-dynamic-look', patch),
   setDynamicLookPlayers: (ids, selected) => ipcRenderer.invoke('set-dynamic-look-players', ids, selected),

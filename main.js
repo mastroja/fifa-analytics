@@ -6274,6 +6274,7 @@ dynamicLook.register(ipcMain);
 // Reserve squad numbers (31+) for players promoted from the academy.
 squadNumbers.instance.configure({
   getDb: () => db, saveDatabaseToDisk, playerEditor,
+  isYouthMode: saveId => { const r = db.exec(`SELECT youth_mode_enabled FROM saves WHERE id = ${Number(saveId)};`); return r.length > 0 && r[0].values.length > 0 && r[0].values[0][0] === 1; },
   getGraduateIds: saveId => getAcademyGraduateIds(saveId),
   pressSync: () => serialized(async () => {
     const saveId = activeSaveId, before = editorStateStamp(saveId);
@@ -6288,7 +6289,6 @@ squadNumbers.instance.configure({
   notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('player-editor-updated', { save_id: payload.saveId, count: payload.changed, kind: 'write-log' }); },
   log: msg => console.log(msg)
 });
-squadNumbers.register(ipcMain, () => activeSaveId);
 ipcMain.handle('enable-youth-mode', (_event, saveId) => enableYouthMode(saveId));
 ipcMain.handle('clear-former-players', (_event, saveId) => clearFormerPlayers(saveId));
 ipcMain.handle('get-pending-season-review', (_event, saveId) => getPendingSeasonReview(saveId));
