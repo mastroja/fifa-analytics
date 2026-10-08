@@ -23,6 +23,7 @@ heap range the manager objects live in (0x66000000-0x6B000000), pointer-followin
 | `inspect_fc27_stats_memory_stage2.lua` | Stage 2: follows arena pointers one level, flags squad ids | medium |
 | `inspect_fc27_find_player_records.lua` | Stage 3: searches 16 more managers' vectors for squad ids | medium |
 | `inspect_fc27_find_fce_lists.lua` | Stage 4: looks for list objects under `FCEDataManager`; also tallies the match-rating table | medium |
+| `inspect_fc27_find_standings.lua` | Stage 5: scans the fixture / standings / competition / calendar managers for the user's league team ids (a standings list = many different team ids at a regular stride) | medium |
 
 ## What was learned (v27.1.2, tested 2026-10-05/06)
 
@@ -60,3 +61,14 @@ competition column and no goals/assists, so it only approximates apps and averag
 2. Re-run `inspect_fc27_db_schema.lua` and diff against the previous report for table changes.
 3. Only then consider the memory scripts (set `FC27_MEMORY_OFFSETS_VERIFIED` back to `true` in
    `export_all.lua` only after new offsets are confirmed standalone).
+
+## Standings / fixtures hunt (stage 5)
+
+State: `FCEDataManager` (0x68166E40 in the stage 4 run) has 19 arena pointers but no list-shaped object
+(count@+0x1C, begin@+0x28), so FC 26's `+0x60` fixtures / `+0x88` standings are not just shifted. The lists are
+probably owned by a different manager. `inspect_fc27_find_standings.lua` scans `FixtureManager` (46),
+`StandingsViewManager` (108), `ActiveCompetitionsManager` (20), `CalendarManager` (24), `NextMatchManager` (67),
+`SeasonSituationSystem` (101) and a few others. **What to look for in the report:** a vector whose hits are
+many different league team ids at one constant stride (FC 26 stride was 0x18 with the team id at +0x04).
+Once found, put the manager / offsets into `MEM_LAYOUT` in `export_all.lua` (the standings struct reads are already
+written there), run it standalone, and only then set `FC27_MEMORY_OFFSETS_VERIFIED = true`.

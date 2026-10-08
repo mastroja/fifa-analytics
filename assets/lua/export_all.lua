@@ -1186,29 +1186,70 @@ do
         return ""
     end
 
+    -- Memory layout of the two career-mode lists. The values are FC 26's, which FC 27 moved (see
+    -- assets/lua/fc27_probes/README.md, stage 5, for the hunt for the new ones). Keeping every offset here means that
+    -- once a probe confirms them, only this table changes and FC27_MEMORY_OFFSETS_VERIFIED can be flipped.
+    local MEM_LAYOUT = {
+        standings = { list = 0x88, itemsBegin = 0x28, count = 0x1C, itemSize = 0x18 },
+        fixtures  = { list = 0x60, itemsBegin = 0x28, count = 0x1C, itemSize = 0x18 },
+        maxItems  = 100000,
+    }
+
+    -- Every value read from memory is sanity-checked before it is used as the base of the next read: a bad pointer
+    -- crashes the game natively (pcall cannot catch it), see feedback_live_editor_data_safety.
+    local function plausible_pointer(v)
+        return type(v) == "number" and v > 0x10000 and v < 0x7FFFFFFFFFFF and v % 8 == 0
+    end
+
+    -- Returns itemsBegin, itemCount for one of the lists, or nil when anything about it looks wrong.
+    local function read_list(layout)
+        local manager = GetFCEDataManager()
+        if not plausible_pointer(manager) then return nil end
+        local list = MEMORY:ReadPointer(manager + layout.list)
+        if not plausible_pointer(list) then return nil end
+        local itemsBegin = MEMORY:ReadPointer(list + layout.itemsBegin)
+        local count = MEMORY:ReadInt(list + layout.count)
+        if not plausible_pointer(itemsBegin) or count <= 0 or count > MEM_LAYOUT.maxItems then return nil end
+        return itemsBegin, count
+    end
+
+    -- One standings row by its list index (a fixture refers to its two teams by standing index). Returns the full
+    -- StandingsData struct the game keeps (FC 26 layout, same as Live Editor's bundled export_fixtures.lua); an empty
+    -- table when the offsets are unverified or the index is out of range, so callers just see "no data".
     local function GetStandingsByIndex(idx)
         local StandingsData = {}
         if not FC27_MEMORY_OFFSETS_VERIFIED then return StandingsData end
-        local FCEDataManager = GetFCEDataManager()
-        local StandingsDataList = MEMORY:ReadPointer(FCEDataManager + 0x88)
-        local itemSize = 0x18
-        local mBegin = MEMORY:ReadPointer(StandingsDataList + 0x28)
-        local mCurrent = mBegin + (itemSize * idx)
+        if type(idx) ~= "number" or idx < 0 then return StandingsData end
+        local itemsBegin, count = read_list(MEM_LAYOUT.standings)
+        if not itemsBegin or idx >= count then return StandingsData end
 
+        local mCurrent = itemsBegin + (MEM_LAYOUT.standings.itemSize * idx)
+        StandingsData["mId"] = MEMORY:ReadShort(mCurrent + 0x00)
+        StandingsData["mCompObjId"] = MEMORY:ReadShort(mCurrent + 0x02)
         StandingsData["mTeamId"] = MEMORY:ReadInt(mCurrent + 0x04)
+        StandingsData["mTeamIndex"] = MEMORY:ReadChar(mCurrent + 0x08)
+        StandingsData["mHomeWins"] = MEMORY:ReadChar(mCurrent + 0x09)
+        StandingsData["mHomeDraws"] = MEMORY:ReadChar(mCurrent + 0x0A)
+        StandingsData["mHomeLosses"] = MEMORY:ReadChar(mCurrent + 0x0B)
+        StandingsData["mHomeGoalsFor"] = MEMORY:ReadChar(mCurrent + 0x0C)
+        StandingsData["mHomeGoalsAgainst"] = MEMORY:ReadChar(mCurrent + 0x0D)
+        StandingsData["mAwayWins"] = MEMORY:ReadChar(mCurrent + 0x0E)
+        StandingsData["mAwayDraws"] = MEMORY:ReadChar(mCurrent + 0x0F)
+        StandingsData["mAwayLosses"] = MEMORY:ReadChar(mCurrent + 0x10)
+        StandingsData["mAwayGoalsFor"] = MEMORY:ReadChar(mCurrent + 0x11)
+        StandingsData["mAwayGoalsAgainst"] = MEMORY:ReadChar(mCurrent + 0x12)
+        StandingsData["mPoints"] = MEMORY:ReadShort(mCurrent + 0x14)
         return StandingsData
     end
 
     local function GetActiveCareerFixtures()
         local result = {}
         if not FC27_MEMORY_OFFSETS_VERIFIED then return result end
-        local FCEDataManager = GetFCEDataManager()
-        local FixtureDataList = MEMORY:ReadPointer(FCEDataManager + 0x60)
-        if not FixtureDataList or FixtureDataList == 0 then return result end
+        local mBegin, item_count = read_list(MEM_LAYOUT.fixtures)
+        if not mBegin then return result end
 
-        local itemSize = 0x18
-        local mBegin = MEMORY:ReadPointer(FixtureDataList + 0x28)
-        local max_items_count = MEMORY:ReadInt(FixtureDataList + 0x1C) - 1
+        local itemSize = MEM_LAYOUT.fixtures.itemSize
+        local max_items_count = item_count - 1
 
         for i = 0, max_items_count do
             local mCurrent = mBegin + (itemSize * i)
