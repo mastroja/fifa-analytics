@@ -259,15 +259,26 @@
     const info = root.getPositionInfo(p.position_id);
     return `<span class="pos-badge pos-${info.group} dc-pos">${info.label}</span>`;
   }
-  function altText(p) {
+  // Alternative positions as small outlined chips next to the main badge; one that fits the slot's role is highlighted.
+  function altText(p, role) {
     const nat = labelOf(p.position_id);
     const alts = altLabels(p).filter((l, i, a) => l !== nat && a.indexOf(l) === i);
-    return alts.length ? `<span class="dc-alt" title="Can also play: ${esc(alts.join(', '))}">alt ${esc(alts.join(', '))}</span>` : '';
+    if (!alts.length) return '';
+    const fam = role ? FAMILY[role] : [];
+    // at most two chips (a fitting one first) so the name keeps its room; the tooltip lists them all
+    const shown = alts.slice().sort((x, y) => fam.includes(y) - fam.includes(x)).slice(0, 2);
+    const more = alts.length - shown.length;
+    return `<span class="dc-alts" title="Can also play: ${esc(alts.join(', '))}">${shown.map(l => `<span class="dc-altchip${fam.includes(l) ? ' fits' : ''}">${esc(l)}</span>`).join('')}${more > 0 ? `<span class="dc-altchip">+${more}</span>` : ''}</span>`;
   }
-  function ringClass(age) { return age === null ? '' : age < 21 ? 'ring-young' : age >= 30 ? 'ring-old' : ''; }
+  // Avatar ring = how well the player suits the slot: green natural position, yellow alternative, red neither.
+  function fitRing(p, role) {
+    if (!role || !FAMILY[role]) return '';
+    const t = tierFor(p, role);
+    return t === 0 ? 'ring-fit-0' : t === 1 ? 'ring-fit-1' : 'ring-fit-x';
+  }
 
   // kind: string (draggable, drop target; idx = string index) | prospect | top (draggable only) | cand (edit dialog list)
-  function personHtml(p, kind, slotId, idx, pinned) {
+  function personHtml(p, kind, slotId, idx, pinned, role) {
     const isString = kind === 'string';
     const dropAttrs = isString ? ` data-slot="${slotId}" data-idx="${idx}"` : '';
     const cls = isString ? (idx === 0 ? 'dc-starter' : 'dc-backup') : `dc-${kind}`;
@@ -280,12 +291,12 @@
     const tag = isString && idx > 0 ? `<span class="dc-tag">${idx + 1}</span>` : kind === 'prospect' ? '<span class="dc-tag">🎓</span>' : '';
     const drag = kind === 'prospect' ? '' : ' draggable="true"';
     return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
-      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
+      <span class="dc-ring ${fitRing(p, role)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
       ${isString && idx === 0
-        ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span>
+        ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p, role)}</span></span>
             <span class="dc-rightcol"><span class="dc-ovr dc-ovr-big">${ovr}</span>${p.__alltime ? '<span class="dc-age">peak</span>' : ''}</span>`
         : isString
-          ? `<span class="dc-col"><span class="dc-name"><span class="dc-tag">${idx + 1}</span> ${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span><span class="dc-ovr">${ovr}</span>`
+          ? `<span class="dc-col"><span class="dc-name"><span class="dc-tag">${idx + 1}</span> ${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p, role)}</span></span><span class="dc-ovr">${ovr}</span>`
           : `${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span>`}
     </div>`;
   }
@@ -310,7 +321,7 @@
     const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join('');
     const shown = Math.min(Math.max(s.strings.length, 2), SHOWN_STRINGS);
     const rows = [];
-    for (let i = 0; i < shown; i++) rows.push(personHtml(s.strings[i] || null, 'string', s.id, i, s.pinned.has(i)));
+    for (let i = 0; i < shown; i++) rows.push(personHtml(s.strings[i] || null, 'string', s.id, i, s.pinned.has(i), s.role));
     const more = s.strings.length > SHOWN_STRINGS ? `<div class="dc-more">+${s.strings.length - SHOWN_STRINGS} more · edit to see</div>` : '';
     const editBtn = `<button class="dc-edit" title="Edit ${s.role} depth: 1st, 2nd, 3rd string…" onclick="event.stopPropagation(); SquadViews.editSlot(${s.id})">✎</button>`;
     return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${mapY(s.y).toFixed(1)}%">
@@ -323,7 +334,7 @@
   function reserveCardHtml(p, tag) {
     const age = p.__alltime ? null : root.computeAge(p.dob);
     return `<div class="dc-rcard" data-pid="${esc(p.player_id)}" draggable="true" onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
-      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 44, '50%')}</span>
+      <span class="dc-ring">${root.buildPlayerAvatarHtml(p, 44, '50%')}</span>
       <span class="dc-rinfo"><span class="dc-rname">${esc(p.name)}</span><span class="dc-rsub">${posBadge(p)}${altText(p)}</span>${p.__alltime || tag || p.injury ? `<span class="dc-rsub">${p.__alltime ? `${esc(p.peak_season || '')} · ${p.appearances} apps` : ''}${tag ? `<em>${tag}</em>` : ''}${p.injury ? `${tag ? ' · ' : ''}<em class="dc-inj">injured</em>` : ''}</span>` : ''}</span>
       <span class="dc-rovr">${p.overall || '?'}</span></div>`;
   }
@@ -333,7 +344,7 @@
   function academyCardHtml(a) {
     const age = root.computeAge(a.dob);
     return `<div class="dc-rcard dc-rcard-academy" data-pid="${esc(a.player_id)}" onclick="openPlayerProfile('${a.player_id ?? esc(a.name)}')">
-      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(a, 44, '50%')}</span>
+      <span class="dc-ring">${root.buildPlayerAvatarHtml(a, 44, '50%')}</span>
       <span class="dc-rinfo"><span class="dc-rname">${esc(a.name)}</span><span class="dc-rsub">${posBadge(a)}</span><span class="dc-rsub">age ${age ?? '—'}</span></span>
       <span class="dc-rovr">${a.overall || '?'}<span class="dc-pot"><small>POT</small> ${esc(a.potential_high || a.potential || '?')}</span></span></div>`;
   }
@@ -368,7 +379,7 @@
     const academySection = l.alltime ? '' : `
           <div class="dc-rhead dc-rhead-academy">Youth academy <span class="dc-dim">${academy.length} prospect${academy.length === 1 ? '' : 's'}</span></div>
           <div class="dc-rgrid">${academy.slice().sort((a, b) => prospectScore(b) - prospectScore(a)).map(academyCardHtml).join('') || '<span class="dc-none">No academy prospects loaded.</span>'}</div>`;
-    return `<div class="dc-legend-bar"><span><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
+    return `<div class="dc-legend-bar"><span class="dc-ringkey"><span class="dc-ring ring-fit-0">&nbsp;</span> main position <span class="dc-ring ring-fit-1">&nbsp;</span> alt position <span class="dc-ring ring-fit-x">&nbsp;</span> out of position · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
       ${banner}
       <div class="dc-layout">
         <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys)).join('')}</div></div>
@@ -444,6 +455,7 @@ ${academySection}</aside>
 
   function modalHtml() {
     const slot = lastSlots[edit.slot]; if (!slot) return '';
+    const role = slot.role;
     const n = Math.max(slot.strings.length, 2);
     const strings = [];
     for (let i = 0; i < n; i++) {
@@ -460,8 +472,8 @@ ${academySection}</aside>
       const here = slot.strings.findIndex(x => x && sameId(x.player_id, p.player_id));
       const fit = tier === 0 ? 'natural' : tier === 1 ? 'alt pos' : 'out of position';
       return `<div class="dc-row dc-cand${here >= 0 ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}" onclick="SquadViews.assign('${esc(p.player_id)}')">
-        <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 26, '50%')}</span>
-        <span class="dc-name">${esc(p.name)}</span>${posBadge(p)}${altText(p)}
+        <span class="dc-ring ${tier === 0 ? 'ring-fit-0' : tier === 1 ? 'ring-fit-1' : 'ring-fit-x'}">${root.buildPlayerAvatarHtml(p, 26, '50%')}</span>
+        <span class="dc-name">${esc(p.name)}</span>${posBadge(p)}${altText(p, role)}
         <span class="dc-fit fit-${tier ?? 'x'}">${fit}</span>${here >= 0 ? `<span class="dc-tag">${stringName(here)}</span>` : ''}
         <span class="dc-ovr">${p.overall || '?'}</span><span class="dc-age">${age ?? ''}</span></div>`;
     }).join('');
