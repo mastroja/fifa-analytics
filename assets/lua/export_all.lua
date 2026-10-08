@@ -435,6 +435,45 @@ do
             end
         end
 
+        -- FC 27 fallback: GetPlayersStats() returns no rows there (see assets/lua/fc27_probes/README.md), so goals /
+        -- assists / clean sheets / cards have no source, but the DB table career_playermatchratinghistory (one row per
+        -- player per match: date YYYYMMDD, minsplayed, whole-number rating) is live. From it we can restore appearances
+        -- and an approximate average rating for this season. The rating is stored as a whole number, so the average
+        -- runs a little off the in-game one (e.g. 6.67 vs 6.49); it is reported as its own competition row so the
+        -- breakdown makes the source obvious.
+        if #all_stats == 0 then
+            local ok_rt, rating_table = pcall(function() return LE.db:GetTable("career_playermatchratinghistory") end)
+            local ok_cd, cd = pcall(GetCurrentDate)
+            if ok_rt and rating_table and ok_cd and cd and cd.year then
+                local season_start = ((cd.month >= 7) and cd.year or (cd.year - 1)) * 10000 + 701
+                local tally = {}
+                local rec, n = rating_table:GetFirstRecord(), 0
+                while rec and rec > 0 and n < 20000 do
+                    n = n + 1
+                    local pid = rating_table:GetRecordFieldValue(rec, "playerid")
+                    local date = rating_table:GetRecordFieldValue(rec, "date")
+                    local mins = rating_table:GetRecordFieldValue(rec, "minsplayed")
+                    local rating = rating_table:GetRecordFieldValue(rec, "rating")
+                    if pid and result[pid] ~= nil and date and date >= season_start and mins and mins > 0 then
+                        local t = tally[pid]
+                        if not t then t = { apps = 0, rating_sum = 0 }; tally[pid] = t end
+                        t.apps = t.apps + 1
+                        t.rating_sum = t.rating_sum + (rating or 0)
+                    end
+                    rec = rating_table:GetNextValidRecord()
+                end
+                for pid, t in pairs(tally) do
+                    local player = result[pid]
+                    player.appearances = player.appearances + t.apps
+                    table.insert(player.competitions, {
+                        comp_name = "All competitions (from match ratings)",
+                        appearances = t.apps, goals = 0, assists = 0, clean_sheets = 0, saves = 0,
+                        yellow_cards = 0, red_cards = 0, avg_rating = t.rating_sum / t.apps
+                    })
+                end
+            end
+        end
+
         -- avg_rating was previously just whatever competition happened to
         -- be processed last (a plain overwrite, not an average at all) —
         -- now a proper appearances-weighted average across every

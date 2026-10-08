@@ -91,3 +91,10 @@ list in that encoding/stride), and the single STANDINGS-shaped hit (0x67B520FC, 
 positive: a team-id-sorted array of 8-byte (team id, ~62) pairs (127/62, 135/61, 143/62, 1797/61, 1802/62 ...), i.e. a
 team rating table, not standings. So standings and fixtures are not in those pools in the FC 26 shapes. Stage 7 goes at
 it from the other end: dump the small next-match / results managers and see how one fixture is stored.
+
+**Stage 7 result (2026-10-08):** dumped NextMatchManager, SimResultsManager, InterestingResultManager, StandingsViewManager,
+ActiveCompetitionsManager, SeasonSituationSystem and FixtureManager plus their pointer targets (1600 lines). Dates ARE
+YYYYMMDD ints in memory, but they only turn up inside allocator / hash-map / tree nodes (event and news-like objects: 20260826,
+20260828, 20260830 near random hash values), and NextMatchManager just stores the current date (+0x2C0 = 20260901). No struct holds
+a home/away team pair next to a date, so no fixture record was found. The memory hunt for standings / fixtures is paused here;
+see `assets/design_docs/fc27_port_status.md`.
