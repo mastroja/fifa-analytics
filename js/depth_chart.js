@@ -1,6 +1,6 @@
 // Squad tab alternate views: List (the existing table) / Depth (pitch) / Academy (js/academy_tracker.js).
 //
-// Depth view: named lineups (Default = auto, Starting XI, Rotation / Reserves, plus any the user creates), each with
+// Depth view: named lineups (Starting XI, Reserves, plus any the user creates), each with
 // its own formation and manual arrangement. Every slot is a list of "strings" (1st, 2nd, 3rd ...): the first two are
 // auto-filled (scarcest role first, so one flexible player is not burned on a deep position) unless the user pinned
 // someone by drag & drop or the slot's edit dialog; further strings are manual only.
@@ -186,7 +186,7 @@
   let lineups = freshLineups();
   const lineupById = id => lineups.list.find(l => l.id === id);
   const active = () => lineupById(lineups.active) || lineups.list[0];
-  const pinsOf = l => l.locked ? {} : l.pins;
+  const pinsOf = l => l.pins;
   const saveLineups = () => store.set('lineups', JSON.stringify(lineups));
 
   function loadLineups() {
@@ -232,9 +232,9 @@
   function ringClass(age) { return age === null ? '' : age < 21 ? 'ring-young' : age >= 30 ? 'ring-old' : ''; }
 
   // kind: string (draggable, drop target; idx = string index) | prospect | top (draggable only) | cand (edit dialog list)
-  function personHtml(p, kind, slotId, idx, pinned, locked) {
+  function personHtml(p, kind, slotId, idx, pinned) {
     const isString = kind === 'string';
-    const dropAttrs = isString && !locked ? ` data-slot="${slotId}" data-idx="${idx}"` : '';
+    const dropAttrs = isString ? ` data-slot="${slotId}" data-idx="${idx}"` : '';
     const cls = isString ? (idx === 0 ? 'dc-starter' : 'dc-backup') : `dc-${kind}`;
     if (!p) return `<div class="dc-row dc-empty"${dropAttrs}>${idx === 0 ? 'Vacant' : idx === 1 ? 'No backup' : kind === 'prospect' ? 'No prospect' : '—'}</div>`;
     const age = root.computeAge(p.dob);
@@ -243,7 +243,7 @@
       ? `${p.overall || '?'}<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>`
       : `${p.overall || '?'}`;
     const tag = isString && idx > 0 ? `<span class="dc-tag">${idx + 1}</span>` : kind === 'prospect' ? '<span class="dc-tag">🎓</span>' : '';
-    const drag = kind === 'prospect' || locked ? '' : ' draggable="true"';
+    const drag = kind === 'prospect' ? '' : ' draggable="true"';
     return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
       ${isString && idx === 0
@@ -256,14 +256,14 @@
     return f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring';
   }
 
-  function slotHtml(s, newKeys, locked) {
+  function slotHtml(s, newKeys) {
     const worst = s.flags.find(f => f.severity === 'high') || s.flags.find(f => f.severity === 'mid') || s.flags[0];
     const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join('');
     const shown = Math.min(Math.max(s.strings.length, 2), SHOWN_STRINGS);
     const rows = [];
-    for (let i = 0; i < shown; i++) rows.push(personHtml(s.strings[i] || null, 'string', s.id, i, s.pinned.has(i), locked));
+    for (let i = 0; i < shown; i++) rows.push(personHtml(s.strings[i] || null, 'string', s.id, i, s.pinned.has(i)));
     const more = s.strings.length > SHOWN_STRINGS ? `<div class="dc-more">+${s.strings.length - SHOWN_STRINGS} more · edit to see</div>` : '';
-    const editBtn = locked ? '' : `<button class="dc-edit" title="Edit ${s.role} depth: 1st, 2nd, 3rd string…" onclick="event.stopPropagation(); SquadViews.editSlot(${s.id})">✎</button>`;
+    const editBtn = `<button class="dc-edit" title="Edit ${s.role} depth: 1st, 2nd, 3rd string…" onclick="event.stopPropagation(); SquadViews.editSlot(${s.id})">✎</button>`;
     return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${s.y}%">
       <div class="dc-slot-head"><strong>${s.role}</strong>${flagHtml}${editBtn}</div>
       ${rows.join('')}${more}
@@ -334,7 +334,7 @@
     return `<div class="dc-legend-bar"><span><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
       ${banner}
       <div class="dc-layout">
-        <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys, false)).join('')}</div></div>
+        <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys)).join('')}</div></div>
         <aside class="dc-reserves"><div class="dc-rhead">${listTitle} <span class="dc-dim">${rest.length} player${rest.length === 1 ? '' : 's'}</span></div>
           <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div></aside>
       </div>
@@ -354,7 +354,7 @@
         : `<button class="home-toggle-btn" title="Create another lineup (e.g. cup XI, youth team)" onclick="SquadViews.startCreate()">＋ New</button>`);
     const sellOptions = seniors.slice().sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0))
       .map(p => `<option value="${esc(p.player_id)}"${sameId(p.player_id, sellId) ? ' selected' : ''}>${esc(p.name)} (${p.overall || '?'})</option>`).join('');
-    const hasPins = !l.locked && Object.keys(l.pins).length > 0;
+    const hasPins = Object.keys(l.pins).length > 0;
     return `<div class="home-toggle dc-lineups">${chips}</div>
       <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
       <label class="dc-ctl">What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>
@@ -370,7 +370,7 @@
   // ---- manual arrangement ----------------------------------------------------
   // Drop/assign `pid` onto slot/idx; if it came from another string (src) the two players swap places.
   function movePlayer(pid, src, target) {
-    const l = active(); if (l.locked) return;
+    const l = active();
     const slot = lastSlots[target.slot]; if (!slot) return;
     const occupant = slot.strings[target.idx] || null;
     if (occupant && sameId(occupant.player_id, pid)) return;
@@ -386,7 +386,7 @@
   }
 
   function clearString(slotId, idx) {
-    const l = active(); if (l.locked) return;
+    const l = active();
     const P = l.pins;
     if (idx < 2) {
       // an auto-filled string can't be left empty by clearing it; pin "nobody" isn't a thing, so just drop the pin
@@ -574,7 +574,7 @@
     setView,
     setFormation(f) { if (!FORMATIONS[f]) return; active().formation = f; saveLineups(); renderAll(); },
     setSell(id) { sellId = id; render(); },
-    resetOrder() { const l = active(); if (l.locked) return; l.pins = {}; saveLineups(); renderAll(); },
+    resetOrder() { const l = active(); l.pins = {}; saveLineups(); renderAll(); },
     setLineup(id) { if (!lineupById(id)) return; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
     startCreate() { creating = true; renderControls(); },
     cancelCreate() { creating = false; renderControls(); },
@@ -590,7 +590,7 @@
       const l = lineupById(id); if (!l || l.core) return;
       lineups.list = lineups.list.filter(x => x.id !== id); lineups.active = 'xi'; saveLineups(); render();
     },
-    editSlot(id) { if (active().locked) return; edit = { slot: id, idx: 0 }; refreshModal(); },
+    editSlot(id) { edit = { slot: id, idx: 0 }; refreshModal(); },
     closeEdit() { edit = null; hideTip(); refreshModal(); },
     pickString(i) { if (edit) { edit.idx = i; refreshModal(); } },
     addString() {
