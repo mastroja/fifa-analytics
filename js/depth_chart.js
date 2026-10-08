@@ -26,13 +26,13 @@
   // [role, x%, y%] — y=0 is the opposition goal, y=100 is ours.
   const FORMATIONS = {
     '4-3-3': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CM', 27, 52], ['CDM', 50, 58], ['CM', 73, 52], ['LW', 17, 24], ['ST', 50, 16], ['RW', 83, 24]],
-    '4-3-3 Holding': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CM', 30, 56], ['CM', 70, 56], ['CAM', 50, 42], ['LW', 17, 22], ['ST', 50, 15], ['RW', 83, 22]],
+    '4-3-3 Holding': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CM', 33, 52], ['CM', 67, 52], ['CAM', 50, 38], ['LW', 17, 22], ['ST', 50, 15], ['RW', 83, 22]],
     '4-4-2': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['LM', 14, 48], ['CM', 38, 53], ['CM', 62, 53], ['RM', 86, 48], ['ST', 36, 20], ['ST', 64, 20]],
-    '4-2-3-1': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CDM', 36, 56], ['CDM', 64, 56], ['LM', 16, 36], ['CAM', 50, 38], ['RM', 84, 36], ['ST', 50, 15]],
-    '4-1-4-1': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CDM', 50, 60], ['LM', 14, 40], ['CM', 38, 43], ['CM', 62, 43], ['RM', 86, 40], ['ST', 50, 15]],
+    '4-2-3-1': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CDM', 31, 56], ['CDM', 69, 56], ['LM', 16, 36], ['CAM', 50, 38], ['RM', 84, 36], ['ST', 50, 15]],
+    '4-1-4-1': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CDM', 50, 58], ['LM', 14, 38], ['CM', 38, 38], ['CM', 62, 38], ['RM', 86, 40], ['ST', 50, 15]],
     '3-5-2': [['GK', 50, 91], ['CB', 26, 76], ['CB', 50, 78], ['CB', 74, 76], ['LWB', 10, 52], ['CM', 32, 52], ['CDM', 50, 58], ['CM', 68, 52], ['RWB', 90, 52], ['ST', 37, 20], ['ST', 63, 20]],
     '3-4-3': [['GK', 50, 91], ['CB', 26, 76], ['CB', 50, 78], ['CB', 74, 76], ['LM', 12, 52], ['CM', 38, 54], ['CM', 62, 54], ['RM', 88, 52], ['LW', 20, 24], ['ST', 50, 16], ['RW', 80, 24]],
-    '5-3-2': [['GK', 50, 91], ['LWB', 9, 68], ['CB', 28, 77], ['CB', 50, 79], ['CB', 72, 77], ['RWB', 91, 68], ['CM', 28, 48], ['CM', 50, 52], ['CM', 72, 48], ['ST', 37, 20], ['ST', 63, 20]]
+    '5-3-2': [['GK', 50, 91], ['LWB', 9, 68], ['CB', 28, 77], ['CB', 50, 77], ['CB', 72, 77], ['RWB', 91, 68], ['CM', 28, 48], ['CM', 50, 52], ['CM', 72, 48], ['ST', 37, 20], ['ST', 63, 20]]
   };
   const DEFAULT_FORMATION = '4-3-3';
 
@@ -238,7 +238,7 @@
     const cls = isString ? (idx === 0 ? 'dc-starter' : 'dc-backup') : `dc-${kind}`;
     if (!p) return `<div class="dc-row dc-empty"${dropAttrs}>${idx === 0 ? 'Vacant' : idx === 1 ? 'No backup' : kind === 'prospect' ? 'No prospect' : '—'}</div>`;
     const age = root.computeAge(p.dob);
-    const size = isString && idx === 0 ? 44 : 30;
+    const size = isString && idx === 0 ? 52 : 34;
     const ovr = kind === 'prospect'
       ? `${p.overall || '?'}<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>`
       : `${p.overall || '?'}`;
@@ -256,6 +256,17 @@
     return f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring';
   }
 
+  // Formation y values are tactical positions; the big cards need a more even vertical spread so rows don't overlap
+  // on a one-screen pitch (GK stays inside the bottom edge, ST inside the top).
+  const Y_MAP = [[10, 9], [15, 12], [24, 21], [38, 33], [52, 46], [58, 52], [72, 67], [76, 70], [79, 72], [91, 90.5]];
+  function mapY(y) {
+    for (let i = 1; i < Y_MAP.length; i++) {
+      const [x0, y0] = Y_MAP[i - 1], [x1, y1] = Y_MAP[i];
+      if (y <= x1) return y0 + (y - x0) * (y1 - y0) / (x1 - x0);
+    }
+    return Y_MAP[Y_MAP.length - 1][1];
+  }
+
   function slotHtml(s, newKeys) {
     const worst = s.flags.find(f => f.severity === 'high') || s.flags.find(f => f.severity === 'mid') || s.flags[0];
     const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join('');
@@ -264,7 +275,7 @@
     for (let i = 0; i < shown; i++) rows.push(personHtml(s.strings[i] || null, 'string', s.id, i, s.pinned.has(i)));
     const more = s.strings.length > SHOWN_STRINGS ? `<div class="dc-more">+${s.strings.length - SHOWN_STRINGS} more · edit to see</div>` : '';
     const editBtn = `<button class="dc-edit" title="Edit ${s.role} depth: 1st, 2nd, 3rd string…" onclick="event.stopPropagation(); SquadViews.editSlot(${s.id})">✎</button>`;
-    return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${s.y}%">
+    return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${mapY(s.y).toFixed(1)}%">
       <div class="dc-slot-head"><strong>${s.role}</strong>${flagHtml}${editBtn}</div>
       ${rows.join('')}${more}
     </div>`;
@@ -280,31 +291,13 @@
   }
 
   // ---- rendering: bottom section (squad + academy by position) -------------
-  function chipHtml(p, kind) {
-    const age = root.computeAge(p.dob);
-    const extra = kind === 'academy' ? `<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>` : '';
-    return `<div class="dc-chip ${kind === 'academy' ? 'dc-chip-academy' : ''}" data-pid="${esc(p.player_id)}"${kind === 'academy' ? '' : ' draggable="true"'} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
-      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 24, '50%')}</span>
-      <span class="dc-chip-name">${esc(p.name)}</span><span class="dc-chip-ovr">${p.overall || '?'}${extra}</span></div>`;
-  }
-
-  function positionTableHtml(seniors) {
-    const rows = {};
-    const bucket = l => rows[l] || (rows[l] = { squad: [], academy: [] });
-    seniors.forEach(p => bucket(labelOf(p.position_id)).squad.push(p));
-    academyNow().forEach(a => bucket(labelOf(a.position_id)).academy.push(a));
-    const labels = Object.keys(rows).sort((a, b) => (POSITION_SORT_ORDER[a] || 99) - (POSITION_SORT_ORDER[b] || 99));
-    if (!labels.length) return '<div class="empty-state">No squad data loaded.</div>';
-    const byOvr = (a, b) => Number(b.overall || 0) - Number(a.overall || 0);
-    return `<div class="dc-pos-table">
-      <div class="dc-pos-head"><span>Position</span><span>Best in the squad</span><span>Academy prospects</span></div>
-      ${labels.map(l => {
-        const r = rows[l]; const info = root.getPositionInfo(l === 'SUB' ? -1 : (seniors.concat(academyNow()).find(p => labelOf(p.position_id) === l) || {}).position_id);
-        return `<div class="dc-pos-row"><span class="dc-pos-label"><span class="pos-badge pos-${info.group}">${l}</span></span>
-          <div class="dc-pos-cell">${r.squad.sort(byOvr).slice(0, 3).map(p => chipHtml(p, 'squad')).join('') || '<span class="dc-none">—</span>'}${r.squad.length > 3 ? `<span class="dc-pipe-n">+${r.squad.length - 3}</span>` : ''}</div>
-          <div class="dc-pos-cell">${r.academy.sort((a, b) => prospectScore(b) - prospectScore(a)).slice(0, 3).map(p => chipHtml(p, 'academy')).join('') || '<span class="dc-none">—</span>'}${r.academy.length > 3 ? `<span class="dc-pipe-n">+${r.academy.length - 3}</span>` : ''}</div>
-        </div>`;
-      }).join('')}</div>`;
+  // Academy prospects, same two-wide card layout as the reserves (not draggable: they are not in the senior squad).
+  function academyCardHtml(a) {
+    const age = root.computeAge(a.dob);
+    return `<div class="dc-rcard dc-rcard-academy" data-pid="${esc(a.player_id)}" onclick="openPlayerProfile('${a.player_id ?? esc(a.name)}')">
+      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(a, 44, '50%')}</span>
+      <span class="dc-rinfo"><span class="dc-rname">${esc(a.name)}</span><span class="dc-rsub">${labelOf(a.position_id)} · ${age ?? '—'} · <em>🎓 academy</em></span></span>
+      <span class="dc-rovr">${a.overall || '?'}<span class="dc-pot">→${esc(a.potential_high || a.potential || '?')}</span></span></div>`;
   }
 
   function depthHtml() {
@@ -336,9 +329,11 @@
       <div class="dc-layout">
         <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys)).join('')}</div></div>
         <aside class="dc-reserves"><div class="dc-rhead">${listTitle} <span class="dc-dim">${rest.length} player${rest.length === 1 ? '' : 's'}</span></div>
-          <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div></aside>
+          <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div>
+          <div class="dc-rhead dc-rhead-academy">Youth academy <span class="dc-dim">${academy.length} prospect${academy.length === 1 ? '' : 's'}</span></div>
+          <div class="dc-rgrid">${academy.slice().sort((a, b) => prospectScore(b) - prospectScore(a)).map(academyCardHtml).join('') || '<span class="dc-none">No academy prospects loaded.</span>'}</div></aside>
       </div>
-      <h4 class="dc-section">Squad and academy by position</h4>${positionTableHtml(seniors)}`;
+`;
   }
 
   // ---- toolbar (next to the List / Depth / Academy toggle) -----------------

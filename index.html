@@ -1212,21 +1212,23 @@
     .dc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 18px; align-items: start; }
     @media (max-width: 1250px) { .dc-layout { grid-template-columns: 1fr; } }
     .dc-pitch-wrap { overflow-x: auto; }
-    .dc-pitch { position: relative; min-width: 760px; aspect-ratio: 6 / 5; border-radius: 10px; border: 1px solid var(--border-color);
+    .dc-pitch { position: relative; min-width: 760px; height: max(780px, calc(100vh - 260px)); border-radius: 10px; border: 1px solid var(--border-color);
       background: repeating-linear-gradient(0deg, #14301f 0, #14301f 8%, #173824 8%, #173824 16%); }
-    .dc-slot { position: absolute; transform: translate(-50%, -50%); width: clamp(150px, 19%, 200px); background: rgba(13, 17, 23, 0.92); border: 1px solid var(--border-color); border-radius: 10px; padding: 6px 8px; font-size: 13px; }
-    .dc-slot .dc-starter { padding: 4px 2px 6px; } .dc-slot .dc-starter .dc-name { font-size: 14px; font-weight: 700; } 
+    .dc-slot { position: absolute; transform: translate(-50%, -50%); width: clamp(175px, 20%, 235px); background: rgba(13, 17, 23, 0.92); border: 1px solid var(--border-color); border-radius: 10px; padding: 7px 9px; font-size: 14px; }
+    .dc-slot .dc-starter { padding: 4px 2px 6px; } .dc-slot .dc-starter .dc-name { font-size: 15px; font-weight: 700; } 
     .dc-col { display: flex; flex-direction: column; min-width: 0; flex: 1; } .dc-sub { font-size: 11px; color: var(--text-dim); } .dc-sub .dc-ovr { color: var(--text-color); font-size: 13px; }
-    .dc-slot .dc-backup { font-size: 12px; opacity: 0.9; }
+    .dc-slot .dc-backup { font-size: 13px; opacity: 0.9; }
     .dc-reserves { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; }
     .dc-rhead { font-weight: 700; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
     .dc-rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .dc-rcard { display: flex; align-items: center; gap: 8px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 8px; cursor: grab; min-width: 0; }
+    .dc-rcard { display: flex; align-items: center; gap: 8px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 5px 8px; cursor: grab; min-width: 0; }
     .dc-rcard:hover { border-color: var(--accent-color); }
     .dc-rinfo { display: flex; flex-direction: column; min-width: 0; flex: 1; }
     .dc-rname { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dc-rsub { font-size: 11px; color: var(--text-dim); } .dc-rsub em { font-style: normal; color: var(--accent-color); } .dc-rsub em.dc-inj { color: #f85149; }
-    .dc-rovr { font-weight: 800; font-size: 18px; }
+    .dc-rovr { font-weight: 800; font-size: 16px; text-align: right; } .dc-rovr .dc-pot { display: block; font-size: 11px; font-weight: 600; }
+    .dc-rhead-academy { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+    .dc-rcard-academy { cursor: pointer; border-style: dashed; }
     .dc-slot.sev-high { border-color: #f85149; }
     .dc-slot.sev-mid { border-color: #d29922; }
     .dc-slot-head { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 5px; color: var(--accent-color); font-size: 14px; }
