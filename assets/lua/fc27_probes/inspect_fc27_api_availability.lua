@@ -30,8 +30,20 @@ local names = {
     "GetDBTableFields", "GetDBTableRows", "GetDBTablesNames",
     "GetTransferBudget",
 }
-for _, n in ipairs(names) do
-    log(string.format("  %-28s %s", n, type(_G[n])))
+-- export_all.lua defines stand-ins for GetPlayersStats / GetCompetitionNameByObjID when they are nil, and Lua globals
+-- survive between scripts in the same Live Editor session. So after any F10 press this probe would see a "function" that
+-- is really that stub. debug.getinfo tells them apart: a native function reports what = "C", a stub reports "Lua" and the
+-- file it came from. For a clean answer, restart the game, load the career and run this probe BEFORE pressing F10.
+local function origin(f)
+    if type(f) ~= "function" then return "" end
+    if type(debug) ~= "table" or type(debug.getinfo) ~= "function" then return " (cannot tell native from stub: no debug library)" end
+    local ok, info = pcall(debug.getinfo, f, "S")
+    if not ok or not info then return " (unknown origin)" end
+    if info.what == "C" then return " -> NATIVE (provided by Live Editor)" end
+    return " -> Lua function defined in " .. tostring(info.short_src or info.source) .. " (a stand-in, NOT native)"
+end
+for _, nm in ipairs(names) do
+    log(string.format("  %-28s %s%s", nm, type(_G[nm]), origin(_G[nm])))
 end
 
 log("")
