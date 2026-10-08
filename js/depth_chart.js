@@ -68,7 +68,13 @@
     const slots = (FORMATIONS[formation] || FORMATIONS[DEFAULT_FORMATION]).map(([role, x, y], i) => ({
       id: i, role, x, y, starter: null, backup: null, backupShared: false, prospect: null, strings: [null, null], pinned: new Set()
     }));
-    const pool = seniors.filter(p => !(exclude && exclude.has(p.player_id)));
+    // one row per player: a duplicated source row must never put someone on the pitch twice
+    const seenPool = new Set();
+    const pool = seniors.filter(p => {
+      if (exclude && exclude.has(p.player_id)) return false;
+      const k = String(p.player_id); if (seenPool.has(k)) return false;
+      seenPool.add(k); return true;
+    });
     const eligible = slots.map(s => pool
       .map(p => ({ p, tier: tierFor(p, s.role) }))
       .filter(e => e.tier !== null)
@@ -76,57 +82,54 @@
     const auto = eligible.map(list => autoExclude ? list.filter(e => !autoExclude.has(e.p.player_id)) : list);
 
     const order = slots.map((s, i) => i).sort((a, b) => auto[a].length - auto[b].length || a - b);
-    const starters = new Set();
+    // Every player appears at most once in the whole lineup (any slot, any string): `used` holds the ids placed so far.
+    const used = new Set();
+    const idOf = p => String(p.player_id);
     const byId = id => pool.find(p => String(p.player_id) === String(id));
     const pinOf = (sl, idx) => (pins && pins[sl.id] && pins[sl.id][idx] != null) ? byId(pins[sl.id][idx]) : null;
 
     slots.forEach(sl => {
       const st = pinOf(sl, 0);
-      if (st && !starters.has(st)) { sl.starter = st; sl.pinned.add(0); starters.add(st); }
+      if (st && !used.has(idOf(st))) { sl.starter = st; sl.pinned.add(0); used.add(idOf(st)); }
     });
     slots.forEach(sl => {
       const bk = pinOf(sl, 1);
-      if (bk && !starters.has(bk)) { sl.backup = bk; sl.pinned.add(1); }
+      if (bk && !used.has(idOf(bk))) { sl.backup = bk; sl.pinned.add(1); used.add(idOf(bk)); }
+    });
+    // 3rd string and beyond: manual only
+    const extras = [];
+    slots.forEach(sl => {
+      const pin = pins && pins[sl.id]; if (!pin) return;
+      Object.keys(pin).map(Number).filter(i => i >= 2).sort((a, b) => a - b).forEach(i => {
+        const p = byId(pin[i]);
+        if (p && !used.has(idOf(p))) { extras.push({ sl, i, p }); used.add(idOf(p)); }
+      });
     });
     order.forEach(i => {
       if (slots[i].pinned.has(0)) return;
-      const pick = auto[i].find(e => !starters.has(e.p));
-      if (pick) { slots[i].starter = pick.p; starters.add(pick.p); }
+      const pick = auto[i].find(e => !used.has(idOf(e.p)));
+      if (pick) { slots[i].starter = pick.p; used.add(idOf(pick.p)); }
     });
-
-    const backups = new Set(slots.filter(sl => sl.pinned.has(1)).map(sl => sl.backup));
-    // a player pinned to the 3rd string (or lower) of a slot is not also that slot's auto backup
-    const extraIn = slots.map(sl => new Set(Object.keys((pins && pins[sl.id]) || {}).map(Number).filter(i => i >= 2).map(i => byId(pins[sl.id][i])).filter(Boolean)));
     order.forEach(i => {
       if (slots[i].pinned.has(1)) return;
-      const open = auto[i].filter(e => !starters.has(e.p) && !extraIn[i].has(e.p));
-      const fresh = open.find(e => !backups.has(e.p));
-      const pick = fresh || open[0];
-      if (pick) { slots[i].backup = pick.p; slots[i].backupShared = !fresh; backups.add(pick.p); }
+      const pick = auto[i].find(e => !used.has(idOf(e.p)));
+      if (pick) { slots[i].backup = pick.p; used.add(idOf(pick.p)); }
     });
-
-    // 3rd string and beyond: manual only, never a starter elsewhere, never twice in the same slot
-    slots.forEach(sl => {
-      sl.strings[0] = sl.starter; sl.strings[1] = sl.backup;
-      const pin = pins && pins[sl.id];
-      if (!pin) return;
-      Object.keys(pin).map(Number).filter(i => i >= 2).sort((a, b) => a - b).forEach(i => {
-        const p = byId(pin[i]);
-        if (p && !starters.has(p) && !sl.strings.includes(p)) {
-          while (sl.strings.length <= i) sl.strings.push(null);
-          sl.strings[i] = p; sl.pinned.add(i);
-        }
-      });
+    slots.forEach(sl => { sl.strings[0] = sl.starter; sl.strings[1] = sl.backup; });
+    extras.forEach(({ sl, i, p }) => {
+      while (sl.strings.length <= i) sl.strings.push(null);
+      sl.strings[i] = p; sl.pinned.add(i);
     });
 
     const usedAcademy = new Set();
+    const academyUnique = (academy || []).filter((a, i, arr) => arr.findIndex(b => String(b.player_id) === String(a.player_id)) === i);
     order.forEach(i => {
       const fam = FAMILY[slots[i].role];
-      const open = (academy || [])
+      const open = academyUnique
         .filter(a => fam.includes(labelOf(a.position_id)))
         .sort((a, b) => prospectScore(b) - prospectScore(a));
-      const pick = open.find(a => !usedAcademy.has(a)) || null;
-      if (pick) { slots[i].prospect = pick; usedAcademy.add(pick); }
+      const pick = open.find(a => !usedAcademy.has(String(a.player_id))) || null;
+      if (pick) { slots[i].prospect = pick; usedAcademy.add(String(pick.player_id)); }
     });
 
     slots.forEach(s => { s.flags = findGaps(s, needs); });
@@ -258,6 +261,8 @@
     return slots;
   }
 
+  const uniqById = arr => arr.filter((p, i) => arr.findIndex(q => String(q.player_id) === String(p.player_id)) === i);
+
   // ---- rendering: pitch ---------------------------------------------------
   // Natural position badge + alternative positions ("alt CDM, RB"), shown wherever a player appears.
   function posBadge(p) {
@@ -357,7 +362,7 @@
   function depthHtml() {
     const l = active();
     if (l.alltime && !allTimeRows) { loadAllTime(); return '<div class="empty-state" style="padding: 24px;">Digging through the club history…</div>'; }
-    const seniors = poolFor(l), academy = academyFor(l), needs = l.alltime ? null : needsMap();
+    const seniors = uniqById(poolFor(l)), academy = uniqById(academyFor(l)), needs = l.alltime ? null : needsMap();
     const base = depthFor(l, seniors, academy, null, needs);
     let slots = base, banner = '', newKeys = null;
     if (sellId) {
