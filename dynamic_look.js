@@ -159,6 +159,9 @@ function planGrowth({ playerId, state, ageYears, record }) {
   // before (prev_cm). Anything else means somebody changed it by hand (the editor): respect that for good.
   if (rec.applied_cm !== null && state.height !== rec.applied_cm && state.height !== rec.prev_cm) { rec.locked = 1; return { changes: weightOnly(), record: rec }; }
   if (rec.target_cm === null) { rec.target_cm = drawAdultHeight(playerId, state.preferredposition1); rec.tempo = drawTempo(playerId); }
+  // A player who is already taller than their drawn adult height (the game made them tall, or they were set that way) simply
+  // IS that tall: their adult height is at least their current height, so the numbers never contradict each other.
+  if (state.height > rec.target_cm) rec.target_cm = state.height;
   // The model only ever raises a height: a player already taller than the model says (or that the game made taller) keeps it.
   const height = Math.max(state.height, heightAt(rec.target_cm, ageYears, rec.tempo));
   const bodytype = bodyTypeFor(height, state.bodytypecode);
@@ -484,7 +487,8 @@ class DynamicLook {
     sample.sort((a, b) => Math.abs(b.after - b.before) - Math.abs(a.after - a.before));
     const avg = arr => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
     const withW = (s, w) => Object.assign(s, { meanWeight: avg(w) });
-    return { month, before: withW(stats(before), wBefore), after: withW(stats(after), wAfter), sample: sample.slice(0, 12) };
+    const changing = sample.filter(s => s.before !== s.after || s.wBefore !== s.wAfter);
+    return { month, before: withW(stats(before), wBefore), after: withW(stats(after), wAfter), changing: changing.length, total: sample.length, sample: changing.slice(0, 12) };
   }
 
   // The model's height / weight / body type for ONE player right now (the editor's Body tab button). Nothing is queued:

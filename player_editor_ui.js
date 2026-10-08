@@ -549,7 +549,9 @@
       const row = (label, s) => `<tr><td>${label}</td><td>${s.n}</td><td>${esc(fmtHeight(Math.round(s.mean)))}</td><td>${Math.round(s.meanWeight || 0)} kg</td><td>${s.under} (${pct(s.under, s.n)}%)</td><td>${s.over}</td></tr>`;
       preview = `<table class="pe-height-table"><thead><tr><th></th><th>Players</th><th>Avg height</th><th>Avg weight</th><th>Under 5'7"</th><th>Over 6'4"</th></tr></thead>
           <tbody>${row('Now', b)}${row('After the model', a)}</tbody></table>
-        <div class="pe-hint" style="margin:8px 0 4px">Biggest changes (age, now to after, own adult height):</div>
+        ${pv.changing === 0
+          ? `<div class="pe-hint" style="margin:10px 0 4px">Nothing to change: all ${pv.total} players already match the model, so Apply would do nothing.</div>`
+          : `<div class="pe-hint" style="margin:10px 0 4px">${pv.changing} of ${pv.total} players would change. Biggest changes first (age, now to after; the number in brackets is the player's expected adult height):</div>`}
         ${pv.sample.map(s => `<div class="pe-hist-row"><span><b>${esc(s.name)}</b> <span class="pe-hint">age ${s.age}</span></span><span>${esc(fmtHeight(s.before))} to ${esc(fmtHeight(s.after))}, ${s.wBefore} to ${s.wAfter} kg <span class="pe-hint">(adult ${esc(fmtHeight(s.adult))})</span></span></div>`).join('')}`;
     }
     return `<div class="pe-card"><h3>Realistic heights</h3>
