@@ -554,7 +554,7 @@
     const dlg = document.getElementById('pe-dialog');
     const panel = dlg.querySelector('.pe-panel');
     const prevScroll = panel ? panel.scrollTop : 0;
-    const prevTab = panel ? panel.dataset.tab : null;
+    const prevTab = panel ? panel.dataset.panel : null;
     const changes = changedKeys();
     const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, hist: tabHistory }[ed.tab]();
     const staleBanner = ed.stale ? `<div class="pe-banner">${esc(ed.stale)}</div>` : '';
@@ -566,7 +566,7 @@
       </div>
       <div class="pe-main">
         <nav class="pe-nav">${TABS.map(([id, label]) => `<button class="pe-tab${ed.tab === id ? ' on' : ''}" data-tab="${id}">${label}${tabHasChanges(id) ? '<span class="pe-dot"></span>' : ''}</button>`).join('')}</nav>
-        <div class="pe-panel" data-tab="${ed.tab}">${staleBanner}${body}</div>
+        <div class="pe-panel" data-panel="${ed.tab}">${staleBanner}${body}</div>
       </div>
       <div class="pe-foot">
         <span class="pe-msg ${ed.msgKind || ''}">${esc(ed.msg || (changes.length ? `${changes.length} unsaved change${changes.length > 1 ? 's' : ''}` : 'No changes'))}</span>

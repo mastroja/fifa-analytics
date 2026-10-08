@@ -229,7 +229,7 @@
     const dlg = document.getElementById('dl-dialog');
     if (!dlg || !S) return;
     const panel = dlg.querySelector('.dl-panel');
-    const prevScroll = panel && panel.dataset.tab === S.tab ? panel.scrollTop : 0;
+    const prevScroll = panel && panel.dataset.panel === S.tab ? panel.scrollTop : 0;
     const d = S.data;
     let body;
     if (!d) body = '<p class="dl-hint">Loading…</p>';
@@ -240,7 +240,7 @@
       <div class="dl-top"><h2>Dynamic look</h2><span class="dl-pill ${enabled ? 'on' : 'off'}">${enabled ? 'On' : 'Off'}</span><button class="dl-x" data-close title="Close">✕</button></div>
       <div class="dl-msg ${S.msg ? S.msgKind || '' : 'empty'}">${esc(S.msg || '')}</div>
       <div class="dl-main"><nav class="dl-nav">${TABS.map(([id, label]) => `<button class="dl-tab${S.tab === id ? ' on' : ''}" data-tab="${id}">${label}</button>`).join('')}</nav>
-        <div class="dl-panel" data-tab="${S.tab}">${body}</div></div></div>`;
+        <div class="dl-panel" data-panel="${S.tab}">${body}</div></div></div>`;
     const np = dlg.querySelector('.dl-panel');
     if (np) np.scrollTop = prevScroll;
     if (S.focus) {
