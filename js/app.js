@@ -7496,9 +7496,6 @@ Live Editor will end each loan and then release the player from your club to fre
     // onYouthModeButtonClick below), but its active state still needs to
     // be visible without opening Settings — the header badge covers that.
     function updateYouthModeButton() {
-      const headerBadge = document.getElementById('youth-mode-header-badge');
-      if (headerBadge) headerBadge.style.display = currentYouthModeEnabled ? 'inline-block' : 'none';
-
       const statusEl = document.getElementById('settings-youth-mode-status');
       if (statusEl) {
         statusEl.textContent = currentYouthModeEnabled ? '🎓 Active (permanent)' : 'Not enabled';
@@ -7509,17 +7506,6 @@ Live Editor will end each loan and then release the player from your club to fre
 
       const rulesBtn = document.getElementById('settings-youth-mode-rules-btn');
       if (rulesBtn) rulesBtn.style.display = currentYouthModeEnabled ? '' : 'none';
-
-      // The header's own single entry point is "My Rules" (below) —
-      // the plain full-reference button now only lives in Settings
-      // (settings-youth-mode-rules-btn above), to avoid two
-      // near-identical buttons sitting in the header at once. Always
-      // visible whenever Youth Mode is on (not gated to a transfer-window
-      // date) — per the user, it should "just stay up there". The
-      // once-per-season auto-popup is separate — see
-      // renderYouthSeasonRulesReminder.
-      const seasonReminderBtn = document.getElementById('youth-mode-season-reminder-btn');
-      if (seasonReminderBtn) seasonReminderBtn.style.display = currentYouthModeEnabled ? 'inline-block' : 'none';
     }
 
     // Builds the "Squad Rating Cap" table straight from
@@ -7733,90 +7719,6 @@ Live Editor will end each loan and then release the player from your club to fre
     function closeYouthRulesDialog() {
       const dialog = document.getElementById('youth-rules-dialog');
       if (dialog && dialog.open) dialog.close();
-    }
-
-    // "My Rules" — just the one cap row, signing-type row, and transfer
-    // rule that actually apply to this team, instead of the full reference
-    // tables above. Reuses resolveYouthRulesHighlightContext's resolved
-    // indices (current league for the cap/signing rows, last season's
-    // result for the transfer rule) to pick the single applicable row out
-    // of the same underlying data the full dialog uses.
-    async function renderYouthMyRulesBody() {
-      const body = document.getElementById('youth-my-rules-body');
-      if (!body) return;
-
-      body.innerHTML = `<p class="youth-rules-note">Loading…</p>`;
-
-      const { capIndex, transferSectionIndex, transferRowIndex } = await resolveYouthRulesHighlightContext();
-      const capRows = buildYouthRulesCapRows();
-      const signingRows = buildYouthSigningTypeRows(capRows);
-      const capRow = capIndex !== null ? capRows[capIndex] : null;
-      const signingRow = capIndex !== null ? signingRows[capIndex] : null;
-      const transferSection = transferSectionIndex !== null ? YOUTH_TRANSFER_RULES[transferSectionIndex] : null;
-      const transferOutcome = transferSection && transferRowIndex !== null ? transferSection.rules[transferRowIndex] : null;
-
-      if (!capRow && !transferOutcome) {
-        body.innerHTML = `<p class="youth-rules-note">Nothing to show yet — no recognized league on record for this save.</p>`;
-        return;
-      }
-
-      body.innerHTML = `
-        ${capRow ? `
-          <div class="youth-rules-section">
-            <h4>📊 ${capRow.label}</h4>
-            <table class="youth-rules-cap-table">
-              <thead><tr><th class="num">Avg OVR</th><th class="num">Max OVR</th><th class="num">Allowed Over</th></tr></thead>
-              <tbody><tr><td class="num">${capRow.avg}</td><td class="num">${capRow.maxDisplay}</td><td class="num">${capRow.allowanceDisplay}</td></tr></tbody>
-            </table>
-            <p class="youth-rules-note">Checked at the end of each season — go over the allowance and you'll get a warning naming who to sell.</p>
-          </div>
-        ` : ''}
-        ${signingRow ? `
-          <div class="youth-rules-section">
-            <h4>🧾 Signing Types by OVR</h4>
-            <table class="youth-rules-cap-table">
-              <thead><tr><th class="num">Prospect</th><th class="num">Squad Player</th><th class="num">Marquee</th></tr></thead>
-              <tbody><tr><td class="num">${signingRow.prospect}</td><td class="num">${signingRow.squad}</td><td class="num">${signingRow.marquee}</td></tr></tbody>
-            </table>
-          </div>
-        ` : ''}
-        ${transferOutcome ? `
-          <div class="youth-rules-section">
-            <h4>📝 Transfer Rule <span style="font-weight: 400; font-size: 12px; color: var(--text-dim);">(${transferSection.league}, based on last season's result)</span></h4>
-            <ul class="season-review-players">
-              <li><span>${transferOutcome[0]}</span><span>${transferOutcome[1]}</span></li>
-            </ul>
-          </div>
-        ` : ''}
-      `;
-    }
-
-    async function openYouthMyRulesDialog() {
-      const dialog = document.getElementById('youth-my-rules-dialog');
-      if (dialog && !dialog.open) dialog.showModal();
-      await renderYouthMyRulesBody();
-
-      // Opening it (whether via the header button or the auto-check below)
-      // counts as "seen" for the season — stops the header button's pulse.
-      const seasonLabel = computeCurrentSeasonLabel();
-      if (seasonLabel) {
-        try { localStorage.setItem(youthSeasonReminderStorageKey(), seasonLabel); } catch (e) { /* no persistence available */ }
-      }
-      const btn = document.getElementById('youth-mode-season-reminder-btn');
-      if (btn) btn.classList.remove('youth-reminder-pulse');
-    }
-
-    function closeYouthMyRulesDialog() {
-      const dialog = document.getElementById('youth-my-rules-dialog');
-      if (dialog && dialog.open) dialog.close();
-    }
-
-    // Swaps My Rules for the full reference dialog rather than stacking
-    // them — closing one native <dialog> before showModal()-ing another
-    // keeps only one on the top layer at a time.
-    function openFullYouthRulesFromMyRules() {
-      closeYouthMyRulesDialog();
-      openYouthRulesDialog();
     }
 
     async function onYouthModeButtonClick() {
@@ -8184,40 +8086,6 @@ Live Editor will end each loan and then release the player from your club to fre
       `, 'No injuries recorded this season.');
     }
 
-    // New-season reminder for Youth Squad Career Mode's rules (who we can
-    // sign, who we must sell, our squad cap) — separate from the
-    // overrated-squad VIOLATION warning above, which only fires when
-    // there's an actual problem. This is a plain reminder that fires every
-    // season regardless of violations: the header "⚠️ Squad Rules" button
-    // stays up permanently whenever Youth Mode is on (see
-    // updateYouthModeButton), and this just handles auto-popping the "My
-    // Rules" dialog once per season. Tracked via localStorage (same
-    // pattern as the monthly warning-popup re-trigger above) rather than a
-    // new DB column/migration, since this is purely a client-side "have I
-    // shown this yet" flag.
-    function youthSeasonReminderStorageKey() {
-      return `youthSeasonReminderShown:${currentSaveId}`;
-    }
-
-    // No auto-popup (too intrusive, per the user) — instead the header
-    // button just pulses/blinks (see .youth-reminder-pulse) until it's
-    // actually clicked open at least once this season, at which point
-    // openYouthMyRulesDialog marks it seen and the pulse stops.
-    function renderYouthSeasonRulesReminder() {
-      const btn = document.getElementById('youth-mode-season-reminder-btn');
-      if (!btn) return;
-      if (!currentYouthModeEnabled) { btn.classList.remove('youth-reminder-pulse'); return; }
-
-      const seasonLabel = computeCurrentSeasonLabel();
-      let alreadySeen = false;
-      try {
-        alreadySeen = localStorage.getItem(youthSeasonReminderStorageKey()) === seasonLabel;
-      } catch (e) {
-        alreadySeen = false; // localStorage unavailable — just never pulses
-      }
-      btn.classList.toggle('youth-reminder-pulse', !!seasonLabel && !alreadySeen);
-    }
-
     // Session-only memory of which (playerId, styleName) alerts have
     // already triggered the attention-grabbing popup (see
     // showPlaystyleAlertPopup) — resets on app restart, same idea as
@@ -8325,8 +8193,6 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     function renderYouthModeWarning() {
-      renderYouthSeasonRulesReminder();
-
       const banner = document.getElementById('youth-mode-warning-banner');
       if (!banner) return;
 
@@ -9460,8 +9326,11 @@ Live Editor will end each loan and then release the player from your club to fre
         const h = st.headline, p = h.progress;
         const pct = p && p.total ? Math.round((p.done / p.total) * 100) : 0;
         card.style.display = '';
-        card.className = `challenge-card tone-${h.tone}`;
-        card.innerHTML = `
+        const quiet = h.kind === 'clear' || h.kind === 'none';
+        card.className = `challenge-card tone-${h.tone}${quiet ? ' compact' : ''}`;
+        card.innerHTML = quiet
+          ? `<div class="challenge-card-label"><span>🎯 Challenge · ${challengeEscape(h.kind === 'clear' ? 'All clear this season' : h.title)}</span><span>Details ›</span></div>`
+          : `
           <div class="challenge-card-label"><span>🎯 Challenge Status</span><span>Details ›</span></div>
           <div class="challenge-card-title">${challengeEscape(h.title)}</div>
           <div class="challenge-card-detail">${challengeEscape(h.detail)}</div>
@@ -9475,7 +9344,6 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     function openChallengeDrawer() {
-      if (!challengeStatus) return;
       renderChallengeDrawer();
       document.getElementById('challenge-drawer').classList.add('open');
       document.getElementById('challenge-drawer').setAttribute('aria-hidden', 'false');
@@ -9491,7 +9359,8 @@ Live Editor will end each loan and then release the player from your club to fre
     function renderChallengeDrawer() {
       const body = document.getElementById('challenge-drawer-body');
       const st = challengeStatus;
-      if (!body || !st) return;
+      if (!body) return;
+      if (!st) { body.innerHTML = '<p class="youth-rules-note">Challenge Mode needs Youth Mode enabled and a synced save.</p>'; return; }
       const e = challengeEscape;
       const slotRows = [];
       if (st.signings) {
@@ -9579,6 +9448,16 @@ Live Editor will end each loan and then release the player from your club to fre
       if (!currentSaveId || !window.api) return;
       const res = await window.api.cancelChallengeBan(currentSaveId, banId);
       if (res && res.success) await refreshChallenge();
+    }
+
+    // Youth Pipeline card: Future Stars and the academy roster share one
+    // card (both bodies stay rendered; this only flips which is visible).
+    function setYouthPipelineView(view) {
+      const academy = view === 'academy';
+      document.getElementById('home-youth-body').style.display = academy ? 'none' : '';
+      document.getElementById('home-youth-academy-body').style.display = academy ? '' : 'none';
+      document.getElementById('youth-pipeline-stars-btn').classList.toggle('active', !academy);
+      document.getElementById('youth-pipeline-academy-btn').classList.toggle('active', academy);
     }
 
     function renderHomeDashboard() {
