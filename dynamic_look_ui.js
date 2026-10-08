@@ -13,7 +13,7 @@
     ['undo', 'Undo']
   ];
   const FEATURES = [
-    ['hair', 'Haircuts and new styles', 'Younger players change style more often; styles stay within the ones that suit their skin tone, and long hair usually gets cut.'],
+    ['hair', 'Haircuts and new styles', 'Younger players change style more often; styles stay within the ones that suit their skin tone, and long hair usually gets cut. Uncategorised styles are never picked, and players wearing one keep it (those are manual choices).'],
     ['beard', 'Beard growth and shaving', 'Adults can grow stubble into a full beard over months, trim it or shave it off. About a third never grow one.'],
     ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months; veterans from 35 slowly go silver.'],
     ['boots', 'Boots', 'Mostly new-season switches, usually staying with the same brand. Only boots linked to a game id are used.'],

@@ -248,7 +248,10 @@ function planMonth(p) {
   }
 
   // --- haircut / new style, always within the styles suggested for the skin tone ---
-  if (features.hair && budget > 0 && state.hairtypecode !== 0 && rng() < hairChangeRate(age) * prof.fashion) {
+  // Uncategorised styles can only be chosen by hand: they are never picked, and a player already wearing one (or one the
+  // catalog does not know) keeps it, since it was a manual choice.
+  const curHair = hairById.get(state.hairtypecode);
+  if (features.hair && budget > 0 && state.hairtypecode !== 0 && curHair && curHair.cat !== null && rng() < hairChangeRate(age) * prof.fashion) {
     const cats = suggestedCats(state.skintonecode || 50);
     const pool = ((p.catalog && p.catalog.hair) || []).filter(h => h.cat !== null && cats.includes(h.cat) && h.id !== state.hairtypecode);
     const curLen = (hairById.get(state.hairtypecode) || {}).length || null;
