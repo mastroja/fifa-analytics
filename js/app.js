@@ -3483,6 +3483,7 @@ let currentCalendar = [];
     });
 
     function renderTableRows() {
+      if (typeof SquadViews !== 'undefined' && SquadViews.mode() !== 'list') return; // Depth/Age views own the tab
       const tbody = document.getElementById('stats-body');
       tbody.innerHTML = '';
 
@@ -4130,6 +4131,7 @@ Live Editor will end each loan and then release the player from your club to fre
       }
 
       careerTotalsCache = null;
+      if (typeof SquadViews !== 'undefined') SquadViews.refresh();
       renderHomeDashboard();
       filterAndRenderTransfers(); // Loaned view reads currentPlayers directly
     }
@@ -9282,6 +9284,7 @@ Live Editor will end each loan and then release the player from your club to fre
           </tbody>
         </table>
       `, 'No youth academy data loaded.');
+      if (typeof SquadViews !== 'undefined') SquadViews.refresh();
     }
 
     function refreshYouthAcademy() {
