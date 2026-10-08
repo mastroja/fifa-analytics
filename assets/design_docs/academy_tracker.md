@@ -7,3 +7,5 @@ Squad tab toggle: List / Depth / **Academy**. Code: `js/academy_tracker.js` (UI)
 - Watchlist: star a prospect. Their OVR and potential range at that moment are frozen, so alerts can say: OVR +/-3 since added, potential range narrowed, ceiling +/-3, promoted, left the academy. Optional note per player.
 - Range-based history and alerts only show while `SHOW_TRUE_POTENTIAL` is on, so they never leak a range the app is hiding.
 - Limits: history is per season (the importer upserts one row per player and season), and only the user's own academy is visible; there is no data on other clubs' regens.
+
+Squad readiness column: a verdict badge plus the one comparison behind it. Ready = OVR level with or above your weakest senior player at the same natural position; Close = within 3 below; Developing = further below; Open spot = no senior player at that position. A legend sits above the tables.

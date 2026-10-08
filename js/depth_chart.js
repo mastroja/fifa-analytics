@@ -1,11 +1,14 @@
-// Squad tab alternate views: List (the existing table) / Depth (pitch + pipeline) / Age (age-band grid).
+// Squad tab alternate views: List (the existing table) / Depth (pitch) / Academy (js/academy_tracker.js).
 //
-// Depth view: pick a formation; every slot shows the best eligible starter, a backup and the best academy prospect
-// for that role. Slots are filled scarcest-role-first so one flexible player is not burned on a deep position.
+// Depth view: named lineups (Default = auto, Starting XI, Rotation / Reserves, plus any the user creates), each with
+// its own formation and manual arrangement. Every slot is a list of "strings" (1st, 2nd, 3rd ...): the first two are
+// auto-filled (scarcest role first, so one flexible player is not burned on a deep position) unless the user pinned
+// someone by drag & drop or the slot's edit dialog; further strings are manual only.
 // The pure logic (buildDepth / findGaps) takes plain arrays so it can be unit-tested via module.exports.
 //
-// Reads app.js globals at render time only (let/const ones by bare name, they are not window properties): currentPlayers, currentYouthAcademy, getPositionInfo, computeAge,
-// computeMonthsUntilExpiry, buildPlayerAvatarHtml, openPlayerProfile.
+// Reads app.js globals at render time only (let/const ones by bare name, they are not window properties):
+// currentPlayers, currentYouthAcademy, POSITION_SORT_ORDER; functions via window: getPositionInfo, computeAge,
+// computeMonthsUntilExpiry, buildPlayerAvatarHtml, openPlayerProfile, calculate* (face stats), formatHeight.
 (function (root) {
   'use strict';
 
@@ -34,6 +37,9 @@
   const DEFAULT_FORMATION = '4-3-3';
 
   const OVR_ALT_PENALTY = 6; // an off-position (alt_positions) player must be this much better to beat a natural one
+  const STRING_NAMES = ['1st', '2nd', '3rd'];
+  const stringName = i => STRING_NAMES[i] || `${i + 1}th`;
+  const SHOWN_STRINGS = 3;   // strings drawn on a pitch card; the rest are "+n more"
 
   function labelOf(posId) { return root.getPositionInfo(posId).label; }
   function altLabels(p) {
@@ -51,44 +57,61 @@
 
   // seniors: player rows; academy: academy rows; exclude: Set of player_ids treated as sold.
   // needs: optional Map player_id -> watchlist player (computeTeamNeeds in app.js) so the Team Needs reasons become flags.
-  // pins: optional { slotId: { starter: player_id, backup: player_id } } manual arrangement, honoured before the auto fill.
-  function buildDepth(formation, seniors, academy, exclude, needs, pins) {
+  // pins: optional { slotId: { stringIndex: player_id } } manual arrangement, honoured before the auto fill.
+  // autoExclude: optional Set of player_ids the AUTO fill must not use (a pin can still place them) — Reserves lineups.
+  function buildDepth(formation, seniors, academy, exclude, needs, pins, autoExclude) {
     const slots = (FORMATIONS[formation] || FORMATIONS[DEFAULT_FORMATION]).map(([role, x, y], i) => ({
-      id: i, role, x, y, starter: null, backup: null, backupShared: false, prospect: null
+      id: i, role, x, y, starter: null, backup: null, backupShared: false, prospect: null, strings: [null, null], pinned: new Set()
     }));
     const pool = seniors.filter(p => !(exclude && exclude.has(p.player_id)));
     const eligible = slots.map(s => pool
       .map(p => ({ p, tier: tierFor(p, s.role) }))
       .filter(e => e.tier !== null)
       .sort((a, b) => scoreOf(b.p, b.tier) - scoreOf(a.p, a.tier)));
+    const auto = eligible.map(list => autoExclude ? list.filter(e => !autoExclude.has(e.p.player_id)) : list);
 
-    const order = slots.map((s, i) => i).sort((a, b) => eligible[a].length - eligible[b].length || a - b);
+    const order = slots.map((s, i) => i).sort((a, b) => auto[a].length - auto[b].length || a - b);
     const starters = new Set();
     const byId = id => pool.find(p => String(p.player_id) === String(id));
-    const pinnedStart = new Set(), pinnedBack = new Set();
+    const pinOf = (sl, idx) => (pins && pins[sl.id] && pins[sl.id][idx] != null) ? byId(pins[sl.id][idx]) : null;
+
     slots.forEach(sl => {
-      const pin = pins && pins[sl.id]; if (!pin) return;
-      const st = pin.starter != null ? byId(pin.starter) : null;
-      if (st && !starters.has(st)) { sl.starter = st; sl.pinnedStarter = true; starters.add(st); pinnedStart.add(sl.id); }
+      const st = pinOf(sl, 0);
+      if (st && !starters.has(st)) { sl.starter = st; sl.pinned.add(0); starters.add(st); }
     });
     slots.forEach(sl => {
-      const pin = pins && pins[sl.id]; if (!pin || pin.backup == null) return;
-      const bk = byId(pin.backup);
-      if (bk && !starters.has(bk)) { sl.backup = bk; sl.pinnedBackup = true; pinnedBack.add(sl.id); }
+      const bk = pinOf(sl, 1);
+      if (bk && !starters.has(bk)) { sl.backup = bk; sl.pinned.add(1); }
     });
     order.forEach(i => {
-      if (pinnedStart.has(i)) return;
-      const pick = eligible[i].find(e => !starters.has(e.p));
+      if (slots[i].pinned.has(0)) return;
+      const pick = auto[i].find(e => !starters.has(e.p));
       if (pick) { slots[i].starter = pick.p; starters.add(pick.p); }
     });
 
-    const backups = new Set(slots.filter(sl => sl.pinnedBackup).map(sl => sl.backup));
+    const backups = new Set(slots.filter(sl => sl.pinned.has(1)).map(sl => sl.backup));
+    // a player pinned to the 3rd string (or lower) of a slot is not also that slot's auto backup
+    const extraIn = slots.map(sl => new Set(Object.keys((pins && pins[sl.id]) || {}).map(Number).filter(i => i >= 2).map(i => byId(pins[sl.id][i])).filter(Boolean)));
     order.forEach(i => {
-      if (pinnedBack.has(i)) return;
-      const open = eligible[i].filter(e => !starters.has(e.p));
+      if (slots[i].pinned.has(1)) return;
+      const open = auto[i].filter(e => !starters.has(e.p) && !extraIn[i].has(e.p));
       const fresh = open.find(e => !backups.has(e.p));
       const pick = fresh || open[0];
       if (pick) { slots[i].backup = pick.p; slots[i].backupShared = !fresh; backups.add(pick.p); }
+    });
+
+    // 3rd string and beyond: manual only, never a starter elsewhere, never twice in the same slot
+    slots.forEach(sl => {
+      sl.strings[0] = sl.starter; sl.strings[1] = sl.backup;
+      const pin = pins && pins[sl.id];
+      if (!pin) return;
+      Object.keys(pin).map(Number).filter(i => i >= 2).sort((a, b) => a - b).forEach(i => {
+        const p = byId(pin[i]);
+        if (p && !starters.has(p) && !sl.strings.includes(p)) {
+          while (sl.strings.length <= i) sl.strings.push(null);
+          sl.strings[i] = p; sl.pinned.add(i);
+        }
+      });
     });
 
     const usedAcademy = new Set();
@@ -134,148 +157,273 @@
 
   const gapKey = (slot, f) => slot.id + ':' + f.type;
 
-  // ---- rendering ----------------------------------------------------------
+  // ---- state --------------------------------------------------------------
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
     get(k, d) { try { return root.localStorage.getItem('squadview:' + k) || d; } catch (e) { return d; } },
     set(k, v) { try { root.localStorage.setItem('squadview:' + k, v); } catch (e) { /* ignore */ } }
   };
+  const $ = id => root.document.getElementById(id);
+  const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 
   let mode = 'list';
-  let formation = DEFAULT_FORMATION;
-  let sellId = ''; // "what if I sell X"
-  let pins = {};   // { formation: { slotId: { starter, backup } } } — manual arrangement, persisted
+  let sellId = '';       // "what if I sell X"
   let lastSlots = [];
-  const pinsNow = () => pins[formation] || (pins[formation] = {});
+  let edit = null;       // { slot, idx } while the slot edit dialog is open
+  let creating = false;  // the "new lineup" form is open
+
+  // Lineups: Default is auto and locked; the others carry a formation + pins. `reserve` lineups auto-fill without the
+  // Starting XI's starters, so "Rotation / Reserves" is naturally the next eleven.
+  function freshLineups(formation) {
+    return {
+      active: 'xi',
+      list: [
+        { id: 'default', name: 'Default', core: true, locked: true, formation: DEFAULT_FORMATION, pins: {} },
+        { id: 'xi', name: 'Starting XI', core: true, formation: formation || DEFAULT_FORMATION, pins: {} },
+        { id: 'rot', name: 'Rotation / Reserves', core: true, reserve: true, formation: formation || DEFAULT_FORMATION, pins: {} }
+      ]
+    };
+  }
+  let lineups = freshLineups();
+  const lineupById = id => lineups.list.find(l => l.id === id);
+  const active = () => lineupById(lineups.active) || lineups.list[1];
+  const pinsOf = l => l.locked ? {} : l.pins;
+  const saveLineups = () => store.set('lineups', JSON.stringify(lineups));
+
+  function loadLineups() {
+    try {
+      const saved = JSON.parse(store.get('lineups', 'null'));
+      if (saved && Array.isArray(saved.list) && saved.list.length) {
+        lineups = saved;
+        ['default', 'xi', 'rot'].forEach(id => { if (!lineupById(id)) lineups = freshLineups(); });
+        if (!lineupById(lineups.active)) lineups.active = 'xi';
+        return;
+      }
+    } catch (e) { /* fall through to migration */ }
+    // Migrate the pre-lineup storage (one formation + pins per formation, starter/backup keys).
+    const f = store.get('formation', DEFAULT_FORMATION);
+    lineups = freshLineups(FORMATIONS[f] ? f : DEFAULT_FORMATION);
+    try {
+      const old = JSON.parse(store.get('pins', '{}')) || {};
+      const forF = old[lineups.list[1].formation] || {};
+      Object.keys(forF).forEach(slot => {
+        const o = {}; if (forF[slot].starter != null) o[0] = forF[slot].starter; if (forF[slot].backup != null) o[1] = forF[slot].backup;
+        if (Object.keys(o).length) lineups.list[1].pins[slot] = o;
+      });
+    } catch (e) { /* ignore */ }
+  }
 
   const seniorsNow = () => (typeof currentPlayers !== 'undefined' ? currentPlayers : []).filter(p => p.__clubStatus === 'normal');
   const academyNow = () => typeof currentYouthAcademy !== 'undefined' ? currentYouthAcademy || [] : [];
+  const needsMap = () => new Map((typeof computeTeamNeeds === 'function' ? computeTeamNeeds() : []).map(p => [p.player_id, p]));
 
+  // Depth for a lineup (Reserves exclude the Starting XI's starters from the auto fill).
+  function depthFor(l, seniors, academy, exclude, needs) {
+    let autoExclude = null;
+    if (l.reserve) {
+      const xi = lineupById('xi');
+      autoExclude = new Set(buildDepth(xi.formation, seniors, academy, exclude, null, pinsOf(xi)).map(s => s.starter && s.starter.player_id).filter(v => v != null));
+    }
+    return buildDepth(l.formation, seniors, academy, exclude, needs, pinsOf(l), autoExclude);
+  }
+
+  // ---- rendering: pitch ---------------------------------------------------
   function ringClass(age) { return age === null ? '' : age < 21 ? 'ring-young' : age >= 30 ? 'ring-old' : ''; }
 
-  // kind: starter | backup (draggable, drop targets) | prospect | top (draggable only)
-  function personHtml(p, kind, slotId, pinned) {
-    const dropAttrs = (kind === 'starter' || kind === 'backup') ? ` data-slot="${slotId}" data-kind="${kind}"` : '';
-    if (!p) return `<div class="dc-row dc-empty"${dropAttrs}>${kind === 'starter' ? 'Vacant' : kind === 'backup' ? 'No backup' : 'No prospect'}</div>`;
+  // kind: string (draggable, drop target; idx = string index) | prospect | top (draggable only) | cand (edit dialog list)
+  function personHtml(p, kind, slotId, idx, pinned, locked) {
+    const isString = kind === 'string';
+    const dropAttrs = isString && !locked ? ` data-slot="${slotId}" data-idx="${idx}"` : '';
+    const cls = isString ? (idx === 0 ? 'dc-starter' : 'dc-backup') : `dc-${kind}`;
+    if (!p) return `<div class="dc-row dc-empty"${dropAttrs}>${idx === 0 ? 'Vacant' : idx === 1 ? 'No backup' : kind === 'prospect' ? 'No prospect' : '—'}</div>`;
     const age = root.computeAge(p.dob);
-    const size = kind === 'starter' ? 38 : 28;
+    const size = isString && idx === 0 ? 38 : 28;
     const ovr = kind === 'prospect'
       ? `${p.overall || '?'}<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>`
       : `${p.overall || '?'}`;
-    const tag = kind === 'backup' ? '<span class="dc-tag">B</span>' : kind === 'prospect' ? '<span class="dc-tag">🎓</span>' : '';
-    const drag = kind === 'prospect' ? '' : ' draggable="true"';
-    return `<div class="dc-row dc-${kind}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
+    const tag = isString && idx > 0 ? `<span class="dc-tag">${idx + 1}</span>` : kind === 'prospect' ? '<span class="dc-tag">🎓</span>' : '';
+    const drag = kind === 'prospect' || locked ? '' : ' draggable="true"';
+    return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
-      ${tag}<span class="dc-name">${esc(p.name)}</span>${kind === 'top' ? `<span class="dc-tag">${root.getPositionInfo(p.position_id).label}</span>` : ''}<span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>
+      ${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>
     </div>`;
   }
 
-  function slotHtml(s, newKeys) {
+  function flagLabel(f) {
+    return f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring';
+  }
+
+  function slotHtml(s, newKeys, locked) {
     const worst = s.flags.find(f => f.severity === 'high') || s.flags.find(f => f.severity === 'mid') || s.flags[0];
-    const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring'}</span>`).join('');
+    const flagHtml = s.flags.map(f => `<span class="dc-flag sev-${f.severity}${newKeys && newKeys.has(gapKey(s, f)) ? ' dc-new' : ''}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join('');
+    const shown = Math.min(Math.max(s.strings.length, 2), SHOWN_STRINGS);
+    const rows = [];
+    for (let i = 0; i < shown; i++) rows.push(personHtml(s.strings[i] || null, 'string', s.id, i, s.pinned.has(i), locked));
+    const more = s.strings.length > SHOWN_STRINGS ? `<div class="dc-more">+${s.strings.length - SHOWN_STRINGS} more · edit to see</div>` : '';
+    const editBtn = locked ? '' : `<button class="dc-edit" title="Edit ${s.role} depth: 1st, 2nd, 3rd string…" onclick="event.stopPropagation(); SquadViews.editSlot(${s.id})">✎</button>`;
     return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${s.y}%">
-      <div class="dc-slot-head"><strong>${s.role}</strong>${flagHtml}</div>
-      ${personHtml(s.starter, 'starter', s.id, s.pinnedStarter)}${personHtml(s.backup, 'backup', s.id, s.pinnedBackup)}${personHtml(s.prospect, 'prospect', s.id)}
+      <div class="dc-slot-head"><strong>${s.role}</strong>${flagHtml}${editBtn}</div>
+      ${rows.join('')}${more}${personHtml(s.prospect, 'prospect', s.id, 0)}
     </div>`;
   }
 
-  function pipelineHtml() {
-    const groups = {};
-    academyNow().forEach(a => {
-      const info = root.getPositionInfo(a.position_id);
-      (groups[info.label] = groups[info.label] || []).push(a);
-    });
-    const labels = Object.keys(groups).sort((a, b) => (POSITION_SORT_ORDER[a] || 99) - (POSITION_SORT_ORDER[b] || 99));
-    if (!labels.length) return '<div class="empty-state">No academy prospects loaded.</div>';
-    return labels.map(l => `<div class="dc-pipe-col"><div class="dc-pipe-head">${l} <span class="dc-pipe-n">${groups[l].length}</span></div>
-      ${groups[l].sort((a, b) => prospectScore(b) - prospectScore(a)).map(a => personHtml(a, 'prospect')).join('')}</div>`).join('');
+  // ---- rendering: bottom section (squad + academy by position) -------------
+  function chipHtml(p, kind) {
+    const age = root.computeAge(p.dob);
+    const extra = kind === 'academy' ? `<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>` : '';
+    return `<div class="dc-chip ${kind === 'academy' ? 'dc-chip-academy' : ''}" data-pid="${esc(p.player_id)}"${kind === 'academy' ? '' : ' draggable="true"'} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
+      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 24, '50%')}</span>
+      <span class="dc-chip-name">${esc(p.name)}</span><span class="dc-chip-ovr">${p.overall || '?'}${extra}</span></div>`;
   }
 
-  // Best senior players per natural position, draggable onto the pitch.
-  function topByPositionHtml(seniors) {
-    const groups = {};
-    seniors.forEach(p => { const l = root.getPositionInfo(p.position_id).label; (groups[l] = groups[l] || []).push(p); });
-    const labels = Object.keys(groups).sort((a, b) => (POSITION_SORT_ORDER[a] || 99) - (POSITION_SORT_ORDER[b] || 99));
+  function positionTableHtml(seniors) {
+    const rows = {};
+    const bucket = l => rows[l] || (rows[l] = { squad: [], academy: [] });
+    seniors.forEach(p => bucket(labelOf(p.position_id)).squad.push(p));
+    academyNow().forEach(a => bucket(labelOf(a.position_id)).academy.push(a));
+    const labels = Object.keys(rows).sort((a, b) => (POSITION_SORT_ORDER[a] || 99) - (POSITION_SORT_ORDER[b] || 99));
     if (!labels.length) return '<div class="empty-state">No squad data loaded.</div>';
-    return labels.map(l => `<div class="dc-pipe-col"><div class="dc-pipe-head">${l} <span class="dc-pipe-n">${groups[l].length}</span></div>
-      ${groups[l].sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0)).slice(0, 3).map(p => personHtml(p, 'top')).join('')}</div>`).join('');
+    const byOvr = (a, b) => Number(b.overall || 0) - Number(a.overall || 0);
+    return `<div class="dc-pos-table">
+      <div class="dc-pos-head"><span>Position</span><span>Best in the squad</span><span>Academy prospects</span></div>
+      ${labels.map(l => {
+        const r = rows[l]; const info = root.getPositionInfo(l === 'SUB' ? -1 : (seniors.concat(academyNow()).find(p => labelOf(p.position_id) === l) || {}).position_id);
+        return `<div class="dc-pos-row"><span class="dc-pos-label"><span class="pos-badge pos-${info.group}">${l}</span></span>
+          <div class="dc-pos-cell">${r.squad.sort(byOvr).slice(0, 3).map(p => chipHtml(p, 'squad')).join('') || '<span class="dc-none">—</span>'}${r.squad.length > 3 ? `<span class="dc-pipe-n">+${r.squad.length - 3}</span>` : ''}</div>
+          <div class="dc-pos-cell">${r.academy.sort((a, b) => prospectScore(b) - prospectScore(a)).slice(0, 3).map(p => chipHtml(p, 'academy')).join('') || '<span class="dc-none">—</span>'}${r.academy.length > 3 ? `<span class="dc-pipe-n">+${r.academy.length - 3}</span>` : ''}</div>
+        </div>`;
+      }).join('')}</div>`;
   }
-
-  const needsMap = () => new Map((typeof computeTeamNeeds === 'function' ? computeTeamNeeds() : []).map(p => [p.player_id, p]));
 
   function depthHtml() {
+    const l = active();
     const seniors = seniorsNow(), academy = academyNow(), needs = needsMap();
-    const base = buildDepth(formation, seniors, academy, null, needs, pinsNow());
+    const base = depthFor(l, seniors, academy, null, needs);
     let slots = base, banner = '', newKeys = null;
     if (sellId) {
       const sold = seniors.find(p => String(p.player_id) === String(sellId));
-      slots = buildDepth(formation, seniors, academy, new Set([sold && sold.player_id]), needs, pinsNow());
+      slots = depthFor(l, seniors, academy, new Set([sold && sold.player_id]), needs);
       const before = new Set(); base.forEach(s => s.flags.forEach(f => before.add(gapKey(s, f))));
       newKeys = new Set(); const fresh = [];
       slots.forEach(s => s.flags.forEach(f => { const k = gapKey(s, f); if (!before.has(k)) { newKeys.add(k); fresh.push(`${s.role}: ${f.text}`); } }));
       banner = `<div class="dc-banner ${fresh.length ? 'bad' : 'ok'}">If you sell <strong>${esc(sold ? sold.name : '?')}</strong>: ${fresh.length ? `${fresh.length} new gap${fresh.length > 1 ? 's' : ''} — ${fresh.map(esc).join('; ')}` : 'no new gaps.'}</div>`;
     }
     lastSlots = slots;
-    const hasPins = Object.keys(pinsNow()).length > 0;
     const gapCount = slots.reduce((n, s) => n + s.flags.filter(f => f.severity !== 'info').length, 0);
-    const sellOptions = seniors.slice().sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0))
-      .map(p => `<option value="${p.player_id}"${String(p.player_id) === String(sellId) ? ' selected' : ''}>${esc(p.name)} (${p.overall || '?'})</option>`).join('');
-    return `<div class="dc-controls">
-        <label>Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
-        <label>What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>
-        <span class="dc-legend"><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · B backup · 🎓 academy · ${gapCount} gap${gapCount === 1 ? '' : 's'} · drag players to rearrange</span>
-        ${hasPins ? '<button class="home-toggle-btn" onclick="SquadViews.resetOrder()">Reset order</button>' : ''}
-      </div>${banner}
-      <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys)).join('')}</div></div>
-      <h4 class="dc-section">Top players by position</h4><div class="dc-pipeline">${topByPositionHtml(seniors)}</div>
-      <h4 class="dc-section">Academy pipeline by position</h4><div class="dc-pipeline">${pipelineHtml()}</div>`;
+    const hint = l.locked ? 'Default is auto-generated and can’t be edited — switch to Starting XI or create a lineup to arrange players.'
+      : l.reserve ? 'Reserves auto-fill with the players the Starting XI doesn’t use. Drag players or use ✎ to arrange. Saved automatically.'
+        : 'Drag players, or use ✎ on a position to pick 1st / 2nd / 3rd string. Saved automatically.';
+    return `<div class="dc-legend-bar"><span><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · 🎓 academy · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
+      ${banner}
+      <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys, !!l.locked)).join('')}</div></div>
+      <h4 class="dc-section">Squad and academy by position</h4>${positionTableHtml(seniors)}`;
   }
 
-  // Home "Squad Gaps" card: replaces the old Expiring Contracts + Team Needs cards. Same flags as the Depth view,
-  // for the chosen formation, worst first; plus watchlist players who are not in the starting shape.
-  function flagLabel(f) {
-    return f.type === 'nobackup' ? 'no backup' : f.type === 'nostarter' ? 'vacant' : f.type === 'expiring-uncovered' ? 'expiring · no cover' : f.type === 'need' ? f.label : 'expiring';
-  }
-  function renderGapsCard() {
-    const el = $('home-squad-gaps-body'); if (!el) return;
+  // ---- toolbar (next to the List / Depth / Academy toggle) -----------------
+  function controlsHtml() {
+    const l = active();
     const seniors = seniorsNow();
-    if (!seniors.length) { el.innerHTML = '<div class="empty-state" style="padding: 12px;">No squad data loaded.</div>'; return; }
-    const needs = needsMap();
-    const slots = buildDepth(formation, seniors, academyNow(), null, needs, pinsNow());
-    const rank = { high: 0, mid: 1, info: 2 };
-    const rows = slots.map(s => ({ s, worst: s.flags.slice().sort((a, b) => rank[a.severity] - rank[b.severity])[0] }))
-      .filter(r => r.worst && r.worst.severity !== 'info')
-      .sort((a, b) => rank[a.worst.severity] - rank[b.worst.severity]);
-    const starters = new Set(slots.map(s => s.starter && s.starter.player_id));
-    const bench = [...needs.values()].filter(p => !starters.has(p.player_id)).slice(0, 5);
-    const rowHtml = r => `<tr class="clickable-name" ${r.s.starter ? `onclick="openPlayerProfile('${r.s.starter.player_id}')"` : ''}>
-      <td><span class="pos-badge">${r.s.role}</span></td><td>${r.s.starter ? esc(r.s.starter.name) : '<em>Vacant</em>'}</td>
-      <td>${r.s.flags.map(f => `<span class="dc-flag sev-${f.severity}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join(' ')}</td></tr>`;
-    el.innerHTML = `<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 6px;">Formation ${formation} · hover a flag for detail</div>`
-      + (rows.length ? `<table class="sub-table"><thead><tr><th>Slot</th><th>Starter</th><th>Flags</th></tr></thead><tbody>${rows.slice(0, 8).map(rowHtml).join('')}</tbody></table>`
-        : '<div class="empty-state" style="padding: 12px;">No gaps in the starting shape.</div>')
-      + (bench.length ? `<div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin: 12px 0 6px;">Watchlist (outside the starting shape)</div>
-        <table class="sub-table"><tbody>${bench.map(p => `<tr class="clickable-name" onclick="openPlayerProfile('${p.player_id}')"><td>${esc(p.name)}</td><td>${root.getPositionInfo(p.position_id).label}</td><td>${p.overall || '?'}</td><td>${esc(p.__reasons.join(', '))}</td></tr>`).join('')}</tbody></table>` : '');
+    const chips = lineups.list.map(x => `<button class="home-toggle-btn${x.id === l.id ? ' active' : ''}" onclick="SquadViews.setLineup('${x.id}')">${esc(x.name)}</button>`).join('')
+      + (l.core ? '' : `<button class="dc-x" title="Delete this lineup" onclick="SquadViews.deleteLineup('${l.id}')">✕</button>`)
+      + (creating
+        ? `<span class="dc-new-form"><input id="dc-new-name" type="text" maxlength="30" placeholder="Lineup name" onkeydown="if(event.key==='Enter')SquadViews.createLineup(); if(event.key==='Escape')SquadViews.cancelCreate();">
+           <label title="Auto-fill without the Starting XI's starters"><input id="dc-new-reserve" type="checkbox"> reserves</label>
+           <button class="home-toggle-btn" onclick="SquadViews.createLineup()">Add</button><button class="home-toggle-btn" onclick="SquadViews.cancelCreate()">Cancel</button></span>`
+        : `<button class="home-toggle-btn" title="Create another lineup (e.g. cup XI, youth team)" onclick="SquadViews.startCreate()">＋ New</button>`);
+    const sellOptions = seniors.slice().sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0))
+      .map(p => `<option value="${esc(p.player_id)}"${sameId(p.player_id, sellId) ? ' selected' : ''}>${esc(p.name)} (${p.overall || '?'})</option>`).join('');
+    const hasPins = !l.locked && Object.keys(l.pins).length > 0;
+    return `<div class="home-toggle dc-lineups">${chips}</div>
+      <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
+      <label class="dc-ctl">What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>
+      ${hasPins ? '<button class="home-toggle-btn" onclick="SquadViews.resetOrder()">Reset order</button>' : ''}`;
   }
 
-  // ---- manual arrangement (drag & drop) -------------------------------------
-  function savePins() { store.set('pins', JSON.stringify(pins)); }
-  const sameId = (a, b) => a != null && b != null && String(a) === String(b);
+  function renderControls() {
+    const el = $('squad-view-controls'); if (!el) return;
+    el.innerHTML = mode === 'depth' ? controlsHtml() : '';
+    if (mode === 'depth' && creating) { const i = $('dc-new-name'); if (i) i.focus(); }
+  }
 
-  // Drop `pid` (optionally dragged from slot/kind) onto target slot/kind: the two players swap places.
+  // ---- manual arrangement ----------------------------------------------------
+  // Drop/assign `pid` onto slot/idx; if it came from another string (src) the two players swap places.
   function movePlayer(pid, src, target) {
+    const l = active(); if (l.locked) return;
     const slot = lastSlots[target.slot]; if (!slot) return;
-    const occupant = slot[target.kind];
+    const occupant = slot.strings[target.idx] || null;
     if (occupant && sameId(occupant.player_id, pid)) return;
-    const P = pinsNow();
+    const P = l.pins;
     const unpin = id => Object.keys(P).forEach(k => {
-      ['starter', 'backup'].forEach(kind => { if (sameId(P[k][kind], id)) delete P[k][kind]; });
+      Object.keys(P[k]).forEach(i => { if (sameId(P[k][i], id)) delete P[k][i]; });
       if (!Object.keys(P[k]).length) delete P[k];
     });
     unpin(pid); if (occupant) unpin(occupant.player_id);
-    (P[target.slot] = P[target.slot] || {})[target.kind] = pid;
-    if (src && occupant) (P[src.slot] = P[src.slot] || {})[src.kind] = occupant.player_id;
-    savePins(); render(); renderGapsCard();
+    (P[target.slot] = P[target.slot] || {})[target.idx] = pid;
+    if (src && occupant) (P[src.slot] = P[src.slot] || {})[src.idx] = occupant.player_id;
+    saveLineups(); renderAll();
+  }
+
+  function clearString(slotId, idx) {
+    const l = active(); if (l.locked) return;
+    const P = l.pins;
+    if (idx < 2) {
+      // an auto-filled string can't be left empty by clearing it; pin "nobody" isn't a thing, so just drop the pin
+      if (P[slotId]) delete P[slotId][idx];
+    } else if (P[slotId]) delete P[slotId][idx];
+    if (P[slotId] && !Object.keys(P[slotId]).length) delete P[slotId];
+    saveLineups(); renderAll();
+  }
+
+  // ---- slot edit dialog ----------------------------------------------------------
+  function candidateRows(slot) {
+    const role = slot.role;
+    return seniorsNow().map(p => ({ p, tier: tierFor(p, role) }))
+      .sort((a, b) => (a.tier === null) - (b.tier === null) || (a.tier ?? 9) - (b.tier ?? 9) || Number(b.p.overall || 0) - Number(a.p.overall || 0));
+  }
+
+  function modalHtml() {
+    const slot = lastSlots[edit.slot]; if (!slot) return '';
+    const n = Math.max(slot.strings.length, 2);
+    const strings = [];
+    for (let i = 0; i < n; i++) {
+      const p = slot.strings[i];
+      strings.push(`<div class="dc-mstring${i === edit.idx ? ' on' : ''}" onclick="SquadViews.pickString(${i})">
+        <span class="dc-mlabel">${stringName(i)} string</span>
+        ${p ? `<span class="dc-row" data-pid="${esc(p.player_id)}"><span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${p.overall || '?'}</span></span>
+          <button class="dc-x" title="${i < 2 ? 'Back to auto' : 'Remove'}" onclick="event.stopPropagation(); SquadViews.clearString(${slot.id}, ${i})">✕</button>`
+          : '<span class="dc-none">empty</span>'}
+      </div>`);
+    }
+    const cands = candidateRows(slot).map(({ p, tier }) => {
+      const age = root.computeAge(p.dob);
+      const here = slot.strings.findIndex(x => x && sameId(x.player_id, p.player_id));
+      const fit = tier === 0 ? 'natural' : tier === 1 ? 'alt pos' : 'out of position';
+      return `<div class="dc-row dc-cand${here >= 0 ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}" onclick="SquadViews.assign('${esc(p.player_id)}')">
+        <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 26, '50%')}</span>
+        <span class="dc-name">${esc(p.name)}</span><span class="dc-tag">${labelOf(p.position_id)}</span>
+        <span class="dc-fit fit-${tier ?? 'x'}">${fit}</span>${here >= 0 ? `<span class="dc-tag">${stringName(here)}</span>` : ''}
+        <span class="dc-ovr">${p.overall || '?'}</span><span class="dc-age">${age ?? ''}</span></div>`;
+    }).join('');
+    return `<div class="dc-modal-card" onclick="event.stopPropagation()">
+      <div class="dc-modal-head"><strong>${slot.role} depth</strong><span class="dc-dim">${esc(active().name)} · ${esc(active().formation)}</span>
+        <button class="back-btn" style="margin: 0 0 0 auto;" onclick="SquadViews.closeEdit()">✕</button></div>
+      <div class="dc-modal-body">
+        <div class="dc-mcol"><div class="dc-mtitle">Strings — pick one, then choose a player</div>${strings.join('')}
+          <button class="home-toggle-btn" style="margin-top: 8px;" onclick="SquadViews.addString()">＋ Add string</button></div>
+        <div class="dc-mcol"><div class="dc-mtitle">Players for <strong>${stringName(edit.idx)} string</strong> · hover for details</div><div class="dc-mlist">${cands}</div></div>
+      </div></div>`;
+  }
+
+  let modal = null;
+  function refreshModal() {
+    if (!edit) { if (modal) modal.style.display = 'none'; return; }
+    if (!modal) {
+      modal = root.document.createElement('div'); modal.className = 'dc-modal';
+      modal.addEventListener('click', () => api.closeEdit());
+      root.document.body.appendChild(modal);
+      bindTip(modal);
+    }
+    modal.innerHTML = modalHtml(); modal.style.display = 'flex';
   }
 
   // ---- hover summary ---------------------------------------------------------
@@ -290,15 +438,15 @@
     const parts = !hasAttrs ? [] : gk
       ? [['DIV', attrs.diving], ['HAN', attrs.handling], ['KIC', attrs.kicking], ['REF', attrs.reflexes], ['SPD', root.calculatePace(attrs, ovr)], ['POS', attrs.gk_positioning]]
       : [['PAC', root.calculatePace(attrs, ovr)], ['SHO', root.calculateShooting(attrs, ovr)], ['PAS', root.calculatePassing(attrs, ovr)], ['DRI', root.calculateDribbling(attrs, ovr)], ['DEF', root.calculateDefending(attrs, ovr)], ['PHY', root.calculatePhysical(attrs, ovr)]];
-    const vals = parts.map(([l, v]) => [l, Number(v ?? ovr)]);
-    const total = vals.reduce((n, [, v]) => n + v, 0);
     const age = root.computeAge(p.dob);
     const alt = root.getAltPositionsLabel(p.alt_positions);
     const row = (k, v) => `<div><span>${k}</span><strong>${v}</strong></div>`;
+    const cats = parts.length ? `<div class="dc-tip-cats">${parts.map(([l, v]) => `<div><span>${l}</span><strong>${Number(v ?? ovr)}</strong></div>`).join('')}</div>` : '';
     return `<div class="dc-tip-title">${esc(p.name)} <em>${root.getPositionInfo(p.position_id).label}</em></div>
       ${row('Age', age ?? '—')}${row('Overall', ovr || '—')}${p.potential_high || p.potential ? row('Potential', esc(p.potential_high || p.potential)) : ''}
-      ${hasAttrs ? row('Base stats', `${total} <span class="dc-tip-sub">${vals.map(([l, v]) => l + ' ' + v).join(' · ')}</span>`) : row('Base stats', 'n/a')}
-      ${row('Height', p.height ? root.formatHeight(p.height) : '—')}${row('Weak foot', p.weak_foot ? p.weak_foot + '★' : '—')}${row('Skill moves', p.skill_moves ? p.skill_moves + '★' : '—')}
+      ${cats}
+      ${row('Preferred foot', p.preferred_foot ? esc(p.preferred_foot) : '—')}${row('Height', p.height ? root.formatHeight(p.height) : '—')}
+      ${row('Weak foot', p.weak_foot ? p.weak_foot + '★' : '—')}${row('Skill moves', p.skill_moves ? p.skill_moves + '★' : '—')}
       ${row('Alt positions', alt || 'none')}`;
   }
   let tip = null;
@@ -309,24 +457,29 @@
     tip.style.top = Math.min(e.clientY + 16, root.innerHeight - h - 8) + 'px';
   }
   function hideTip() { if (tip) tip.style.display = 'none'; }
+  function bindTip(el) {
+    if (!tip) {
+      tip = root.document.createElement('div'); tip.className = 'dc-tip'; tip.style.display = 'none';
+      root.document.body.appendChild(tip);
+    }
+    el.addEventListener('mouseover', e => {
+      const row = e.target.closest('[data-pid]'); if (!row) return;
+      const p = findPlayer(row.dataset.pid); if (!p) return;
+      tip.innerHTML = summaryHtml(p); tip.style.display = 'block'; moveTip(e);
+    });
+    el.addEventListener('mousemove', moveTip);
+    el.addEventListener('mouseout', e => { if (e.target.closest('[data-pid]')) hideTip(); });
+  }
 
   let wired = false;
   function wireHost() {
     const host = $('squad-alt-view'); if (!host || wired) return;
     wired = true;
-    tip = root.document.createElement('div'); tip.className = 'dc-tip'; tip.style.display = 'none';
-    root.document.body.appendChild(tip);
-    host.addEventListener('mouseover', e => {
-      const row = e.target.closest('.dc-row[data-pid]'); if (!row) return;
-      const p = findPlayer(row.dataset.pid); if (!p) return;
-      tip.innerHTML = summaryHtml(p); tip.style.display = 'block'; moveTip(e);
-    });
-    host.addEventListener('mousemove', moveTip);
-    host.addEventListener('mouseout', e => { if (e.target.closest('.dc-row[data-pid]')) hideTip(); });
+    bindTip(host);
     host.addEventListener('dragstart', e => {
-      const row = e.target.closest('.dc-row[data-pid]'); if (!row) return;
+      const row = e.target.closest('[data-pid]'); if (!row) return;
       hideTip();
-      e.dataTransfer.setData('text/plain', JSON.stringify({ pid: row.dataset.pid, slot: row.dataset.slot ?? null, kind: row.dataset.kind ?? null }));
+      e.dataTransfer.setData('text/plain', JSON.stringify({ pid: row.dataset.pid, slot: row.dataset.slot ?? null, idx: row.dataset.idx ?? null }));
       e.dataTransfer.effectAllowed = 'move';
     });
     host.addEventListener('dragover', e => { const r = e.target.closest('.dc-row[data-slot]'); if (r) { e.preventDefault(); r.classList.add('dc-over'); } });
@@ -335,29 +488,57 @@
       const row = e.target.closest('.dc-row[data-slot]'); if (!row) return;
       e.preventDefault();
       let d; try { d = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
-      const src = d.slot !== null && d.slot !== undefined ? { slot: Number(d.slot), kind: d.kind } : null;
-      movePlayer(d.pid, src, { slot: Number(row.dataset.slot), kind: row.dataset.kind });
+      const src = d.slot !== null && d.slot !== undefined ? { slot: Number(d.slot), idx: Number(d.idx) } : null;
+      movePlayer(d.pid, src, { slot: Number(row.dataset.slot), idx: Number(row.dataset.idx) });
     });
   }
 
-  // ---- view switching -----------------------------------------------------
-  const $ = id => root.document.getElementById(id);
+  // ---- Home "Squad Gaps" card (always based on the Starting XI lineup) ---------------------------
+  function renderGapsCard() {
+    const el = $('home-squad-gaps-body'); if (!el) return;
+    const seniors = seniorsNow();
+    if (!seniors.length) { el.innerHTML = '<div class="empty-state" style="padding: 12px;">No squad data loaded.</div>'; return; }
+    const needs = needsMap();
+    const xi = lineupById('xi');
+    const slots = buildDepth(xi.formation, seniors, academyNow(), null, needs, xi.pins);
+    const rank = { high: 0, mid: 1, info: 2 };
+    const rows = slots.map(s => ({ s, worst: s.flags.slice().sort((a, b) => rank[a.severity] - rank[b.severity])[0] }))
+      .filter(r => r.worst && r.worst.severity !== 'info')
+      .sort((a, b) => rank[a.worst.severity] - rank[b.worst.severity]);
+    const starters = new Set(slots.map(s => s.starter && s.starter.player_id));
+    const bench = [...needs.values()].filter(p => !starters.has(p.player_id)).slice(0, 5);
+    const rowHtml = r => `<tr class="clickable-name" ${r.s.starter ? `onclick="openPlayerProfile('${r.s.starter.player_id}')"` : ''}>
+      <td><span class="pos-badge">${r.s.role}</span></td><td>${r.s.starter ? esc(r.s.starter.name) : '<em>Vacant</em>'}</td>
+      <td>${r.s.flags.map(f => `<span class="dc-flag sev-${f.severity}" title="${esc(f.text)}">${esc(flagLabel(f))}</span>`).join(' ')}</td></tr>`;
+    el.innerHTML = `<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 6px;">Starting XI · ${esc(xi.formation)} · hover a flag for detail</div>`
+      + (rows.length ? `<table class="sub-table"><thead><tr><th>Slot</th><th>Starter</th><th>Flags</th></tr></thead><tbody>${rows.slice(0, 8).map(rowHtml).join('')}</tbody></table>`
+        : '<div class="empty-state" style="padding: 12px;">No gaps in the starting shape.</div>')
+      + (bench.length ? `<div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin: 12px 0 6px;">Watchlist (outside the starting shape)</div>
+        <table class="sub-table"><tbody>${bench.map(p => `<tr class="clickable-name" onclick="openPlayerProfile('${p.player_id}')"><td>${esc(p.name)}</td><td>${root.getPositionInfo(p.position_id).label}</td><td>${p.overall || '?'}</td><td>${esc(p.__reasons.join(', '))}</td></tr>`).join('')}</tbody></table>` : '');
+  }
+
+  // ---- view switching ----------------------------------------------------------
   function render() {
     hideTip();
     const host = $('squad-alt-view');
+    renderControls();
     if (!host || mode === 'list') return;
     if (mode === 'academy') { if (root.AcademyTracker) root.AcademyTracker.show(); return; }
     host.innerHTML = depthHtml();
+    refreshModal();
   }
+  function renderAll() { render(); renderGapsCard(); }
+
   function applyMode() {
     const list = mode === 'list';
     ['squad-search', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
     const host = $('squad-alt-view'); if (host) host.style.display = list ? 'none' : '';
     ['list', 'depth', 'academy'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
+    if (mode !== 'depth') { edit = null; refreshModal(); }
   }
   function setView(m) {
     mode = m; store.set('mode', m); applyMode();
-    if (m === 'list') { if (root.renderTableRows) root.renderTableRows(); } else render();
+    if (m === 'list') { renderControls(); if (root.renderTableRows) root.renderTableRows(); } else render();
   }
 
   const api = {
@@ -369,18 +550,44 @@
       if (mode === 'depth') render();
     },
     setView,
-    setFormation(f) { formation = f; store.set('formation', f); render(); renderGapsCard(); },
+    setFormation(f) { if (!FORMATIONS[f]) return; active().formation = f; saveLineups(); renderAll(); },
     setSell(id) { sellId = id; render(); },
-    resetOrder() { delete pins[formation]; savePins(); render(); renderGapsCard(); },
+    resetOrder() { const l = active(); if (l.locked) return; l.pins = {}; saveLineups(); renderAll(); },
+    setLineup(id) { if (!lineupById(id)) return; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
+    startCreate() { creating = true; renderControls(); },
+    cancelCreate() { creating = false; renderControls(); },
+    createLineup() {
+      const name = ($('dc-new-name') || {}).value;
+      if (!name || !name.trim()) return;
+      const reserve = !!($('dc-new-reserve') || {}).checked;
+      const id = 'c' + Date.now().toString(36);
+      lineups.list.push({ id, name: name.trim().slice(0, 30), formation: active().formation, pins: {}, reserve });
+      lineups.active = id; creating = false; saveLineups(); render();
+    },
+    deleteLineup(id) {
+      const l = lineupById(id); if (!l || l.core) return;
+      lineups.list = lineups.list.filter(x => x.id !== id); lineups.active = 'xi'; saveLineups(); render();
+    },
+    editSlot(id) { if (active().locked) return; edit = { slot: id, idx: 0 }; refreshModal(); },
+    closeEdit() { edit = null; hideTip(); refreshModal(); },
+    pickString(i) { if (edit) { edit.idx = i; refreshModal(); } },
+    addString() {
+      if (!edit) return;
+      const slot = lastSlots[edit.slot]; edit.idx = Math.max(slot.strings.length, 2);
+      slot.strings.push(null); // placeholder row until a player is chosen
+      refreshModal();
+    },
+    assign(pid) { if (edit) { movePlayer(pid, null, { slot: edit.slot, idx: edit.idx }); } },
+    clearString,
     init() {
-      formation = FORMATIONS[store.get('formation', DEFAULT_FORMATION)] ? store.get('formation', DEFAULT_FORMATION) : DEFAULT_FORMATION;
-      try { pins = JSON.parse(store.get('pins', '{}')) || {}; } catch (e) { pins = {}; }
+      loadLineups();
       wireHost();
       const m = store.get('mode', 'list');
       mode = ['list', 'depth', 'academy'].includes(m) ? m : 'list';
-      applyMode(); if (mode !== 'list') render(); renderGapsCard();
+      applyMode(); render(); renderGapsCard();
     },
-    buildDepth, findGaps, FORMATIONS, movePlayer
+    buildDepth, findGaps, FORMATIONS, movePlayer, summaryHtml,
+    _lineups: () => lineups
   };
 
   root.SquadViews = api;

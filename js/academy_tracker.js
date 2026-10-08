@@ -93,15 +93,23 @@
   const liveAcademyRow = pid => (typeof currentYouthAcademy !== 'undefined' ? currentYouthAcademy || [] : []).find(a => a.player_id == pid);
   const signed = n => (n > 0 ? '+' : '') + n;
 
-  // How the prospect compares with the weakest senior player of the same natural position.
+  // Squad readiness: the prospect's OVR against the weakest senior player of the same natural position, as a plain
+  // verdict (Ready / Close / Developing / Open spot) plus the one comparison it is based on.
+  function readinessOf(ovr, label, same) {
+    if (!same.length) return { key: 'open', verdict: 'Open spot', detail: `No senior ${label} in the squad` };
+    const weakest = same.reduce((m, p) => Number(p.overall || 0) < Number(m.overall || 0) ? p : m);
+    const d = ovr - Number(weakest.overall || 0);
+    const vs = `${weakest.name} (${weakest.overall})`;
+    if (d >= 0) return { key: 'ready', verdict: 'Ready', detail: d === 0 ? `Level with ${vs}` : `${d} above ${vs}` };
+    if (d >= -3) return { key: 'close', verdict: 'Close', detail: `${-d} below ${vs}` };
+    return { key: 'dev', verdict: 'Developing', detail: `${-d} below ${vs}` };
+  }
+
   function readiness(track) {
     const label = root.getPositionInfo(track.position_id).label;
     const same = seniors().filter(p => root.getPositionInfo(p.position_id).label === label);
-    if (!same.length) return `<span class="at-dim">no senior ${label}</span>`;
-    const weakest = same.reduce((m, p) => Number(p.overall || 0) < Number(m.overall || 0) ? p : m);
-    const ovr = summarise(track).last.overall || 0;
-    const d = ovr - Number(weakest.overall || 0);
-    return `<span class="${d >= 0 ? 'at-good' : 'at-dim'}" title="Weakest senior ${label}: ${esc(weakest.name)} (${weakest.overall})">${signed(d)} vs ${esc(weakest.name)}</span>`;
+    const r = readinessOf(summarise(track).last.overall || 0, label, same);
+    return `<span class="at-ready rd-${r.key}">${r.verdict}</span><div class="at-ready-detail">${esc(r.detail)}</div>`;
   }
 
   function potentialCell(track) {
@@ -146,7 +154,7 @@
 
   function tableHtml(list, emptyMsg) {
     if (!list.length) return `<div class="empty-state" style="padding: 12px;">${emptyMsg}</div>`;
-    return `<table class="sub-table at-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>Status</th><th>Months</th><th>OVR</th><th>Potential</th><th>Readiness</th></tr></thead>
+    return `<table class="sub-table at-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>Status</th><th>Months</th><th>OVR</th><th>Potential</th><th title="Compares the prospect OVR with your weakest senior player at the same position">Squad readiness</th></tr></thead>
       <tbody>${list.map(rowHtml).join('')}</tbody></table>`;
   }
 
@@ -165,6 +173,7 @@
     }).sort((a, b) => (summarise(b).last.potential_high || 0) - (summarise(a).last.potential_high || 0) || (summarise(b).last.overall || 0) - (summarise(a).last.overall || 0));
 
     return `<h4 class="dc-section" style="margin-top: 0;">Regen watchlist <span class="at-dim">(${watched.length})</span></h4>
+      <div class="at-help">Squad readiness compares a prospect's OVR with your weakest senior player in the same position: <span class="at-ready rd-ready">Ready</span> level or better, <span class="at-ready rd-close">Close</span> within 3, <span class="at-ready rd-dev">Developing</span> further off, <span class="at-ready rd-open">Open spot</span> no senior at that position.</div>
       ${tableHtml(watched, 'Star a prospect (☆) to follow them here. The numbers when you add them are remembered, so you can see how they develop.')}
       ${orphans ? `<div class="at-dim" style="font-size: 12px;">${orphans} watched player${orphans > 1 ? 's' : ''} no longer in any academy snapshot.</div>` : ''}
       <h4 class="dc-section">Academy tracker</h4>
@@ -185,7 +194,7 @@
     h.innerHTML = html();
   }
 
-  const api = { invalidate, show, render, reload, setData, toggleWatch, saveNote, toggleOpen, setStatus, setGroup, summarise, alertsFor };
+  const api = { readinessOf, invalidate, show, render, reload, setData, toggleWatch, saveNote, toggleOpen, setStatus, setGroup, summarise, alertsFor };
   root.AcademyTracker = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
