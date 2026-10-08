@@ -918,3 +918,18 @@ CREATE TABLE IF NOT EXISTS challenge_transfer_bans (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(save_id) REFERENCES saves(id)
 );
+
+-- Regen watchlist: academy prospects the user is following. base_* freeze the prospect's overall / potential range
+-- (and season) at the moment they were added, so the tracker can show "since added" movement and alerts.
+CREATE TABLE IF NOT EXISTS academy_watchlist (
+    save_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    base_overall INTEGER,
+    base_pot_low INTEGER,
+    base_pot_high INTEGER,
+    base_season_id INTEGER,
+    note TEXT,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (save_id, player_id),
+    FOREIGN KEY(save_id) REFERENCES saves(id)
+);

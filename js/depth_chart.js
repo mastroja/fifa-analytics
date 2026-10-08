@@ -346,13 +346,14 @@
     hideTip();
     const host = $('squad-alt-view');
     if (!host || mode === 'list') return;
+    if (mode === 'academy') { if (root.AcademyTracker) root.AcademyTracker.show(); return; }
     host.innerHTML = depthHtml();
   }
   function applyMode() {
     const list = mode === 'list';
     ['squad-search', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
     const host = $('squad-alt-view'); if (host) host.style.display = list ? 'none' : '';
-    ['list', 'depth'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
+    ['list', 'depth', 'academy'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
   }
   function setView(m) {
     mode = m; store.set('mode', m); applyMode();
@@ -362,7 +363,11 @@
   const api = {
     mode: () => mode,
     render, renderGapsCard,
-    refresh() { renderGapsCard(); if (mode !== 'list') render(); },
+    refresh() {
+      renderGapsCard();
+      if (root.AcademyTracker) { root.AcademyTracker.invalidate(); if (mode === 'academy') root.AcademyTracker.reload(); }
+      if (mode === 'depth') render();
+    },
     setView,
     setFormation(f) { formation = f; store.set('formation', f); render(); renderGapsCard(); },
     setSell(id) { sellId = id; render(); },
@@ -372,7 +377,7 @@
       try { pins = JSON.parse(store.get('pins', '{}')) || {}; } catch (e) { pins = {}; }
       wireHost();
       const m = store.get('mode', 'list');
-      mode = ['list', 'depth'].includes(m) ? m : 'list';
+      mode = ['list', 'depth', 'academy'].includes(m) ? m : 'list';
       applyMode(); if (mode !== 'list') render(); renderGapsCard();
     },
     buildDepth, findGaps, FORMATIONS, movePlayer

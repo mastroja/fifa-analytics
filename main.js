@@ -2009,6 +2009,77 @@ function getYouthAcademy(saveId = activeSaveId) {
     }));
 }
 
+// Academy tracker: every prospect ever snapshotted for this save, with their per-season history and a status:
+//   'academy'  - still in the current academy roster (see getYouthAcademy)
+//   'promoted' - has a senior-squad row in any season
+//   'left'     - neither (released / aged out / sold)
+// Snapshot rows are written once per season (importYouthAcademy upserts on player_id+season_id), so history is
+// one point per season, the latest being the live value.
+function getAcademyTracker(saveId = activeSaveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`
+    SELECT p.player_id, p.name, p.position_id, p.dob, se.id, se.year_label,
+           y.overall, y.potential_low, y.potential_high, y.months_in_squad
+    FROM youth_academy_snapshot y
+    JOIN players p ON p.player_id = y.player_id
+    JOIN seasons se ON se.id = y.season_id
+    WHERE se.save_id = ${Number(saveId)}
+    ORDER BY se.id ASC;
+  `);
+  if (res.length === 0) return [];
+
+  const inAcademy = new Set(getYouthAcademy(saveId).map(a => a.player_id));
+  const promoted = new Set();
+  const pr = db.exec(`SELECT DISTINCT s.player_id FROM player_season_stats s JOIN seasons se ON se.id = s.season_id WHERE se.save_id = ${Number(saveId)};`);
+  if (pr.length > 0) pr[0].values.forEach(([pid]) => promoted.add(pid));
+
+  const byPlayer = new Map();
+  res[0].values.forEach(([pid, name, pos, dob, seasonId, season, ovr, low, high, months]) => {
+    if (!byPlayer.has(pid)) byPlayer.set(pid, { player_id: pid, name, position_id: pos, dob, history: [] });
+    byPlayer.get(pid).history.push({ season_id: seasonId, season, overall: ovr, potential_low: low, potential_high: high, months_in_squad: months });
+  });
+  return [...byPlayer.values()].map(t => ({
+    ...t,
+    status: inAcademy.has(t.player_id) ? 'academy' : promoted.has(t.player_id) ? 'promoted' : 'left'
+  }));
+}
+
+function getAcademyWatchlist(saveId = activeSaveId) {
+  if (!db || !saveId) return [];
+  const res = db.exec(`SELECT player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at FROM academy_watchlist WHERE save_id = ${Number(saveId)} ORDER BY added_at DESC;`);
+  if (res.length === 0) return [];
+  return res[0].values.map(([player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at]) =>
+    ({ player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at }));
+}
+
+// Adds the prospect (freezing their current numbers as the baseline) or removes them if already watched.
+function toggleAcademyWatch(playerId, saveId = activeSaveId) {
+  if (!db || !saveId || !playerId) return { success: false };
+  const existing = db.exec(`SELECT 1 FROM academy_watchlist WHERE save_id = ${Number(saveId)} AND player_id = ${Number(playerId)};`);
+  if (existing.length > 0) {
+    db.run('DELETE FROM academy_watchlist WHERE save_id = ? AND player_id = ?;', [saveId, playerId]);
+    saveDatabaseToDisk();
+    return { success: true, watched: false };
+  }
+  const latest = db.exec(`
+    SELECT y.season_id, y.overall, y.potential_low, y.potential_high
+    FROM youth_academy_snapshot y JOIN seasons se ON se.id = y.season_id
+    WHERE se.save_id = ${Number(saveId)} AND y.player_id = ${Number(playerId)}
+    ORDER BY se.id DESC LIMIT 1;`);
+  const [seasonId, ovr, low, high] = latest.length > 0 ? latest[0].values[0] : [null, null, null, null];
+  db.run('INSERT INTO academy_watchlist (save_id, player_id, base_overall, base_pot_low, base_pot_high, base_season_id) VALUES (?, ?, ?, ?, ?, ?);',
+    [saveId, playerId, ovr, low, high, seasonId]);
+  saveDatabaseToDisk();
+  return { success: true, watched: true };
+}
+
+function setAcademyWatchNote(playerId, note, saveId = activeSaveId) {
+  if (!db || !saveId || !playerId) return { success: false };
+  db.run('UPDATE academy_watchlist SET note = ? WHERE save_id = ? AND player_id = ?;', [String(note || '').slice(0, 500) || null, saveId, playerId]);
+  saveDatabaseToDisk();
+  return { success: true };
+}
+
 // Trophies actually won during this save — a competition result of
 // "Winner" in season_competition_results. Cups reach that text once the
 // final is won (see export_all.lua's round-progress logic); leagues only
@@ -5866,6 +5937,7 @@ function deleteSave(saveId) {
   db.run('DELETE FROM season_competition_results WHERE season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [saveId]);
   db.run('DELETE FROM youth_academy_snapshot WHERE season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [saveId]);
   db.run('DELETE FROM academy_graduate_overrides WHERE save_id = ?;', [saveId]);
+  db.run('DELETE FROM academy_watchlist WHERE save_id = ?;', [saveId]);
   db.run('DELETE FROM transfer_fees WHERE save_id = ?;', [saveId]);
   db.run('DELETE FROM player_awards WHERE season_id IN (SELECT id FROM seasons WHERE save_id = ?);', [saveId]);
   db.run('DELETE FROM season_end_reviews WHERE save_id = ?;', [saveId]);
@@ -5906,6 +5978,7 @@ function deletePlayer(playerId) {
   db.run('DELETE FROM player_awards WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM former_player_snapshots WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM academy_graduate_overrides WHERE player_id = ?;', [playerId]);
+  db.run('DELETE FROM academy_watchlist WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM transfer_fees WHERE player_id = ?;', [playerId]);
   db.run('DELETE FROM players WHERE player_id = ?;', [playerId]);
   saveDatabaseToDisk();
@@ -6223,6 +6296,10 @@ ipcMain.handle('delete-player', (_event, playerId) => deletePlayer(playerId));
 ipcMain.handle('get-season-competition-results', (_event, seasonId) => getSeasonCompetitionResults(seasonId));
 ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
+ipcMain.handle('get-academy-tracker', (_event, saveId) => getAcademyTracker(saveId));
+ipcMain.handle('get-academy-watchlist', (_event, saveId) => getAcademyWatchlist(saveId));
+ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => toggleAcademyWatch(playerId, saveId));
+ipcMain.handle('set-academy-watch-note', (_event, playerId, note, saveId) => setAcademyWatchNote(playerId, note, saveId));
 playerEditor.configure({ getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
 playerEditor.register(ipcMain);
 
