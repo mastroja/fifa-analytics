@@ -172,21 +172,20 @@
   let edit = null;       // { slot, idx } while the slot edit dialog is open
   let creating = false;  // the "new lineup" form is open
 
-  // Lineups: Default is auto and locked; the others carry a formation + pins. `reserve` lineups auto-fill without the
-  // Starting XI's starters, so "Rotation / Reserves" is naturally the next eleven.
+  // Lineups: Starting XI and Reserves (+ any the user creates), each with its own formation and manual arrangement.
+  // `reserve` lineups auto-fill without the Starting XI's starters, so Reserves is naturally the next eleven.
   function freshLineups(formation) {
     return {
       active: 'xi',
       list: [
-        { id: 'default', name: 'Default', core: true, locked: true, formation: DEFAULT_FORMATION, pins: {} },
         { id: 'xi', name: 'Starting XI', core: true, formation: formation || DEFAULT_FORMATION, pins: {} },
-        { id: 'rot', name: 'Rotation / Reserves', core: true, reserve: true, formation: formation || DEFAULT_FORMATION, pins: {} }
+        { id: 'rot', name: 'Reserves', core: true, reserve: true, formation: formation || DEFAULT_FORMATION, pins: {} }
       ]
     };
   }
   let lineups = freshLineups();
   const lineupById = id => lineups.list.find(l => l.id === id);
-  const active = () => lineupById(lineups.active) || lineups.list[1];
+  const active = () => lineupById(lineups.active) || lineups.list[0];
   const pinsOf = l => l.locked ? {} : l.pins;
   const saveLineups = () => store.set('lineups', JSON.stringify(lineups));
 
@@ -195,7 +194,9 @@
       const saved = JSON.parse(store.get('lineups', 'null'));
       if (saved && Array.isArray(saved.list) && saved.list.length) {
         lineups = saved;
-        ['default', 'xi', 'rot'].forEach(id => { if (!lineupById(id)) lineups = freshLineups(); });
+        lineups.list = lineups.list.filter(l => l.id !== 'default'); // the auto-only Default lineup was dropped
+        const rot = lineupById('rot'); if (rot && rot.name === 'Rotation / Reserves') rot.name = 'Reserves';
+        ['xi', 'rot'].forEach(id => { if (!lineupById(id)) lineups = freshLineups(); });
         if (!lineupById(lineups.active)) lineups.active = 'xi';
         return;
       }
@@ -205,10 +206,10 @@
     lineups = freshLineups(FORMATIONS[f] ? f : DEFAULT_FORMATION);
     try {
       const old = JSON.parse(store.get('pins', '{}')) || {};
-      const forF = old[lineups.list[1].formation] || {};
+      const forF = old[lineups.list[0].formation] || {};
       Object.keys(forF).forEach(slot => {
         const o = {}; if (forF[slot].starter != null) o[0] = forF[slot].starter; if (forF[slot].backup != null) o[1] = forF[slot].backup;
-        if (Object.keys(o).length) lineups.list[1].pins[slot] = o;
+        if (Object.keys(o).length) lineups.list[0].pins[slot] = o;
       });
     } catch (e) { /* ignore */ }
   }
@@ -237,7 +238,7 @@
     const cls = isString ? (idx === 0 ? 'dc-starter' : 'dc-backup') : `dc-${kind}`;
     if (!p) return `<div class="dc-row dc-empty"${dropAttrs}>${idx === 0 ? 'Vacant' : idx === 1 ? 'No backup' : kind === 'prospect' ? 'No prospect' : '—'}</div>`;
     const age = root.computeAge(p.dob);
-    const size = isString && idx === 0 ? 38 : 28;
+    const size = isString && idx === 0 ? 44 : 30;
     const ovr = kind === 'prospect'
       ? `${p.overall || '?'}<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>`
       : `${p.overall || '?'}`;
@@ -245,7 +246,9 @@
     const drag = kind === 'prospect' || locked ? '' : ' draggable="true"';
     return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
-      ${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>
+      ${isString && idx === 0
+        ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub"><span class="dc-ovr">${ovr}</span> OVR · age ${age ?? '—'}</span></span>`
+        : `${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>`}
     </div>`;
   }
 
@@ -263,8 +266,17 @@
     const editBtn = locked ? '' : `<button class="dc-edit" title="Edit ${s.role} depth: 1st, 2nd, 3rd string…" onclick="event.stopPropagation(); SquadViews.editSlot(${s.id})">✎</button>`;
     return `<div class="dc-slot${worst ? ' sev-' + worst.severity : ''}" style="left:${s.x}%;top:${s.y}%">
       <div class="dc-slot-head"><strong>${s.role}</strong>${flagHtml}${editBtn}</div>
-      ${rows.join('')}${more}${personHtml(s.prospect, 'prospect', s.id, 0)}
+      ${rows.join('')}${more}
     </div>`;
+  }
+
+  // Right-hand reserves list: every senior player not in the active lineup, two cards per row, no height limit.
+  function reserveCardHtml(p, tag) {
+    const age = root.computeAge(p.dob);
+    return `<div class="dc-rcard" data-pid="${esc(p.player_id)}" draggable="true" onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
+      <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 44, '50%')}</span>
+      <span class="dc-rinfo"><span class="dc-rname">${esc(p.name)}</span><span class="dc-rsub">${labelOf(p.position_id)} · ${age ?? '—'}${tag ? ` · <em>${tag}</em>` : ''}${p.injury ? ' · <em class="dc-inj">injured</em>' : ''}</span></span>
+      <span class="dc-rovr">${p.overall || '?'}</span></div>`;
   }
 
   // ---- rendering: bottom section (squad + academy by position) -------------
@@ -310,12 +322,22 @@
     }
     lastSlots = slots;
     const gapCount = slots.reduce((n, s) => n + s.flags.filter(f => f.severity !== 'info').length, 0);
-    const hint = l.locked ? 'Default is auto-generated and can’t be edited — switch to Starting XI or create a lineup to arrange players.'
-      : l.reserve ? 'Reserves auto-fill with the players the Starting XI doesn’t use. Drag players or use ✎ to arrange. Saved automatically.'
-        : 'Drag players, or use ✎ on a position to pick 1st / 2nd / 3rd string. Saved automatically.';
-    return `<div class="dc-legend-bar"><span><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · 🎓 academy · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
+    const hint = l.reserve
+      ? 'Reserves fill with the players the Starting XI doesn’t use. Drag players in from the list, or use ✎. Saved automatically.'
+      : 'Drag players from the list or between positions, or use ✎ for 1st / 2nd / 3rd string. Saved automatically.';
+    const inLineup = new Set(); slots.forEach(sl => sl.strings.forEach(p => p && inLineup.add(p.player_id)));
+    const xiStarters = new Set();
+    if (l.reserve) { const xi = lineupById('xi'); buildDepth(xi.formation, seniors, academy, null, null, pinsOf(xi)).forEach(sl => sl.starter && xiStarters.add(sl.starter.player_id)); }
+    const rest = seniors.filter(p => !inLineup.has(p.player_id) && !sameId(p.player_id, sellId))
+      .sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0));
+    const listTitle = l.reserve ? 'Not in this eleven' : 'Reserves';
+    return `<div class="dc-legend-bar"><span><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
       ${banner}
-      <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys, !!l.locked)).join('')}</div></div>
+      <div class="dc-layout">
+        <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys, false)).join('')}</div></div>
+        <aside class="dc-reserves"><div class="dc-rhead">${listTitle} <span class="dc-dim">${rest.length} player${rest.length === 1 ? '' : 's'}</span></div>
+          <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div></aside>
+      </div>
       <h4 class="dc-section">Squad and academy by position</h4>${positionTableHtml(seniors)}`;
   }
 
