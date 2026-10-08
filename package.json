@@ -5,6 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node scripts/license/test_license.js && node scripts/test_depth_chart.js",
+    "check": "node --check main.js && node --check js/app.js && node --check js/depth_chart.js && node --check js/academy_tracker.js && node --check js/license.js && node --check js/license_ui.js && node --check js/player_editor.js && node --check js/player_editor_ui.js && node --check js/preload.js",
     "dist": "electron-builder --win nsis",
     "release": "electron-builder --win nsis --publish always"
   },
