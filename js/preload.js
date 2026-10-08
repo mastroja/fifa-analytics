@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   getSeasonCompetitionResults: (seasonId) => ipcRenderer.invoke('get-season-competition-results', seasonId),
   getTrophiesWon: () => ipcRenderer.invoke('get-trophies-won'),
   getYouthAcademy: (saveId) => ipcRenderer.invoke('get-youth-academy', saveId),
+  getAllTimeXI: (saveId) => ipcRenderer.invoke('get-all-time-xi', saveId),
   getAcademyTracker: (saveId) => ipcRenderer.invoke('get-academy-tracker', saveId),
   getAcademyWatchlist: (saveId) => ipcRenderer.invoke('get-academy-watchlist', saveId),
   toggleAcademyWatch: (playerId, saveId) => ipcRenderer.invoke('toggle-academy-watch', playerId, saveId),

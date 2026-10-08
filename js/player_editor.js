@@ -40,7 +40,7 @@ const FIELD_LIMITS = {
   eyecolorcode: [1, 10], eyedetail: [0, 6], eyebrowcode: [0, 3000000],
   accessorycode1: [0, 1100], accessorycode2: [0, 1100], accessorycode3: [0, 1100], accessorycode4: [0, 1100],
   accessorycolourcode1: [0, 99], accessorycolourcode2: [0, 99], accessorycolourcode3: [0, 99], accessorycolourcode4: [0, 99],
-  bodytypecode: [1, 11], height: [140, 220], weight: [40, 120],
+  bodytypecode: [1, 11], height: [140, 206], weight: [40, 120],
   shoetypecode: [0, 562], jerseynumber: [1, 99],
   jerseyfit: [0, 2], jerseysleevelengthcode: [0, 4], jerseystylecode: [0, 1], socklengthcode: [0, 3]
 };

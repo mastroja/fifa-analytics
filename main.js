@@ -4682,7 +4682,7 @@ function importFifaData(jsonPayload) {
         p.alt_positions || '',
         p.nationality || '',
         p.dob || '',
-        p.height || '',
+        capHeightCm(p.height),
         p.weight || '',
         p.preferred_foot || '',
         p.photo_id || p.player_id,
@@ -5004,6 +5004,15 @@ const HEADSHOT_SKINTONE_BLACK_THRESHOLD = 7;
 // FC 26 exported skintonecode as 1-10; FC 27 exports 10-100 in steps of 10
 // (plus the odd off-grid value). Everything in the app keys off the 1-10
 // scale, so fold the 10-100 scale down at ingest. Values <= 10 pass through.
+// No player is stored taller than 6'9" (206 cm); a bad game value (e.g. 8'5") is capped on import. Non-numeric input
+// is passed through unchanged (empty string if missing).
+const MAX_HEIGHT_CM = 206;
+function capHeightCm(raw) {
+  const n = parseFloat(String(raw ?? '').replace(/[^\d.]/g, ''));
+  if (!n) return raw || '';
+  return n > MAX_HEIGHT_CM ? String(MAX_HEIGHT_CM) : raw;
+}
+
 function normalizeSkintoneCode(raw) {
   const n = Number(raw);
   if (!n || n < 0) return null;
@@ -5333,6 +5342,41 @@ function getAllTimeSquadStats(saveId = activeSaveId) {
       avg_rating: totalApps > 0 ? (row[40] || 0) / totalApps : 0,
       updated_at: row[41],
       youth_reveal_tier: row[42]
+    };
+  });
+}
+
+// All-Time XI: every player with a row in any of this save's seasons, each represented by their PEAK season
+// (highest overall; the attributes/potential/etc. are from that same season) plus career totals for the club.
+// Ranking and the "ever played for the club" filter are done by the renderer (js/depth_chart.js).
+function getAllTimeXI(saveId = activeSaveId) {
+  if (!db || !saveId) return [];
+  const sid = Number(saveId);
+  const res = db.exec(`
+    SELECT p.player_id, p.name, p.position_id, p.alt_positions, p.dob, p.height, p.preferred_foot,
+           s.overall, s.potential, s.skill_moves, s.weak_foot, s.attributes_json, se.year_label,
+           agg.apps, agg.goals, agg.assists, agg.seasons
+    FROM players p
+    JOIN player_season_stats s ON s.player_id = p.player_id
+    JOIN seasons se ON se.id = s.season_id AND se.save_id = ${sid}
+    JOIN (
+      SELECT ps.player_id, MAX(ps.overall) AS mo, SUM(ps.appearances) AS apps, SUM(ps.goals) AS goals,
+             SUM(ps.assists) AS assists, COUNT(*) AS seasons
+      FROM player_season_stats ps
+      JOIN seasons s2 ON s2.id = ps.season_id AND s2.save_id = ${sid}
+      GROUP BY ps.player_id
+    ) agg ON agg.player_id = p.player_id AND s.overall = agg.mo
+    GROUP BY p.player_id
+    ORDER BY s.overall DESC;
+  `);
+  if (res.length === 0) return [];
+  return res[0].values.map(r => {
+    let attributes = {};
+    try { attributes = JSON.parse(r[11] || '{}'); } catch (e) { /* leave empty */ }
+    return {
+      player_id: r[0], name: r[1], position_id: r[2], alt_positions: r[3], dob: r[4], height: r[5], preferred_foot: r[6],
+      overall: r[7], potential: r[8], skill_moves: r[9], weak_foot: r[10], attributes,
+      peak_season: r[12], appearances: r[13] || 0, goals: r[14] || 0, assists: r[15] || 0, seasons: r[16] || 0
     };
   });
 }
@@ -6296,6 +6340,7 @@ ipcMain.handle('delete-player', (_event, playerId) => deletePlayer(playerId));
 ipcMain.handle('get-season-competition-results', (_event, seasonId) => getSeasonCompetitionResults(seasonId));
 ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
+ipcMain.handle('get-all-time-xi', (_event, saveId) => getAllTimeXI(saveId));
 ipcMain.handle('get-academy-tracker', (_event, saveId) => getAcademyTracker(saveId));
 ipcMain.handle('get-academy-watchlist', (_event, saveId) => getAcademyWatchlist(saveId));
 ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => toggleAcademyWatch(playerId, saveId));

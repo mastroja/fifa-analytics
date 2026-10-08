@@ -14,3 +14,15 @@ Squad tab toggle: **List** / **Depth** / **Academy** (see academy_tracker.md). C
 - Right column: the reserves list, then a "Youth academy" list in the same two-wide card layout (prospects show OVR → potential; not draggable). The old "best in squad by position" table was removed.
 - Home "Squad Gaps" card replaces Expiring Contracts + Team Needs and always reflects the Starting XI lineup.
 - Depth ignores the List filters and season selector; it uses the live senior squad (not loaned out / transferred).
+
+## All-Time XI
+Small 🏆 button at the end of the Depth toolbar (hidden lineup `alltime`): the best players ever to play for the club, each represented by their peak-season overall (ties: most appearances), only players with at least one appearance (falls back to everyone if fewer than 11 qualify). Data: `getAllTimeXI` in main.js (peak season row + career totals). Same pitch, formation selector, drag and ✎ editing; no gap flags and no what-if. The right list is the all-time bench. Hover shows peak season and club career (apps / goals / assists).
+
+## Position display
+Every player card (pitch starters and backups, reserves, academy, edit dialog) shows a coloured natural-position badge, and "alt CDM, RB" for alternative positions.
+
+## Height cap
+Heights are capped at 6'9" (206 cm) on display, on import (main.js `capHeightCm`) and in the player editor limits (140-206 cm).
+
+## Season selector
+The season selector and search bar belong to the List view only; Depth and Academy hide them.

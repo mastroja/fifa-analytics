@@ -183,6 +183,8 @@
       ]
     };
   }
+  // The All-Time XI is a hidden lineup (reached from the small trophy button), fed by getAllTimeXI instead of the live squad.
+  const ALLTIME = () => ({ id: 'alltime', name: 'All-Time XI', core: true, hidden: true, alltime: true, formation: DEFAULT_FORMATION, pins: {} });
   let lineups = freshLineups();
   const lineupById = id => lineups.list.find(l => l.id === id);
   const active = () => lineupById(lineups.active) || lineups.list[0];
@@ -197,6 +199,7 @@
         lineups.list = lineups.list.filter(l => l.id !== 'default'); // the auto-only Default lineup was dropped
         const rot = lineupById('rot'); if (rot && rot.name === 'Rotation / Reserves') rot.name = 'Reserves';
         ['xi', 'rot'].forEach(id => { if (!lineupById(id)) lineups = freshLineups(); });
+        if (!lineupById('alltime')) lineups.list.push(ALLTIME());
         if (!lineupById(lineups.active)) lineups.active = 'xi';
         return;
       }
@@ -204,6 +207,7 @@
     // Migrate the pre-lineup storage (one formation + pins per formation, starter/backup keys).
     const f = store.get('formation', DEFAULT_FORMATION);
     lineups = freshLineups(FORMATIONS[f] ? f : DEFAULT_FORMATION);
+    lineups.list.push(ALLTIME());
     try {
       const old = JSON.parse(store.get('pins', '{}')) || {};
       const forF = old[lineups.list[0].formation] || {};
@@ -215,6 +219,25 @@
   }
 
   const seniorsNow = () => (typeof currentPlayers !== 'undefined' ? currentPlayers : []).filter(p => p.__clubStatus === 'normal');
+  // All-Time XI data (loaded on demand): peak-season rows for everyone who ever appeared for the club.
+  let allTimeRows = null, allTimeLoading = false;
+  function prepAllTime(rows) {
+    const played = (rows || []).filter(p => Number(p.appearances || 0) > 0);
+    // if appearances were never recorded, don't end up with an empty XI: fall back to everyone
+    return (played.length >= 11 ? played : (rows || [])).map(p => ({ ...p, __alltime: true, __clubStatus: 'normal' }));
+  }
+  async function loadAllTime() {
+    if (allTimeRows || allTimeLoading) return;
+    allTimeLoading = true;
+    try {
+      const sid = typeof currentSaveId !== 'undefined' ? currentSaveId : null;
+      allTimeRows = root.api && root.api.getAllTimeXI ? prepAllTime(await root.api.getAllTimeXI(sid)) : [];
+    } catch (e) { console.error('All-Time XI load failed', e); allTimeRows = []; }
+    allTimeLoading = false;
+    if (mode === 'depth') render();
+  }
+  const poolFor = l => l.alltime ? (allTimeRows || []) : seniorsNow();
+  const academyFor = l => l.alltime ? [] : academyNow();
   const academyNow = () => typeof currentYouthAcademy !== 'undefined' ? currentYouthAcademy || [] : [];
   const needsMap = () => new Map((typeof computeTeamNeeds === 'function' ? computeTeamNeeds() : []).map(p => [p.player_id, p]));
 
@@ -225,10 +248,22 @@
       const xi = lineupById('xi');
       autoExclude = new Set(buildDepth(xi.formation, seniors, academy, exclude, null, pinsOf(xi)).map(s => s.starter && s.starter.player_id).filter(v => v != null));
     }
-    return buildDepth(l.formation, seniors, academy, exclude, needs, pinsOf(l), autoExclude);
+    const slots = buildDepth(l.formation, seniors, academy, exclude, l.alltime ? null : needs, pinsOf(l), autoExclude);
+    if (l.alltime) slots.forEach(sl => { sl.flags = []; }); // gap flags are about the live squad
+    return slots;
   }
 
   // ---- rendering: pitch ---------------------------------------------------
+  // Natural position badge + alternative positions ("alt CDM, RB"), shown wherever a player appears.
+  function posBadge(p) {
+    const info = root.getPositionInfo(p.position_id);
+    return `<span class="pos-badge pos-${info.group} dc-pos">${info.label}</span>`;
+  }
+  function altText(p) {
+    const nat = labelOf(p.position_id);
+    const alts = altLabels(p).filter((l, i, a) => l !== nat && a.indexOf(l) === i);
+    return alts.length ? `<span class="dc-alt" title="Can also play: ${esc(alts.join(', '))}">alt ${esc(alts.join(', '))}</span>` : '';
+  }
   function ringClass(age) { return age === null ? '' : age < 21 ? 'ring-young' : age >= 30 ? 'ring-old' : ''; }
 
   // kind: string (draggable, drop target; idx = string index) | prospect | top (draggable only) | cand (edit dialog list)
@@ -237,8 +272,8 @@
     const dropAttrs = isString ? ` data-slot="${slotId}" data-idx="${idx}"` : '';
     const cls = isString ? (idx === 0 ? 'dc-starter' : 'dc-backup') : `dc-${kind}`;
     if (!p) return `<div class="dc-row dc-empty"${dropAttrs}>${idx === 0 ? 'Vacant' : idx === 1 ? 'No backup' : kind === 'prospect' ? 'No prospect' : '—'}</div>`;
-    const age = root.computeAge(p.dob);
-    const size = isString && idx === 0 ? 52 : 34;
+    const age = p.__alltime ? null : root.computeAge(p.dob);
+    const size = isString && idx === 0 ? 46 : 30;
     const ovr = kind === 'prospect'
       ? `${p.overall || '?'}<span class="dc-pot">→${esc(p.potential_high || p.potential || '?')}</span>`
       : `${p.overall || '?'}`;
@@ -247,8 +282,11 @@
     return `<div class="dc-row ${cls}${pinned ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}"${dropAttrs}${drag} onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, size, '50%')}</span>
       ${isString && idx === 0
-        ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub"><span class="dc-ovr">${ovr}</span> OVR · age ${age ?? '—'}</span></span>`
-        : `${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>`}
+        ? `<span class="dc-col"><span class="dc-name">${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span>
+            <span class="dc-rightcol"><span class="dc-ovr dc-ovr-big">${ovr}</span><span class="dc-age">${p.__alltime ? 'peak' : (age ?? '—')}</span></span>`
+        : isString
+          ? `<span class="dc-col"><span class="dc-name"><span class="dc-tag">${idx + 1}</span> ${esc(p.name)}</span><span class="dc-sub">${posBadge(p)}${altText(p)}</span></span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>`
+          : `${tag}<span class="dc-name">${esc(p.name)}</span><span class="dc-ovr">${ovr}</span><span class="dc-age">${age ?? ''}</span>`}
     </div>`;
   }
 
@@ -283,10 +321,10 @@
 
   // Right-hand reserves list: every senior player not in the active lineup, two cards per row, no height limit.
   function reserveCardHtml(p, tag) {
-    const age = root.computeAge(p.dob);
+    const age = p.__alltime ? null : root.computeAge(p.dob);
     return `<div class="dc-rcard" data-pid="${esc(p.player_id)}" draggable="true" onclick="openPlayerProfile('${p.player_id ?? esc(p.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 44, '50%')}</span>
-      <span class="dc-rinfo"><span class="dc-rname">${esc(p.name)}</span><span class="dc-rsub">${labelOf(p.position_id)} · ${age ?? '—'}${tag ? ` · <em>${tag}</em>` : ''}${p.injury ? ' · <em class="dc-inj">injured</em>' : ''}</span></span>
+      <span class="dc-rinfo"><span class="dc-rname">${esc(p.name)}</span><span class="dc-rsub">${posBadge(p)}${altText(p)}</span><span class="dc-rsub">${p.__alltime ? `${esc(p.peak_season || '')} · ${p.appearances} apps` : `age ${age ?? '—'}`}${tag ? ` · <em>${tag}</em>` : ''}${p.injury ? ' · <em class="dc-inj">injured</em>' : ''}</span></span>
       <span class="dc-rovr">${p.overall || '?'}</span></div>`;
   }
 
@@ -296,13 +334,14 @@
     const age = root.computeAge(a.dob);
     return `<div class="dc-rcard dc-rcard-academy" data-pid="${esc(a.player_id)}" onclick="openPlayerProfile('${a.player_id ?? esc(a.name)}')">
       <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(a, 44, '50%')}</span>
-      <span class="dc-rinfo"><span class="dc-rname">${esc(a.name)}</span><span class="dc-rsub">${labelOf(a.position_id)} · ${age ?? '—'} · <em>🎓 academy</em></span></span>
+      <span class="dc-rinfo"><span class="dc-rname">${esc(a.name)}</span><span class="dc-rsub">${posBadge(a)}</span><span class="dc-rsub">age ${age ?? '—'} · <em>🎓 academy</em></span></span>
       <span class="dc-rovr">${a.overall || '?'}<span class="dc-pot">→${esc(a.potential_high || a.potential || '?')}</span></span></div>`;
   }
 
   function depthHtml() {
     const l = active();
-    const seniors = seniorsNow(), academy = academyNow(), needs = needsMap();
+    if (l.alltime && !allTimeRows) { loadAllTime(); return '<div class="empty-state" style="padding: 24px;">Digging through the club history…</div>'; }
+    const seniors = poolFor(l), academy = academyFor(l), needs = l.alltime ? null : needsMap();
     const base = depthFor(l, seniors, academy, null, needs);
     let slots = base, banner = '', newKeys = null;
     if (sellId) {
@@ -315,23 +354,27 @@
     }
     lastSlots = slots;
     const gapCount = slots.reduce((n, s) => n + s.flags.filter(f => f.severity !== 'info').length, 0);
-    const hint = l.reserve
+    const hint = l.alltime
+      ? 'The best players ever to play for the club, ranked by their peak overall (ties: most appearances). Hover for peak-season details. Drag to change your mind.'
+      : l.reserve
       ? 'Reserves fill with the players the Starting XI doesn’t use. Drag players in from the list, or use ✎. Saved automatically.'
       : 'Drag players from the list or between positions, or use ✎ for 1st / 2nd / 3rd string. Saved automatically.';
     const inLineup = new Set(); slots.forEach(sl => sl.strings.forEach(p => p && inLineup.add(p.player_id)));
     const xiStarters = new Set();
-    if (l.reserve) { const xi = lineupById('xi'); buildDepth(xi.formation, seniors, academy, null, null, pinsOf(xi)).forEach(sl => sl.starter && xiStarters.add(sl.starter.player_id)); }
+    if (l.reserve && !l.alltime) { const xi = lineupById('xi'); buildDepth(xi.formation, seniors, academy, null, null, pinsOf(xi)).forEach(sl => sl.starter && xiStarters.add(sl.starter.player_id)); }
     const rest = seniors.filter(p => !inLineup.has(p.player_id) && !sameId(p.player_id, sellId))
       .sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0));
-    const listTitle = l.reserve ? 'Not in this eleven' : 'Reserves';
+    const listTitle = l.alltime ? 'All-time bench' : l.reserve ? 'Not in this eleven' : 'Reserves';
+    const academySection = l.alltime ? '' : `
+          <div class="dc-rhead dc-rhead-academy">Youth academy <span class="dc-dim">${academy.length} prospect${academy.length === 1 ? '' : 's'}</span></div>
+          <div class="dc-rgrid">${academy.slice().sort((a, b) => prospectScore(b) - prospectScore(a)).map(academyCardHtml).join('') || '<span class="dc-none">No academy prospects loaded.</span>'}</div>`;
     return `<div class="dc-legend-bar"><span><span class="dc-ring ring-young">&nbsp;</span> under 21 <span class="dc-ring ring-old">&nbsp;</span> 30+ · ${gapCount} gap${gapCount === 1 ? '' : 's'}</span><span>${hint}</span></div>
       ${banner}
       <div class="dc-layout">
         <div class="dc-pitch-wrap"><div class="dc-pitch">${slots.map(s => slotHtml(s, newKeys)).join('')}</div></div>
         <aside class="dc-reserves"><div class="dc-rhead">${listTitle} <span class="dc-dim">${rest.length} player${rest.length === 1 ? '' : 's'}</span></div>
           <div class="dc-rgrid">${rest.map(p => reserveCardHtml(p, xiStarters.has(p.player_id) ? 'XI' : '')).join('') || '<span class="dc-none">Everyone is in the lineup.</span>'}</div>
-          <div class="dc-rhead dc-rhead-academy">Youth academy <span class="dc-dim">${academy.length} prospect${academy.length === 1 ? '' : 's'}</span></div>
-          <div class="dc-rgrid">${academy.slice().sort((a, b) => prospectScore(b) - prospectScore(a)).map(academyCardHtml).join('') || '<span class="dc-none">No academy prospects loaded.</span>'}</div></aside>
+${academySection}</aside>
       </div>
 `;
   }
@@ -339,8 +382,8 @@
   // ---- toolbar (next to the List / Depth / Academy toggle) -----------------
   function controlsHtml() {
     const l = active();
-    const seniors = seniorsNow();
-    const chips = lineups.list.map(x => `<button class="home-toggle-btn${x.id === l.id ? ' active' : ''}" onclick="SquadViews.setLineup('${x.id}')">${esc(x.name)}</button>`).join('')
+    const seniors = poolFor(l);
+    const chips = lineups.list.filter(x => !x.hidden).map(x => `<button class="home-toggle-btn${x.id === l.id ? ' active' : ''}" onclick="SquadViews.setLineup('${x.id}')">${esc(x.name)}</button>`).join('')
       + (l.core ? '' : `<button class="dc-x" title="Delete this lineup" onclick="SquadViews.deleteLineup('${l.id}')">✕</button>`)
       + (creating
         ? `<span class="dc-new-form"><input id="dc-new-name" type="text" maxlength="30" placeholder="Lineup name" onkeydown="if(event.key==='Enter')SquadViews.createLineup(); if(event.key==='Escape')SquadViews.cancelCreate();">
@@ -350,9 +393,10 @@
     const sellOptions = seniors.slice().sort((a, b) => Number(b.overall || 0) - Number(a.overall || 0))
       .map(p => `<option value="${esc(p.player_id)}"${sameId(p.player_id, sellId) ? ' selected' : ''}>${esc(p.name)} (${p.overall || '?'})</option>`).join('');
     const hasPins = Object.keys(l.pins).length > 0;
-    return `<div class="home-toggle dc-lineups">${chips}</div>
+    const trophy = `<button class="dc-trophy${l.alltime ? ' on' : ''}" title="All-Time XI: the best players ever to play for the club" onclick="SquadViews.setLineup('alltime')">🏆</button>`;
+    return `<div class="home-toggle dc-lineups">${chips}</div>${trophy}
       <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
-      <label class="dc-ctl">What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>
+      ${l.alltime ? '' : `<label class="dc-ctl">What if I sell <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>`}
       ${hasPins ? '<button class="home-toggle-btn" onclick="SquadViews.resetOrder()">Reset order</button>' : ''}`;
   }
 
@@ -394,7 +438,7 @@
   // ---- slot edit dialog ----------------------------------------------------------
   function candidateRows(slot) {
     const role = slot.role;
-    return seniorsNow().map(p => ({ p, tier: tierFor(p, role) }))
+    return poolFor(active()).map(p => ({ p, tier: tierFor(p, role) }))
       .sort((a, b) => (a.tier === null) - (b.tier === null) || (a.tier ?? 9) - (b.tier ?? 9) || Number(b.p.overall || 0) - Number(a.p.overall || 0));
   }
 
@@ -417,7 +461,7 @@
       const fit = tier === 0 ? 'natural' : tier === 1 ? 'alt pos' : 'out of position';
       return `<div class="dc-row dc-cand${here >= 0 ? ' dc-pinned' : ''}" data-pid="${esc(p.player_id)}" onclick="SquadViews.assign('${esc(p.player_id)}')">
         <span class="dc-ring ${ringClass(age)}">${root.buildPlayerAvatarHtml(p, 26, '50%')}</span>
-        <span class="dc-name">${esc(p.name)}</span><span class="dc-tag">${labelOf(p.position_id)}</span>
+        <span class="dc-name">${esc(p.name)}</span>${posBadge(p)}${altText(p)}
         <span class="dc-fit fit-${tier ?? 'x'}">${fit}</span>${here >= 0 ? `<span class="dc-tag">${stringName(here)}</span>` : ''}
         <span class="dc-ovr">${p.overall || '?'}</span><span class="dc-age">${age ?? ''}</span></div>`;
     }).join('');
@@ -445,7 +489,7 @@
 
   // ---- hover summary ---------------------------------------------------------
   function findPlayer(pid) {
-    return seniorsNow().concat(academyNow()).find(p => sameId(p.player_id, pid));
+    return poolFor(active()).concat(academyNow()).concat(allTimeRows || []).find(p => sameId(p.player_id, pid));
   }
   function summaryHtml(p) {
     const attrs = p.attributes || {};
@@ -455,16 +499,17 @@
     const parts = !hasAttrs ? [] : gk
       ? [['DIV', attrs.diving], ['HAN', attrs.handling], ['KIC', attrs.kicking], ['REF', attrs.reflexes], ['SPD', root.calculatePace(attrs, ovr)], ['POS', attrs.gk_positioning]]
       : [['PAC', root.calculatePace(attrs, ovr)], ['SHO', root.calculateShooting(attrs, ovr)], ['PAS', root.calculatePassing(attrs, ovr)], ['DRI', root.calculateDribbling(attrs, ovr)], ['DEF', root.calculateDefending(attrs, ovr)], ['PHY', root.calculatePhysical(attrs, ovr)]];
-    const age = root.computeAge(p.dob);
+    const age = p.__alltime ? null : root.computeAge(p.dob);
     const alt = root.getAltPositionsLabel(p.alt_positions);
     const row = (k, v) => `<div><span>${k}</span><strong>${v}</strong></div>`;
     const cats = parts.length ? `<div class="dc-tip-cats">${parts.map(([l, v]) => `<div><span>${l}</span><strong>${Number(v ?? ovr)}</strong></div>`).join('')}</div>` : '';
     return `<div class="dc-tip-title">${esc(p.name)} <em>${root.getPositionInfo(p.position_id).label}</em></div>
-      ${row('Age', age ?? '—')}${row('Overall', ovr || '—')}${p.potential_high || p.potential ? row('Potential', esc(p.potential_high || p.potential)) : ''}
+      ${p.__alltime ? '' : row('Age', age ?? '—')}${row('Overall', p.__alltime ? ovr + ' (peak)' : (ovr || '—'))}${p.potential_high || p.potential ? row('Potential', esc(p.potential_high || p.potential)) : ''}
       ${cats}
       ${row('Preferred foot', p.preferred_foot ? esc(p.preferred_foot) : '—')}${row('Height', p.height ? root.formatHeight(p.height) : '—')}
       ${row('Weak foot', p.weak_foot ? p.weak_foot + '★' : '—')}${row('Skill moves', p.skill_moves ? p.skill_moves + '★' : '—')}
-      ${row('Alt positions', alt || 'none')}`;
+      ${row('Alt positions', alt || 'none')}
+      ${p.__alltime ? row('Peak season', esc(p.peak_season || '—')) + row('Club career', `${p.appearances} apps · ${p.goals} G · ${p.assists} A`) + row('Seasons', p.seasons) : ''}`;
   }
   let tip = null;
   function moveTip(e) {
@@ -548,7 +593,7 @@
 
   function applyMode() {
     const list = mode === 'list';
-    ['squad-search', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
+    ['squad-season-bar', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
     const host = $('squad-alt-view'); if (host) host.style.display = list ? 'none' : '';
     ['list', 'depth', 'academy'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
     if (mode !== 'depth') { edit = null; refreshModal(); }
@@ -570,7 +615,8 @@
     setFormation(f) { if (!FORMATIONS[f]) return; active().formation = f; saveLineups(); renderAll(); },
     setSell(id) { sellId = id; render(); },
     resetOrder() { const l = active(); l.pins = {}; saveLineups(); renderAll(); },
-    setLineup(id) { if (!lineupById(id)) return; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
+    setAllTimeData(rows) { allTimeRows = prepAllTime(rows); },
+    setLineup(id) { if (!lineupById(id)) return; if (id === 'alltime') sellId = ''; lineups.active = id; edit = null; creating = false; saveLineups(); render(); },
     startCreate() { creating = true; renderControls(); },
     cancelCreate() { creating = false; renderControls(); },
     createLineup() {

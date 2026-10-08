@@ -404,7 +404,7 @@
     const c = ed.cur;
     let hInputs, wInputs;
     if (units() === 'metric') {
-      hInputs = numberField('Height (cm)', 'height', 140, 220);
+      hInputs = numberField('Height (cm)', 'height', 140, 206);
       wInputs = numberField('Weight (kg)', 'weight', 40, 120);
     } else {
       const totalIn = c.height / 2.54;

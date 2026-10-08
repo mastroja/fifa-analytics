@@ -585,8 +585,12 @@ let currentCalendar = [];
     // Player height/weight come from the game as "183 cm" / "78 kg" —
     // converted to feet'inches" and lbs for imperial display; metric just
     // normalizes/rounds the game's own units back out.
+    // No player is shown taller than 6'9" (206 cm): a bad value saved in the game (e.g. 8'5") is capped on display.
+    const MAX_HEIGHT_CM = 206;
+    const capHeightCm = cm => Math.min(cm, MAX_HEIGHT_CM);
+
     function formatHeightImperial(heightStr) {
-      const cm = parseFloat(String(heightStr || '').replace(/[^\d.]/g, ''));
+      const cm = capHeightCm(parseFloat(String(heightStr || '').replace(/[^\d.]/g, '')));
       if (!cm) return heightStr || 'N/A';
       const totalInches = cm / 2.54;
       let feet = Math.floor(totalInches / 12);
@@ -602,7 +606,7 @@ let currentCalendar = [];
     }
 
     function formatHeightMetric(heightStr) {
-      const cm = parseFloat(String(heightStr || '').replace(/[^\d.]/g, ''));
+      const cm = capHeightCm(parseFloat(String(heightStr || '').replace(/[^\d.]/g, '')));
       return cm ? `${Math.round(cm)} cm` : (heightStr || 'N/A');
     }
 

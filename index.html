@@ -1212,10 +1212,10 @@
     .dc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 18px; align-items: start; }
     @media (max-width: 1250px) { .dc-layout { grid-template-columns: 1fr; } }
     .dc-pitch-wrap { overflow-x: auto; }
-    .dc-pitch { position: relative; min-width: 760px; height: max(780px, calc(100vh - 260px)); border-radius: 10px; border: 1px solid var(--border-color);
+    .dc-pitch { position: relative; min-width: 760px; height: max(820px, calc(100vh - 235px)); border-radius: 10px; border: 1px solid var(--border-color);
       background: repeating-linear-gradient(0deg, #14301f 0, #14301f 8%, #173824 8%, #173824 16%); }
     .dc-slot { position: absolute; transform: translate(-50%, -50%); width: clamp(175px, 20%, 235px); background: rgba(13, 17, 23, 0.92); border: 1px solid var(--border-color); border-radius: 10px; padding: 7px 9px; font-size: 14px; }
-    .dc-slot .dc-starter { padding: 4px 2px 6px; } .dc-slot .dc-starter .dc-name { font-size: 15px; font-weight: 700; } 
+    .dc-slot .dc-starter { padding: 2px 2px 4px; } .dc-slot .dc-starter .dc-name { font-size: 15px; font-weight: 700; } 
     .dc-col { display: flex; flex-direction: column; min-width: 0; flex: 1; } .dc-sub { font-size: 11px; color: var(--text-dim); } .dc-sub .dc-ovr { color: var(--text-color); font-size: 13px; }
     .dc-slot .dc-backup { font-size: 13px; opacity: 0.9; }
     .dc-reserves { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; }
@@ -1283,6 +1283,13 @@
     .dc-ctl select { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; margin-left: 4px; }
     .dc-new-form { display: inline-flex; align-items: center; gap: 6px; }
     .dc-new-form input[type=text] { background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; width: 150px; }
+    .dc-trophy { margin-left: auto; background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 15px; opacity: 0.35; padding: 2px 6px; }
+    .dc-trophy:hover, .dc-trophy.on { opacity: 1; border-color: #d29922; }
+    .dc-rightcol { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; } .dc-ovr-big { font-size: 20px; font-weight: 800; }
+    .dc-pos { font-size: 10px; padding: 1px 6px; }
+    .dc-rsub { display: flex; align-items: center; min-width: 0; }
+    .dc-alt { font-size: 10px; color: var(--text-dim); margin-left: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dc-sub { display: flex; align-items: center; min-width: 0; }
     .dc-x { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; }
     .dc-x:hover { color: #f85149; }
     .dc-legend-bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 12px; color: var(--text-dim); margin-bottom: 10px; }
@@ -3780,7 +3787,7 @@
 
   <!-- Squad Stats Tab -->
   <div id="squad-tab" class="tab-content">
-    <div class="filter-container">
+    <div class="filter-container" id="squad-season-bar">
       <div style="display: flex; align-items: center; gap: 10px;">
         <label for="squad-season-select" style="font-weight: bold; font-size: 14px;">Season:</label>
         <select id="squad-season-select" onchange="changeSquadSeason(this.value)">
