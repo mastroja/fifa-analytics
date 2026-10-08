@@ -1,4 +1,4 @@
-// node scripts/test_legacy_data.js — the FC 26 -> FC 27 data-folder carry-over copies once, never overwrites, never moves.
+// node scripts/test_legacy_data.js — the fifa-career-companion -> fifa-analytics data-folder carry-over copies once, never overwrites, never moves.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -6,7 +6,7 @@ const path = require('path');
 const { importLegacyUserData } = require('../js/legacy_data');
 
 const base = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-'));
-const legacyDir = path.join(base, 'fifa-career-companion'), userDir = path.join(base, 'fc27-career-companion');
+const legacyDir = path.join(base, 'fifa-career-companion'), userDir = path.join(base, 'fifa-analytics');
 fs.mkdirSync(legacyDir);
 fs.writeFileSync(path.join(legacyDir, 'companion.sqlite'), 'OLD-DB');
 fs.writeFileSync(path.join(legacyDir, 'boot_links.json'), '{}');

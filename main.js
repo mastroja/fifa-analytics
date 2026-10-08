@@ -34,13 +34,14 @@ async function readJsonFileWithRetry(filePath, attempts = 5, delayMs = 150) {
 let mainWindow = null;
 let db = null;
 const dbPath = path.join(app.getPath('userData'), 'companion.sqlite');
-// First launch of the FC 27 app (own data folder): copy the FC 26 version's saves over, never move them.
+// The app was renamed from "fifa-career-companion" to "fifa-analytics", which moves its data folder: on the first
+// launch with an empty new folder, copy the old folder's saves over (copy, never move).
 {
   const copied = require('./js/legacy_data').importLegacyUserData({
     legacyDir: path.join(app.getPath('appData'), 'fifa-career-companion'),
     userDir: app.getPath('userData')
   });
-  if (copied.length) console.log(`[LegacyData] Carried over ${copied.join(', ')} from the FC 26 version's data folder.`);
+  if (copied.length) console.log(`[LegacyData] Carried over ${copied.join(', ')} from the old fifa-career-companion data folder.`);
 }
 const schemaPath = path.join(__dirname, 'schema.sql');
 
@@ -6285,16 +6286,8 @@ function setupAutoUpdater() {
   // checking in a dev run (`npm start`) just throws — skip entirely there.
   if (!app.isPackaged) return;
 
-  // Same-game updates only: the major version is the game (27 = FC 27). A release from another game line must never
-  // install itself over this one, so nothing downloads until the offered version's major matches ours.
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.allowDowngrade = false;
-  autoUpdater.on('update-available', (info) => {
-    const major = v => parseInt(String(v).split('.')[0], 10);
-    if (major(info.version) === major(app.getVersion())) autoUpdater.downloadUpdate().catch(err => console.error('[AutoUpdater] Download failed:', err));
-    else console.log(`[AutoUpdater] Ignoring ${info.version}: different game line than ${app.getVersion()}.`);
-  });
 
   autoUpdater.on('update-downloaded', () => {
     dialog.showMessageBox(mainWindow, {

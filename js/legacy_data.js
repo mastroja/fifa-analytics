@@ -1,8 +1,7 @@
-// One-time carry-over of the data folder used by the FC 26 releases (version 1.x) into this app's own data folder.
-//
-// The FC 27 app has its own identity (package name, appId, installer folder) so that installing it never replaces an
-// FC 26 install and the two never share a database. Anyone moving over from the FC 26 version, and the developer's own
-// dev data, gets their saves copied (never moved) the first time the new app starts with an empty data folder.
+// One-time carry-over of the data folder used before the app was renamed (package name "fifa-career-companion", now
+// "fifa-analytics"). Electron derives the data folder from the package name, so the rename moves it; without this,
+// everyone updating would open the app to an empty database. Saves are copied (never moved) the first time the app
+// starts with an empty new folder, so the old folder stays as a backup.
 'use strict';
 const fs = require('fs');
 const path = require('path');

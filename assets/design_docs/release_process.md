@@ -1,27 +1,16 @@
-# Releasing the FC 27 app (and keeping FC 26 users safe)
+# Releasing the app
 
-## Why this is set up the way it is
-Installed FC 26 apps (1.x) update themselves from the GitHub repo `mastroja/fifa-companion-app`: they install whatever its **latest published release** is. Publishing 27.0.0 there would put an FC 27 build on every FC 26 user's machine. That cannot be undone from here, because old installs run their old updater code. So the FC 27 app is a separate product:
-
-| | FC 26 app (1.x) | FC 27 app (27.x) |
-|---|---|---|
-| Releases published to | `mastroja/fifa-companion-app` (frozen, `fc26-stable`) | `mastroja/fifa-analytics-fc27` (new repo, see below) |
-| `appId` | `com.fifa.companion` | `com.fifa.companion.fc27` |
-| Installer / install folder | `FIFA Analytics` | `FIFA Analytics FC27` (installs side by side) |
-| Data folder (`%APPDATA%`) | `fifa-career-companion` | `fc27-career-companion` (FC 26 saves are copied in on first launch, see `js/legacy_data.js`) |
-
-FC 26 installs keep looking at the old repo, whose latest release stays v1.9.2, so they never see an FC 27 build. The FC 27 app also refuses to download any update whose major version differs from its own (`setupAutoUpdater` in `main.js`).
-
-## One-time setup
-1. Create the releases repo (public, can be empty): `gh repo create mastroja/fifa-analytics-fc27 --public` (the name is set in `package.json` -> `build.publish.repo`; change both together if you prefer another name). Until it exists, `npm run release` fails with a 404 instead of publishing anywhere, which is the safe failure.
-2. Set `GH_TOKEN` (a token with `repo` access to that repo) in the shell you release from.
+The app is **FIFA Analytics** (package `fifa-analytics`), published to GitHub releases of `mastroja/fifa-companion-app`. Installed copies update themselves from the latest published release, so shipping 27.x there moves everyone, including people still on the FC 26 (1.x) versions, onto the FC 27 build. That is the intended plan ("roll over FC 26"): the FC 26 line stays available on the `fc26-stable` branch and the old v1.x releases, but it gets no further updates.
 
 ## Every release
 1. `npm test` and `npm run check`.
 2. Version: `npm run bump -- minor` (large change) or `patch`; update `BUILD_DATE` in `js/license_config.js`.
-3. `npm run release` builds the NSIS installer and uploads it plus `latest.yml` to the new repo. electron-builder creates the release as a **draft**: open it on GitHub, add notes, then **Publish**. Only published, non-pre-release releases are seen by the updater.
-4. Never publish an FC 27 release to `mastroja/fifa-companion-app`.
+3. Set `GH_TOKEN` (a token with `repo` access) and run `npm run release`. electron-builder uploads the NSIS installer and `latest.yml` as a **draft** release: add notes on GitHub and click **Publish**. The updater only sees published, non-pre-release releases.
 
-## Things to know
-- Both apps read the same export files (`C:\Users\Public\ea_fc_*.json`) and Live Editor binds one script path per game, so run only the app that matches the game you are playing.
-- If a future FC 28 app is made, give it the same treatment (new `appId`, `productName`, package `name`, publish repo, major 28).
+## What carries over for people updating from the FC 26 versions
+- Same `appId` and install folder, so the installer upgrades in place.
+- The package was renamed `fifa-career-companion` -> `fifa-analytics`, which moves the data folder from `%APPDATA%\fifa-career-companion` to `%APPDATA%\fifa-analytics`. `js/legacy_data.js` copies the old saves across on the first launch (the old folder is left as a backup).
+- Live Editor's F10 / F11 hotkeys keep pointing at the same install folder, but their game must be FC 27 now; an FC 26 save will not export correctly with these scripts.
+
+## Heads-up for the release notes
+Tell FC 26 players that this update is for FC 27 only, and that FC 26 is not supported by it. If you ever want a softer rollover, give FC 27 a new `appId` / `productName` / publish repo (see git history of this file for the setup that was tried).

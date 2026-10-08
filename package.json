@@ -1,6 +1,6 @@
 {
-  "name": "fc27-career-companion",
-  "version": "27.0.1",
+  "name": "fifa-analytics",
+  "version": "27.0.2",
   "description": "FIFA Analytics — analytics companion for EA FC Career Mode",
   "main": "main.js",
   "scripts": {
@@ -12,8 +12,8 @@
     "release": "electron-builder --win nsis --publish always"
   },
   "build": {
-    "appId": "com.fifa.companion.fc27",
-    "productName": "FIFA Analytics FC27",
+    "appId": "com.fifa.companion",
+    "productName": "FIFA Analytics",
     "win": {
       "target": "nsis",
       "icon": "assets/app-icon/icon.ico"
@@ -23,7 +23,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "FIFA Analytics FC27",
+      "shortcutName": "FIFA Analytics",
       "installerIcon": "assets/app-icon/icon.ico",
       "uninstallerIcon": "assets/app-icon/icon.ico"
     },
@@ -40,7 +40,7 @@
     "publish": {
       "provider": "github",
       "owner": "mastroja",
-      "repo": "fifa-analytics-fc27"
+      "repo": "fifa-companion-app"
     }
   },
   "devDependencies": {

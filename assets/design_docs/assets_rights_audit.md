@@ -31,7 +31,7 @@ Nothing in the repo records where any of these files came from. For each categor
 - Your own probes, `player_editor_sync.lua`, the depth chart, academy tracker and everything in `js/` are yours.
 
 ## Names and branding
-- App name "FIFA Analytics" / package `fifa-career-companion` uses the FIFA trademark. Pick a neutral name, add "Not affiliated with or endorsed by EA, FIFA, or any league, club or player", and avoid club or competition marks in the icon.
+- App name "FIFA Analytics" (package `fifa-analytics`) uses the FIFA trademark. Pick a neutral name, add "Not affiliated with or endorsed by EA, FIFA, or any league, club or player", and avoid club or competition marks in the icon.
 
 ## What breaks if the red folders are removed
 The app already falls back gracefully in several places, but check each before shipping:
