@@ -24,6 +24,7 @@ heap range the manager objects live in (0x66000000-0x6B000000), pointer-followin
 | `inspect_fc27_find_player_records.lua` | Stage 3: searches 16 more managers' vectors for squad ids | medium |
 | `inspect_fc27_find_fce_lists.lua` | Stage 4: looks for list objects under `FCEDataManager`; also tallies the match-rating table | medium |
 | `inspect_fc27_find_standings.lua` | Stages 5-6: scans the schedule-related managers' big pools for fixture-shaped runs (YYYYMMDD dates at a 0x18 stride) and standings-shaped runs (the user's league team ids at a 0x18 stride) | medium (reads only inside arena-bounded vectors, chunked, flushed) |
+| `inspect_fc27_next_match.lua` | Stage 7: dumps the small result/next-match managers (NextMatchManager, SimResultsManager, InterestingResultManager, StandingsViewManager, ...) and their pointer targets, tagging league team ids and dates in four encodings, to find where one fixture lives | medium (arena / near-object pointers only) |
 
 ## What was learned (v27.1.2, tested 2026-10-05/06)
 
@@ -83,3 +84,10 @@ a run of >= 6 league team ids at a 0x18 stride. It prints the decoded first item
 matches reality (Man City's fixtures / the real table), derive the path from the manager (or the pool's address pattern),
 put it into `MEM_LAYOUT` in `export_all.lua` (the struct reads are written there), run standalone, and only then set
 `FC27_MEMORY_OFFSETS_VERIFIED = true`. Expect a minute or two of run time (up to 9M qword reads).
+
+**Stage 6 result (2026-10-08, save dated 2026-09-01):** scanned FCEDataObjectManager +0x188/+0x1E8, NextMatchManager +0x10 and
+MatchImportanceManager +0x1C0 in full (3.7M qword reads). No run of YYYYMMDD dates at a 0x18 stride anywhere (no fixture
+list in that encoding/stride), and the single STANDINGS-shaped hit (0x67B520FC, FCEDataObjectManager +0x188) is a false
+positive: a team-id-sorted array of 8-byte (team id, ~62) pairs (127/62, 135/61, 143/62, 1797/61, 1802/62 ...), i.e. a
+team rating table, not standings. So standings and fixtures are not in those pools in the FC 26 shapes. Stage 7 goes at
+it from the other end: dump the small next-match / results managers and see how one fixture is stored.
