@@ -21,6 +21,11 @@ assert(proj[proj.length - 1].overall < 82, 'declines late');
 assert.deepStrictEqual(C.projectCurve(35, 70, 70, false), [], 'no projection past the end age');
 assert(C.projectCurve(30, 80, 70, false).every(p => p.overall <= 80), 'potential below overall never raises it');
 
+// past the peak age, a gap to potential is not closed: no jump, just hold then decline
+const late = C.projectCurve(29, 69, 85, false);
+assert(late.every(p => p.overall <= 69), 'a 29-year-old does not jump toward potential');
+assert(late[late.length - 1].overall < 69, 'and still declines later');
+
 // empty / unusable data gives the empty state, not a broken svg
 assert(/Not enough history/.test(C.developmentCurveSvg([], {})));
 assert(/Not enough history/.test(C.developmentCurveSvg([{ age: null, overall: 70 }], {})));

@@ -40,7 +40,8 @@
     const peakAge = isGoalkeeper ? 28 : 26;
     const declineFrom = isGoalkeeper ? 33 : 30;
     const endAge = Math.max(age, isGoalkeeper ? 38 : 35);
-    const target = Math.max(overall, potential || overall);
+    // Only players still below the peak age grow toward potential; anyone already there holds their current overall.
+    const target = age < peakAge ? Math.max(overall, potential || overall) : overall;
     const out = [];
     for (let a = age + 1; a <= endAge; a++) {
       let v;
