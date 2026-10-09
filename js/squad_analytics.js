@@ -246,15 +246,21 @@
   // renderHomeWidget (renderHomeDashboard in app.js)
   // ---------------------------------------------------------------------------------------------------------
 
+  // Other files add views with Insights.addView (js/insights_squad.js, insights_seasons.js, insights_injuries.js);
+  // each needs a matching #insights-view-<key> button in index.html.
   const VIEWS = { wages: wagesHtml, compare: compareHtml };
-  let view = 'wages';
+  let view = 'squad';
   const isActive = () => { const t = document.getElementById('insights-tab'); return !!(t && t.classList.contains('active')); };
 
   const Insights = {
     render() {
       Object.keys(VIEWS).forEach(v => { const b = document.getElementById('insights-view-' + v); if (b) b.classList.toggle('active', v === view); });
-      const h = host(); if (h) h.innerHTML = VIEWS[view]();
+      const h = host(); if (h) h.innerHTML = VIEWS[view] ? VIEWS[view]() : '';
     },
+    // fn() returns the view's HTML; a view that loads data async shows a placeholder and calls Insights.refresh()
+    // once it has it.
+    addView(key, fn) { VIEWS[key] = fn; },
+    current: () => view,
     setView(v) { if (!VIEWS[v]) return; view = v; Insights.render(); },
     // Jump here from elsewhere; with a player id, Compare opens on that player and a like-for-like rival.
     open(v, playerId) {

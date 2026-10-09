@@ -1965,10 +1965,14 @@ let currentCalendar = [];
         ? history.map(buildInjuryHistoryEntryHtml).join('')
         : `<div style="color: var(--text-dim); font-size: 13px;">No injuries recorded.</div>`;
 
-      return addButtonHtml + addFormHtml + listHtml;
+      // Timeline + summary over the whole history (js/insights_injuries.js); empty when there are no episodes.
+      const timelineHtml = window.InsightsInjuries ? window.InsightsInjuries.profileTimelineHtml(history) : '';
+
+      return timelineHtml + addButtonHtml + addFormHtml + listHtml;
     }
 
     function rerenderInjuryHistoryList() {
+      if (window.InsightsInjuries) window.InsightsInjuries.invalidate(); // an episode was added / edited / closed
       const container = document.getElementById('injury-history-list');
       if (!container) return;
       container.innerHTML = buildInjuryHistoryCardHtml();
@@ -4139,6 +4143,9 @@ Live Editor will end each loan and then release the player from your club to fre
 
       careerTotalsCache = null;
       if (typeof SquadViews !== 'undefined') SquadViews.refresh();
+      // New sync or save: the Seasons / Injuries views reload their data the next time they are drawn.
+      if (window.InsightsSeasons) window.InsightsSeasons.invalidate();
+      if (window.InsightsInjuries) window.InsightsInjuries.invalidate();
       if (window.Insights) window.Insights.refresh();
       renderHomeDashboard();
       filterAndRenderTransfers(); // Loaned view reads currentPlayers directly
@@ -8897,6 +8904,9 @@ Live Editor will end each loan and then release the player from your club to fre
         </table>
       `, 'No youth academy data loaded.');
       if (typeof SquadViews !== 'undefined') SquadViews.refresh();
+      // New sync or save: the Seasons / Injuries views reload their data the next time they are drawn.
+      if (window.InsightsSeasons) window.InsightsSeasons.invalidate();
+      if (window.InsightsInjuries) window.InsightsInjuries.invalidate();
       if (window.Insights) window.Insights.refresh();
     }
 
