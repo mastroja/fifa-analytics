@@ -517,56 +517,47 @@
       color: #facc15;
     }
 
-    /* Squad, Former Players, and Transfer Hub are each a single primary
+    /* Squad (including its All-Time view) and Transfer Hub are each a single primary
        table (unlike Home/League Stats' stacks of small widgets), so they
        get a larger scale across text, badges, and headshots — scoped to
-       these three tab containers only, everything else keeps the base
+       these tab containers only, everything else keeps the base
        table sizing above. */
     #squad-tab th,
-    #past-players-tab th,
     #transfers-tab th {
       font-size: 14px;
       padding: 16px 18px;
     }
 
     #squad-tab td,
-    #past-players-tab td,
     #transfers-tab td {
       font-size: 18px;
       padding: 16px 18px;
     }
 
     #squad-tab .pos-badge,
-    #past-players-tab .pos-badge,
     #transfers-tab .pos-badge {
       font-size: 13px;
       padding: 3px 8px;
     }
 
     #squad-tab .rating-badge,
-    #past-players-tab .rating-badge,
     #transfers-tab .rating-badge {
       font-size: 17px;
       padding: 3px 10px;
     }
 
     #squad-tab .jersey-badge,
-    #past-players-tab .jersey-badge,
     #transfers-tab .jersey-badge {
       font-size: 13px;
     }
 
     #squad-tab .loan-badge,
-    #past-players-tab .loan-badge,
     #transfers-tab .loan-badge,
     #squad-tab .injury-badge,
-    #past-players-tab .injury-badge,
     #transfers-tab .injury-badge,
     #squad-tab .captain-badge,
-    #past-players-tab .captain-badge,
     #transfers-tab .captain-badge,
     #squad-tab .vice-captain-badge,
-    #past-players-tab .vice-captain-badge,
     #transfers-tab .vice-captain-badge {
       font-size: 13px;
     }
@@ -1045,6 +1036,16 @@
 
     .home-grid-stats {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .home-grid-three {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    @media (max-width: 1100px) {
+      .home-grid-three {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 1100px) {
@@ -3525,9 +3526,9 @@
   <div class="nav-tabs" id="main-nav-tabs">
     <button class="tab-btn active" onclick="switchTab('home')" id="btn-home">Home</button>
     <button class="tab-btn" onclick="switchTab('squad')" id="btn-squad">Squad</button>
+    <button class="tab-btn" onclick="switchTab('insights')" id="btn-insights">Insights</button>
     <button class="tab-btn" onclick="switchTab('league-stats')" id="btn-league-stats">League Stats</button>
     <button class="tab-btn" onclick="switchTab('transfers')" id="btn-transfers">Transfers Hub</button>
-    <button class="tab-btn" onclick="switchTab('past-players')" id="btn-past-players">Former Players</button>
     <button class="tab-btn" onclick="switchTab('calendar')" id="btn-calendar">Calendar & Fixtures</button>
     <!-- <button class="tab-btn" onclick="switchTab('around-world')" id="btn-around-world">Around the World</button> -->
   </div>
@@ -3707,7 +3708,7 @@
       </div>
     </div>
 
-    <div class="home-dashboard-grid home-grid-stats">
+    <div class="home-dashboard-grid home-grid-three">
       <div class="profile-card home-widget">
         <h3><span>Squad Age Profile</span></h3>
         <div id="home-age-profile-body"></div>
@@ -3721,6 +3722,11 @@
         <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin: 14px 0 6px;">This Season
         </div>
         <div id="home-injury-history-body"></div>
+      </div>
+
+      <div class="profile-card home-widget">
+        <h3><span>Contracts</span><button class="home-toggle-btn" onclick="Insights.open('wages')">Wages &amp; Contracts →</button></h3>
+        <div id="home-contracts-body"></div>
       </div>
     </div>
   </div>
@@ -3743,6 +3749,7 @@
         <button class="home-toggle-btn active" id="squad-view-list" onclick="SquadViews.setView('list')">List</button>
         <button class="home-toggle-btn" id="squad-view-depth" onclick="SquadViews.setView('depth')">Depth</button>
         <button class="home-toggle-btn" id="squad-view-academy" data-pro="academy-tracker" onclick="SquadViews.setView('academy')">Academy</button>
+        <button class="home-toggle-btn" id="squad-view-alltime" onclick="SquadViews.setView('alltime')">All-Time</button>
       </div>
       <div id="squad-view-controls" class="dc-toolbar-controls"></div>
     </div>
@@ -3755,15 +3762,31 @@
           <input type="checkbox" id="squad-include-loaned" checked onchange="renderTableRows()" /> Include Loaned
           Players
         </label>
-        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-          <input type="checkbox" id="squad-include-transferred" onchange="renderTableRows()" /> Include Transferred
-          Players
-        </label>
       </div>
       <button class="home-toggle-btn" onclick="sortTable('club_status')">Sort by Club Status</button>
     </div>
 
     <div id="squad-alt-view" style="display: none;"></div>
+
+    <!-- All-Time view (js/all_time.js): everyone who has ever played for the club. Static so the filter control
+         (PlayerFilters binds to its mount once) and the search box survive re-renders. -->
+    <div id="squad-alltime-view" style="display: none;">
+      <div id="alltime-records" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px;"></div>
+      <div class="filter-container" style="padding-top: 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <div class="home-toggle" id="alltime-status"></div>
+        <input type="text" id="alltime-search" class="search-input" style="flex: 1; min-width: 200px;" placeholder="Search player name..." oninput="AllTime.renderRows()" />
+        <button class="refresh-btn" style="flex-shrink: 0;" onclick="onClearFormerPlayersClick()"
+          title="Stops following every player who has left so far (they move to 'not tracked' and only show under All) — for wiping the pre-youth-rebuild squad. Doesn't touch their stats; anyone who leaves after this is followed normally.">🧹 Clear former players</button>
+      </div>
+      <div id="alltime-filter-mount" class="pf-host"></div>
+      <div class="table-container">
+        <table>
+          <thead id="alltime-head"></thead>
+          <tbody id="alltime-body"></tbody>
+        </table>
+      </div>
+      <div id="alltime-footnote" style="font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6;"></div>
+    </div>
 
     <div class="table-container" id="squad-table-wrap">
       <table>
@@ -3793,45 +3816,16 @@
 
   </div>
 
-  <!-- Former Players Tab -->
-  <div id="past-players-tab" class="tab-content">
-    <div
-      style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px;">
-      <div style="font-size: 13px; color: var(--text-dim);">
-        Players who've left the club. Current OVR/Potential are looked up live from the game when available (takes one
-        F10 refresh after a player first appears here to populate); Sold For shows the real fee when the game's transfer
-        negotiation data has it, otherwise Unknown — see the "Departed" column for when they left instead.
+  <!-- Insights Tab: cross-squad analysis and charts (js/squad_analytics.js). New analysis views go here as another
+       toggle button, so the Squad tab stays List / Depth / Academy. -->
+  <div id="insights-tab" class="tab-content">
+    <div class="dc-toolbar">
+      <div class="home-toggle" id="insights-view-toggle">
+        <button class="home-toggle-btn active" id="insights-view-wages" onclick="Insights.setView('wages')">Wages &amp; Contracts</button>
+        <button class="home-toggle-btn" id="insights-view-compare" onclick="Insights.setView('compare')">Compare</button>
       </div>
-      <button class="refresh-btn" style="flex-shrink: 0;" onclick="onClearFormerPlayersClick()"
-        title="Hides every former player currently listed — for wiping the pre-youth-rebuild squad so it doesn't count. Doesn't touch past season stats; anyone who leaves after this still shows up normally.">🧹
-        Clear Former Players</button>
     </div>
-    <div id="past-filter-mount" class="pf-host"></div>
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th onclick="sortPastPlayers('name')">Player ↕</th>
-            <th onclick="sortPastPlayers('position_id')">Pos ↕</th>
-            <th onclick="sortPastPlayers('__age')">Age ↕</th>
-            <th onclick="sortPastPlayers('overall')">Current OVR ↕</th>
-            <th onclick="sortPastPlayers('current_club')">Current Club ↕</th>
-            <th onclick="sortPastPlayers('__soldFor')"
-              title="Real fee from the game's transfer negotiation data, when known — otherwise Unknown.">Sold For ↕
-            </th>
-            <th onclick="sortPastPlayers('__value')">Current Value ↕</th>
-            <th onclick="sortPastPlayers('departed_season')">Departed ↕</th>
-            <th onclick="sortPastPlayers('joined_season')">Years Active ↕</th>
-            <th onclick="sortPastPlayers('years_active')">Years at Club ↕</th>
-          </tr>
-        </thead>
-        <tbody id="past-players-body">
-          <tr>
-            <td colspan="10" class="empty-state">No former players tracked yet.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <div id="insights-view"></div>
   </div>
 
   <!-- Transfers Hub Tab -->
@@ -4237,9 +4231,12 @@
   <script src="js/license_ui.js"></script>
   <script src="js/challenge.js"></script>
   <script src="js/player_filters.js"></script>
+  <script src="js/charts.js"></script>
   <script src="js/app.js"></script>
   <script src="js/depth_chart.js"></script>
   <script src="js/academy_tracker.js"></script>
+  <script src="js/squad_analytics.js"></script>
+  <script src="js/all_time.js"></script>
   <script src="js/player_editor_ui.js"></script>
   <script src="js/dynamic_look_ui.js"></script>
 </body>

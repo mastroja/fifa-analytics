@@ -1,4 +1,4 @@
-// Shared player-table filter (Squad + Former Players use the same component, so the UI and behaviour never drift).
+// Shared player-table filter (Squad list + Squad All-Time use the same component, so the UI and behaviour never drift).
 //
 // PlayerFilters.create({ key, mount, fields, presets, onChange, getRows })
 //   key      persistence key (localStorage "pf:<key>"; failures are ignored)

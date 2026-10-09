@@ -1,4 +1,5 @@
-// Squad tab alternate views: List (the existing table) / Depth (pitch) / Academy (js/academy_tracker.js).
+// Squad tab alternate views: List (the existing table) / Depth (pitch) / Academy (js/academy_tracker.js) /
+// All-Time (js/all_time.js, its own static container #squad-alltime-view).
 //
 // Depth view: named lineups (Starting XI, Reserves, plus any the user creates), each with
 // its own formation and manual arrangement. Every slot is a list of "strings" (1st, 2nd, 3rd ...): the first two are
@@ -635,6 +636,7 @@ ${academySection}</aside>
     renderControls();
     if (!host || mode === 'list') return;
     if (mode === 'academy') { if (root.AcademyTracker) root.AcademyTracker.show(); return; }
+    if (mode === 'alltime') { if (root.AllTime) root.AllTime.show(); return; }
     host.innerHTML = depthHtml();
     refreshModal();
   }
@@ -643,8 +645,9 @@ ${academySection}</aside>
   function applyMode() {
     const list = mode === 'list';
     ['squad-season-bar', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
-    const host = $('squad-alt-view'); if (host) host.style.display = list ? 'none' : '';
-    ['list', 'depth', 'academy'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
+    const host = $('squad-alt-view'); if (host) host.style.display = list || mode === 'alltime' ? 'none' : '';
+    const allTime = $('squad-alltime-view'); if (allTime) allTime.style.display = mode === 'alltime' ? '' : 'none';
+    ['list', 'depth', 'academy', 'alltime'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
     if (mode !== 'depth') { edit = null; refreshModal(); }
   }
   function setView(m) {
@@ -659,6 +662,7 @@ ${academySection}</aside>
     refresh() {
       renderGapsCard();
       if (root.AcademyTracker) { root.AcademyTracker.invalidate(); if (mode === 'academy') root.AcademyTracker.reload(); }
+      if (root.AllTime) root.AllTime.reload();
       if (mode === 'depth') render();
     },
     setView,

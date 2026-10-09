@@ -466,7 +466,7 @@ let currentCalendar = [];
     // their transfer_fees rows is most recent. Separate from
     // currentTransfers above (which is just is_league/userClubName
     // bookkeeping) since this backs actual UI: the Transfer Hub's Fee
-    // column, Former Players' Sold For, and the profile's Transfer Fee
+    // column, the All-Time view's Sold For, and the profile's Transfer Fee
     // line. Loans always carry fee 0 (see export_all.lua) — treat that as
     // "no fee data", not "confirmed free".
     let currentTransferFees = [];
@@ -1116,6 +1116,24 @@ let currentCalendar = [];
       return ` <span style="color:var(--text-dim); font-size:11px;">–</span>`;
     }
 
+    // Profile "Development" card: Chart (OVR/POT by age, js/charts.js) or
+    // Table (buildAttributeGrowthHtml below). The choice is remembered per
+    // viewer; it is only a display preference, so storage failures are fine.
+    const PROFILE_DEV_VIEW_KEY = 'profileDevelopmentView';
+    let profileDevelopmentView = 'chart';
+    try { if (localStorage.getItem(PROFILE_DEV_VIEW_KEY) === 'table') profileDevelopmentView = 'table'; } catch (e) { /* defaults to chart */ }
+
+    function setProfileDevelopmentView(mode) {
+      profileDevelopmentView = mode === 'table' ? 'table' : 'chart';
+      try { localStorage.setItem(PROFILE_DEV_VIEW_KEY, profileDevelopmentView); } catch (e) { /* just won't persist */ }
+      ['chart', 'table'].forEach(m => {
+        const body = document.getElementById(`profile-dev-${m}`);
+        const btn = document.getElementById(`profile-dev-btn-${m}`);
+        if (body) body.style.display = m === profileDevelopmentView ? '' : 'none';
+        if (btn) btn.classList.toggle('active', m === profileDevelopmentView);
+      });
+    }
+
     // Renders a per-season table of each attribute category so growth (or
     // decline) across career mode seasons is visible at a glance.
     function buildAttributeGrowthHtml(chronoSeasons, isGoalkeeper) {
@@ -1358,6 +1376,7 @@ let currentCalendar = [];
       // push. Re-rendering on every switch guarantees it always reflects
       // current state instead of depending on that timing.
       if (tabName === 'league-stats') renderLeagueStatsTab();
+      if (tabName === 'insights' && window.Insights) window.Insights.render();
     }
 
     function goBackFromProfile() {
@@ -1543,7 +1562,7 @@ let currentCalendar = [];
     // Merges a player's per-season `.competitions` breakdowns (as returned
     // by getPlayerHistory) into one all-time per-competition total,
     // appearances-weighted avg rating same as everywhere else. Shared by
-    // the profile's "All Time" Stats view and the Former Players table's
+    // the profile's "All Time" Stats view and the Squad All-Time view's
     // expandable competitions row — both want the exact same aggregation
     // over a player's full history at the club, current or departed.
     function buildAllTimeCompetitionsBreakdown(seasonsList) {
@@ -1580,7 +1599,7 @@ let currentCalendar = [];
     // recompute the season's stats from the filtered breakdown instead of
     // trusting the (possibly contaminated) raw columns. Top-level (not
     // nested in openPlayerProfile) so every "All Time" competitions view —
-    // the profile, the Squad tab's All Time toggle, Former Players — can
+    // the profile, the Squad tab's All-Time view — can
     // share one aggregation path via buildAllTimeCompetitionsBreakdown.
     function cleanSeasonStats(raw) {
       const rawCompetitions = raw.competitions || [];
@@ -1621,7 +1640,7 @@ let currentCalendar = [];
     // competitions (see bucketExhibitionCompetitions). Works identically
     // for a current or departed player since getPlayerHistory unions in
     // former_player_snapshots — see main.js. Shared by the Squad tab's
-    // All Time view and the Former Players table so both show a real
+    // All Time view and the Squad All-Time view so both show a real
     // career total instead of whatever happened to be in the player's
     // final synced season (which can be just preseason friendlies, for
     // someone who left before real fixtures were played that season).
@@ -1651,11 +1670,11 @@ let currentCalendar = [];
       return CUP_COMPETITION_KEYWORDS.some(k => lower.includes(k));
     }
 
-    // `includePreseason`/`showTotal` default to the Former Players/Squad
+    // `includePreseason`/`showTotal` default to the Squad All-Time
     // All Time behavior (no preseason row, total at the bottom); the
     // Squad tab's own per-season and All Time toggles pass the opposite
     // of both — the user wants preseason kept visible there and no total
-    // row, while Former Players stays as-is. Leagues-before-cups grouping
+    // row, while the All-Time view stays as-is. Leagues-before-cups grouping
     // (see isCupCompetition) always applies either way.
     function renderCompetitionsTableHtml(competitions, { includePreseason = false, showTotal = true } = {}) {
       const rows = includePreseason
@@ -2557,7 +2576,7 @@ let currentCalendar = [];
       if (!player) {
         const findFormer = () => (currentPastPlayers || []).find(p => p.player_id == identifier || (p.name && p.name.toLowerCase() === String(identifier).toLowerCase()));
         let formerPlayer = findFormer();
-        // currentPastPlayers is only populated once the Former Players
+        // currentPastPlayers is only populated once the past-players
         // tab (or Transfer Hub) has loaded this session — fetch fresh
         // rather than showing a blank profile if a link is opened before
         // that ever happened.
@@ -2574,7 +2593,7 @@ let currentCalendar = [];
           // authoritative live source once it's caught up, but it has a
           // one-sync lag for a player who JUST departed — see the
           // "takes one F10 refresh after a player first appears here to
-          // populate" note on the Former Players tab. Until that lookup
+          // populate" note on the Squad All-Time view. Until that lookup
           // actually runs, current_club isn't blank/"Unknown" — it's
           // whatever club_name they last synced WITH (i.e. our own club,
           // the one they just left), which looks like a real answer but
@@ -2737,7 +2756,7 @@ let currentCalendar = [];
       const refVal = attrs.reflexes ?? baseOvr;
 
       // cleanSeasonStats is now top-level (see above buildAllTimeCompetitionsBreakdown) —
-      // shared with the Squad tab's All Time view and Former Players.
+      // shared with the Squad tab's All-Time view.
 
       // "League Two 25/26" rather than just "25/26" — same league-name +
       // shortened-year format as the League Stats tab's season dropdown,
@@ -2994,6 +3013,17 @@ let currentCalendar = [];
 
       const attributeGrowthHtml = buildAttributeGrowthHtml(chronoSeasons, isGoalkeeper);
 
+      // One point per season (age at season end, overall, potential) for the Development card's chart.
+      const developmentBirthDate = parseBirthDate(player.dob || player.birthdate);
+      const developmentHtml = window.Charts
+        ? window.Charts.developmentCurveSvg(chronoSeasons.map(s => ({
+            age: window.Charts.ageAtSeasonEnd(developmentBirthDate, s.year_label),
+            overall: Number(s.overall),
+            potential: Number(s.potential),
+            label: s.season_name
+          })), { isGoalkeeper, showProjection: !player.__isFormerPlayer })
+        : '';
+
       // headshot_path is a locally-bundled stand-in photo picked
       // server-side by age/nationality/skin tone (see resolveHeadshotPath
       // in main.js) — not a real photo of this specific player, since no
@@ -3077,6 +3107,7 @@ let currentCalendar = [];
                 <span class="badge">Height: ${formatHeight(player.height)}</span>
                 <span class="badge">Weight: ${formatWeight(player.weight)}</span>
                 <span id="profile-edit-player-slot"></span>
+                ${player.__clubStatus === 'normal' && player.player_id && window.Insights ? `<button class="refresh-btn" style="font-size: 12px; padding: 4px 12px;" title="Compare with another squad player in Insights" onclick="Insights.open('compare', ${Number(player.player_id)})">⇄ Compare</button>` : ''}
                 ${player.__clubStatus === 'loan' ? `<span class="badge" style="background:#388bfd22; border-color:#388bfd55; color:#58a6ff;">Loaned to ${player.club_name || 'Unknown Club'} until ${(activeLoanInfo && activeLoanInfo.endLabel) || formatDateMMDDYYYY(player.loan_date_end)}${(activeLoanInfo && activeLoanInfo.lengthLabel) ? ` (${activeLoanInfo.lengthLabel})` : ''} ${player.is_loan_to_buy ? '[Option to Buy]' : ''}</span>` : ''}
                 ${player.injury ? `<span class="injury-badge">INJURED</span>` : ''}
               </div>
@@ -3217,8 +3248,15 @@ let currentCalendar = [];
             </div>
 
             <div class="profile-card">
-              <h3>Attribute Growth</h3>
-              ${attributeGrowthHtml}
+              <h3>
+                <span>Development</span>
+                <span class="home-toggle">
+                  <button class="home-toggle-btn${profileDevelopmentView === 'chart' ? ' active' : ''}" id="profile-dev-btn-chart" onclick="setProfileDevelopmentView('chart')">Chart</button>
+                  <button class="home-toggle-btn${profileDevelopmentView === 'table' ? ' active' : ''}" id="profile-dev-btn-table" onclick="setProfileDevelopmentView('table')">Table</button>
+                </span>
+              </h3>
+              <div id="profile-dev-chart" style="${profileDevelopmentView === 'chart' ? '' : 'display: none;'}">${developmentHtml}</div>
+              <div id="profile-dev-table" style="${profileDevelopmentView === 'table' ? '' : 'display: none;'}">${attributeGrowthHtml}</div>
             </div>
           </div>
 
@@ -3505,11 +3543,10 @@ let currentCalendar = [];
 
       const query = document.getElementById('squad-search').value.toLowerCase().trim();
       const includeLoaned = document.getElementById('squad-include-loaned')?.checked ?? true;
-      const includeTransferred = document.getElementById('squad-include-transferred')?.checked ?? false;
 
       let filtered = squadTableRows.filter(p => {
         if (!includeLoaned && p.__clubStatus === 'loan') return false;
-        if (!includeTransferred && p.__clubStatus === 'transferred') return false;
+        if (p.__clubStatus === 'transferred') return false; // departed players live in the All-Time view
         if (!squadFilter.matches(p)) return false;
         if (!query) return true;
         const nameMatch = (p.name || '').toLowerCase().includes(query);
@@ -3566,53 +3603,7 @@ let currentCalendar = [];
         `;
         tbody.appendChild(row);
 
-        // The All Time view's own per-competition breakdown is fetched
-        // lazily and aggregated across every season the player was at the
-        // club (see fetchAllTimeCompetitionsForPlayer) — p.competitions
-        // here is only their LATEST season's data (see getAllTimeSquadStats
-        // in main.js), which under-reports anyone who departed before that
-        // season's real fixtures were played (can be just preseason
-        // friendlies). Current/past-season views are inherently
-        // season-scoped already, so p.competitions is correct as-is there
-        // and rendered synchronously, no fetch needed.
-        if (squadSeasonSelection === 'all_time' && p.player_id != null) {
-          const detailRow = document.createElement('tr');
-          detailRow.className = 'detail-row';
-          detailRow.id = `detail-${idx}`;
-          detailRow.innerHTML = `<td colspan="12"><div class="detail-wrapper"></div></td>`;
-
-          let loaded = false;
-          row.onclick = async (e) => {
-            if (!(e.target.closest('.player-name') || e.target.closest('.jersey-badge'))) {
-              openPlayerProfile(p.player_id || p.name);
-              return;
-            }
-            const isOpen = detailRow.classList.contains('open');
-            if (isOpen) {
-              detailRow.classList.remove('open');
-              row.classList.remove('expanded');
-              return;
-            }
-            detailRow.classList.add('open');
-            row.classList.add('expanded');
-            if (loaded) return;
-
-            const wrapper = detailRow.querySelector('.detail-wrapper');
-            wrapper.innerHTML = `<div class="empty-state" style="padding: 8px; font-size: 12px;">Loading...</div>`;
-            try {
-              const breakdown = await fetchAllTimeCompetitionsForPlayer(p.player_id);
-              loaded = true;
-              if (detailRow.classList.contains('open')) wrapper.innerHTML = renderCompetitionsTableHtml(breakdown, { includePreseason: true, showTotal: false });
-            } catch (err) {
-              console.error('Failed to load all-time competitions breakdown for player', p.player_id, err);
-              if (detailRow.classList.contains('open')) {
-                wrapper.innerHTML = `<div class="empty-state" style="padding: 8px; font-size: 12px;">Couldn't load competitions data.</div>`;
-              }
-            }
-          };
-
-          tbody.appendChild(detailRow);
-        } else if (p.competitions && p.competitions.length > 0) {
+        if (p.competitions && p.competitions.length > 0) {
           const detailRow = document.createElement('tr');
           detailRow.className = 'detail-row';
           detailRow.id = `detail-${idx}`;
@@ -3694,7 +3685,7 @@ let currentCalendar = [];
     // single feed that has fee/date/direction for all of these:
     //  - Signed: getSignedPlayers (main.js) — everyone currently under
     //    contract, tagged 'Academy' if ever in the youth academy.
-    //  - Sold: currentPastPlayers, the SAME source as the Former Players
+    //  - Sold: currentPastPlayers, the SAME source as the Squad All-Time view's
     //    tab (continuously-accurate departure detection) — never includes
     //    a loanee, since getPastPlayers already treats "out on loan" as
     //    still on the books.
@@ -4148,34 +4139,19 @@ Live Editor will end each loan and then release the player from your club to fre
 
       careerTotalsCache = null;
       if (typeof SquadViews !== 'undefined') SquadViews.refresh();
+      if (window.Insights) window.Insights.refresh();
       renderHomeDashboard();
       filterAndRenderTransfers(); // Loaned view reads currentPlayers directly
     }
 
     // Squad Stats season selector — 'current' mirrors the live squad
     // (currentPlayers), a numeric season id shows that season's roster as
-    // it was then, 'all_time' shows the current roster with career totals
-    // across every season they've been with the club. Deliberately keeps
+    // it was then. Career totals across every season live in the Squad
+    // tab's All-Time view (js/all_time.js). Deliberately keeps
     // currentPlayers untouched so Home dashboard widgets never see a past
     // season's data.
     async function changeSquadSeason(value) {
       squadSeasonSelection = value;
-
-      // All Time is every season the player has ever been with the club —
-      // a departed/transferred player is exactly what makes up the
-      // "former" part of that history, so hiding them would make the
-      // view lie about who's actually included. Forced on (and locked)
-      // here rather than just defaulting it, so it can't drift back off
-      // via the checkbox's own onchange while All Time stays selected.
-      const includeTransferredEl = document.getElementById('squad-include-transferred');
-      if (includeTransferredEl) {
-        if (value === 'all_time') {
-          includeTransferredEl.checked = true;
-          includeTransferredEl.disabled = true;
-        } else {
-          includeTransferredEl.disabled = false;
-        }
-      }
 
       if (value === 'current') {
         squadTableRows = currentPlayers;
@@ -4185,12 +4161,7 @@ Live Editor will end each loan and then release the player from your club to fre
       }
 
       if (!window.api) return;
-      let raw;
-      if (value === 'all_time') {
-        raw = await window.api.getAllTimeSquad();
-      } else {
-        raw = await window.api.getSquadData(parseInt(value, 10));
-      }
+      const raw = await window.api.getSquadData(parseInt(value, 10));
       squadTableRows = transformPlayersForTable(raw);
       applySquadSort();
       renderTableRows();
@@ -4210,7 +4181,6 @@ Live Editor will end each loan and then release the player from your club to fre
       select.innerHTML = `
         <option value="current">Current Season</option>
         ${pastOptions}
-        <option value="all_time">All Time</option>
       `;
     }
 
@@ -4257,19 +4227,16 @@ Live Editor will end each loan and then release the player from your club to fre
 
     // Cached so the Transfer Hub's Sold view and a player's profile page
     // (Transfer History) can reuse this same fetch instead of each making
-    // their own round trip — refreshed alongside the Former Players table.
+    // their own round trip — and the Squad tab's All-Time view (js/all_time.js)
+    // reads it for where departed players are now.
     let currentPastPlayers = [];
-    let pastPlayersSortColumn = 'position_id';
-    // Ascending on position_id means GK (POSITION_SORT_ORDER's lowest
-    // value) sorts first — matches the active squad table's default.
-    let pastPlayersSortAscending = true;
 
     async function renderPastPlayersTable() {
       if (!window.api || !window.api.getPastPlayers) return;
       const pastPlayers = await window.api.getPastPlayers(currentSaveId);
       currentPastPlayers = pastPlayers || [];
       filterAndRenderTransfers(); // Sold view reads currentPastPlayers directly
-      renderPastPlayersRows();
+      if (window.AllTime) window.AllTime.redraw(); // Squad > All-Time shows where they are now
     }
 
     // Hides every former player currently listed (see
@@ -4280,169 +4247,13 @@ Live Editor will end each loan and then release the player from your club to fre
     async function onClearFormerPlayersClick() {
       if (!currentSaveId || !window.api || !window.api.clearFormerPlayers) return;
       if (currentPastPlayers.length === 0) return;
-      const confirmed = confirm(`Clear all ${currentPastPlayers.length} former player(s) currently listed? This only hides them from this tab — past season stats aren't affected. Anyone who leaves the club after this will still show up here normally.`);
+      const confirmed = confirm(`Stop following all ${currentPastPlayers.length} former player(s) who have left so far? They stay in All-Time with their stats (marked "not tracked", under All only) but drop out of Left. Anyone who leaves the club after this is followed normally.`);
       if (!confirmed) return;
       const result = await window.api.clearFormerPlayers(currentSaveId);
       if (result && result.success) {
         await renderPastPlayersTable();
       } else {
         alert('Could not clear former players — check the console log for details.');
-      }
-    }
-
-    function sortPastPlayers(column) {
-      if (pastPlayersSortColumn === column) {
-        pastPlayersSortAscending = !pastPlayersSortAscending;
-      } else {
-        pastPlayersSortColumn = column;
-        pastPlayersSortAscending = true;
-      }
-      renderPastPlayersRows();
-    }
-
-    // ---- Former Players filter (same shared component as the Squad tab) ----
-    const pastPlayersFilter = PlayerFilters.create({
-      key: 'former',
-      mount: 'past-filter-mount',
-      onChange: () => renderPastPlayersRows(),
-      getRows: () => currentPastPlayers,
-      fields: [
-        { id: 'group', label: 'Position', type: 'chips', options: GROUP_CHIPS, get: p => getPositionInfo(p.position_id).group },
-        { id: 'age', label: 'Age now', type: 'range', get: p => p.__age },
-        { id: 'overall', label: 'Current OVR', type: 'range', get: p => p.overall },
-        { id: 'club', label: 'Current club', type: 'text', get: p => p.current_club },
-        { id: 'fee', label: 'Sold for', type: 'range', step: 1000, get: p => p.__soldFor },
-        { id: 'hasfee', label: 'Transfer fee', type: 'toggle', toggleLabel: 'Known fee only', get: p => !!p.__soldFor },
-        { id: 'value', label: 'Current value', type: 'range', step: 1000, get: p => p.__value },
-        { id: 'years', label: 'Years at club', type: 'range', get: p => p.years_active },
-        { id: 'joined', label: 'Joined season', type: 'select', options: rows => [...new Set(rows.map(p => p.joined_season).filter(Boolean))].sort(), get: p => p.joined_season },
-        { id: 'departed', label: 'Departed season', type: 'select', options: rows => [...new Set(rows.map(p => p.departed_season).filter(Boolean))].sort(), get: p => p.departed_season }
-      ],
-      presets: [
-        { label: 'Sold for a fee', set: { hasfee: true } },
-        { label: 'Now 80+ OVR', set: { overall: { min: 80 } } },
-        { label: 'Under 23 now', set: { age: { max: 22 } } },
-        { label: 'Stayed 3+ years', set: { years: { min: 3 } } }
-      ]
-    });
-
-    // Pulled apart from the fetch above so sortPastPlayers can just
-    // re-render the already-cached list instead of re-fetching.
-    function renderPastPlayersRows() {
-      const tbody = document.getElementById('past-players-body');
-      if (!tbody) return;
-
-      if (currentPastPlayers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="empty-state">No former players tracked yet.</td></tr>`;
-        return;
-      }
-
-      // Precompute the derived fields sorting/display both need, once,
-      // rather than recomputing per comparison during sort.
-      let rows = currentPastPlayers.map(p => {
-        const age = computeAge(p.dob);
-        // wage_at_departure is the best available proxy for a current-club
-        // wage we have no way to know — value is still just an estimate.
-        const value = estimateMarketValue(p.overall, p.potential, age, p.wage_at_departure);
-        const soldFor = getTransferFeeForPlayer(p.player_id);
-        return { ...p, __age: age, __value: value, __soldFor: soldFor };
-      });
-
-      const allRows = rows;
-      rows = rows.filter(p => pastPlayersFilter.matches(p));
-      pastPlayersFilter.setSummary(rows.length, allRows.length);
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" class="empty-state">No former players match your filters.</td></tr>`;
-        return;
-      }
-
-      rows.sort((a, b) => {
-        let valA = a[pastPlayersSortColumn];
-        let valB = b[pastPlayersSortColumn];
-        if (pastPlayersSortColumn === 'name') {
-          valA = getLastName(a.name).toLowerCase();
-          valB = getLastName(b.name).toLowerCase();
-          return pastPlayersSortAscending ? valA.localeCompare(valB) : valB.localeCompare(valA);
-        } else if (pastPlayersSortColumn === 'position_id') {
-          valA = POSITION_SORT_ORDER[getPositionInfo(a.position_id).label] || 99;
-          valB = POSITION_SORT_ORDER[getPositionInfo(b.position_id).label] || 99;
-          return pastPlayersSortAscending ? valA - valB : valB - valA;
-        } else if (pastPlayersSortColumn === '__value' || pastPlayersSortColumn === '__soldFor') {
-          valA = Number(valA || 0); valB = Number(valB || 0);
-          return pastPlayersSortAscending ? valA - valB : valB - valA;
-        } else if (pastPlayersSortColumn === '__age' || pastPlayersSortColumn === 'overall' || pastPlayersSortColumn === 'years_active') {
-          valA = Number(valA || 0); valB = Number(valB || 0);
-          return pastPlayersSortAscending ? valA - valB : valB - valA;
-        }
-        valA = String(valA ?? '');
-        valB = String(valB ?? '');
-        return pastPlayersSortAscending ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      });
-
-      tbody.innerHTML = rows.map(p => {
-        const posInfo = getPositionInfo(p.position_id);
-        const ovrLabel = p.overall_is_live ? p.overall : `${p.overall ?? '—'} (last known)`;
-        return `
-          <tr class="player-row" id="former-row-${p.player_id}">
-            <td>
-              <span class="expand-icon" style="cursor: pointer; margin-right: 4px;" onclick="toggleFormerPlayerCompetitions(${p.player_id})" title="Competitions breakdown for their whole time at the club">▶</span>
-              <span style="display: inline-flex; align-items: center; gap: 6px;">
-                ${buildPlayerAvatarHtml(p, 34, '50%')}
-                <strong class="clickable-name" style="color: #58a6ff;" onclick="openPlayerProfile('${p.player_id}')">${p.name}</strong>
-              </span>
-            </td>
-            <td><span class="pos-badge pos-${posInfo.group}">${posInfo.label}</span></td>
-            <td>${p.__age ?? '—'}</td>
-            <td><span class="rating-badge">${ovrLabel}</span></td>
-            <td>${p.current_club}</td>
-            <td style="${p.__soldFor ? 'color: var(--accent-color); font-weight: 600;' : 'color: var(--text-dim); font-style: italic;'}">${p.__soldFor ? formatMoney(p.__soldFor) : 'Unknown'}</td>
-            <td style="color: var(--accent-color); font-weight: 600;">${formatMoney(p.__value)}</td>
-            <td>${p.departed_season || '—'}</td>
-            <td>${formatYearsActiveRange(p.joined_season, p.departed_season)}</td>
-            <td>${p.years_active !== null && p.years_active !== undefined ? p.years_active : '—'}</td>
-          </tr>
-          <tr class="detail-row" id="former-detail-${p.player_id}">
-            <td colspan="10"><div class="detail-wrapper"></div></td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    // All-time (every season at the club, not just their last known one)
-    // per-competition breakdown for a former player's expandable row —
-    // lazy-fetched via fetchAllTimeCompetitionsForPlayer (works for a
-    // departed player exactly like a current one, see getPlayerHistory in
-    // main.js) and cached there since most rows never get expanded.
-    async function toggleFormerPlayerCompetitions(playerId) {
-      const mainRow = document.getElementById(`former-row-${playerId}`);
-      const detailRow = document.getElementById(`former-detail-${playerId}`);
-      if (!mainRow || !detailRow) return;
-
-      const isOpen = detailRow.classList.contains('open');
-      if (isOpen) {
-        detailRow.classList.remove('open');
-        mainRow.classList.remove('expanded');
-        return;
-      }
-      detailRow.classList.add('open');
-      mainRow.classList.add('expanded');
-
-      const wrapper = detailRow.querySelector('.detail-wrapper');
-      if (!wrapper) return;
-      wrapper.innerHTML = `<div class="empty-state" style="padding: 8px; font-size: 12px;">Loading...</div>`;
-
-      try {
-        const breakdown = await fetchAllTimeCompetitionsForPlayer(playerId);
-        // The row may have been collapsed again while the fetch was in
-        // flight — don't paint into a wrapper the user already closed.
-        if (detailRow.classList.contains('open')) {
-          wrapper.innerHTML = renderCompetitionsTableHtml(breakdown);
-        }
-      } catch (e) {
-        console.error('Failed to load competitions breakdown for former player', playerId, e);
-        if (detailRow.classList.contains('open')) {
-          wrapper.innerHTML = `<div class="empty-state" style="padding: 8px; font-size: 12px;">Couldn't load competitions data.</div>`;
-        }
       }
     }
 
@@ -4480,7 +4291,7 @@ Live Editor will end each loan and then release the player from your club to fre
     }
 
     // Real fee data (see currentTransferFees above) — self-refreshes the
-    // Transfer Hub and Former Players tables, same pattern as
+    // Transfer Hub table and the Squad tab's All-Time view, same pattern as
     // refreshSignedPlayers, since both read fee data by player_id.
     async function refreshTransferFees() {
       if (!window.api || !window.api.getTransferFees) return;
@@ -4490,7 +4301,7 @@ Live Editor will end each loan and then release the player from your club to fre
       // Redraw-only (currentPastPlayers itself hasn't changed, only the fee
       // lookup it's about to use) — renderPastPlayersTable would re-fetch
       // past players over IPC for no reason.
-      renderPastPlayersRows();
+      if (window.AllTime) window.AllTime.redraw();
     }
 
     // currentTransferFees holds one row per (player, deal_type) — see
@@ -4781,6 +4592,7 @@ Live Editor will end each loan and then release the player from your club to fre
       renderHomeDashboard();
       filterAndRenderTransfers();
       renderLeagueStatsTab();
+      if (window.Insights) window.Insights.refresh();
       reopenActiveProfileIfOpen();
     }
 
@@ -9085,6 +8897,7 @@ Live Editor will end each loan and then release the player from your club to fre
         </table>
       `, 'No youth academy data loaded.');
       if (typeof SquadViews !== 'undefined') SquadViews.refresh();
+      if (window.Insights) window.Insights.refresh();
     }
 
     function refreshYouthAcademy() {
@@ -9349,6 +9162,7 @@ Live Editor will end each loan and then release the player from your club to fre
       renderYouthModeDangerZone();
       renderSquadAgeProfile();
       renderInjuryReport();
+      if (window.Insights) window.Insights.renderHomeWidget();
       renderUpcomingMatchWidget();
       refreshNewsUnreadIndicator();
       renderLeagueTableWidget();

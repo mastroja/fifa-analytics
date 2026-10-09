@@ -3924,7 +3924,7 @@ function enableYouthMode(saveId) {
   return { success: true };
 }
 
-// Clears the Former Players tab by stamping "now" as this save's cutoff —
+// Stops following departed players (Squad > All-Time 'Left', see js/all_time.js) by stamping "now" as this save's cutoff —
 // see former_players_cleared_before in schema.sql and getPastPlayers above.
 // Used to drop the pre-youth-rebuild squad (players who left before the
 // user's academy rebuild started) since they don't count toward it. Only
@@ -5317,7 +5317,7 @@ function getCurrentSeasonForSave(saveId) {
 // THIS SAVE regardless of whether that's the current season, so a
 // long-departed player still shows up with their last-known bio/overall/
 // club from whenever they actually left — same "last known" convention
-// getPastPlayers already uses for the Former Players tab.
+// getPastPlayers already uses for the Squad All-Time view.
 function getAllTimeSquadStats(saveId = activeSaveId) {
   if (!db || !saveId) return [];
 
@@ -5596,7 +5596,7 @@ function getPastPlayers(saveId = activeSaveId) {
 // Keeps a former player's career actually followed for as long as the
 // save continues, instead of freezing at their last known values from
 // the day they left — upserted every time getPastPlayers runs (i.e.
-// every time the Former Players tab loads) from whatever the watchlist
+// every time the past-players list loads) from whatever the watchlist
 // most recently found live in-game. See former_player_snapshots in
 // schema.sql and getPlayerHistory below, which unions this in.
 function persistFormerPlayerSnapshots(saveId, seasonId, watchlistStatus) {
