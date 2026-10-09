@@ -151,7 +151,8 @@
   // Scatter (e.g. wage vs overall, age vs overall)
   // ---------------------------------------------------------------------------------------------------------
 
-  // points: [{ x, y, color, title, id }]; opts: { xLabel, yLabel, xFmt, yFmt, trend: [{x, y}, ...] (polyline), onClick: 'fnName' }.
+  // points: [{ x, y, color, title, id, r }]; opts: { xLabel, yLabel, xFmt, yFmt, trend: [{x, y}, ...] (polyline), onClick: 'fnName',
+  //   bands: [{ x0, x1, label, color, opacity }] (shaded x ranges), yRef / yRefLabel (dashed horizontal reference) }.
   // Points with a non-finite x/y are skipped. onClick is a global function name called with the point's id.
   function scatterSvg(points, opts) {
     opts = opts || {};
@@ -174,6 +175,13 @@
       <line x1="${L}" y1="${Y(v)}" x2="${Rr}" y2="${Y(v)}" style="stroke: var(--border-color); stroke-width: 1; opacity: 0.6;" />
       <text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="11" style="fill: var(--text-dim);">${esc(yf(v))}</text>`).join('');
     const xl = ticks(x0, x1).map(v => `<text x="${X(v)}" y="${B + 16}" text-anchor="middle" font-size="11" style="fill: var(--text-dim);">${esc(xf(v))}</text>`).join('');
+    const bands = (opts.bands || []).filter(b => Number.isFinite(b.x0) && Number.isFinite(b.x1)).map(b => {
+      const a = X(Math.max(b.x0, x0)), z = X(Math.min(b.x1, x1));
+      return z > a ? `<rect x="${a}" y="${T}" width="${z - a}" height="${B - T}" style="fill: ${b.color || 'var(--hover-color)'}; opacity: ${b.opacity || 0.5};" />
+        ${b.label ? `<text x="${(a + z) / 2}" y="${T + 12}" text-anchor="middle" font-size="11" style="fill: var(--text-dim);">${esc(b.label)}</text>` : ''}` : '';
+    }).join('');
+    const yRef = Number.isFinite(opts.yRef) && opts.yRef >= y0 && opts.yRef <= y1
+      ? `<line x1="${L}" y1="${Y(opts.yRef)}" x2="${Rr}" y2="${Y(opts.yRef)}" style="stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 4;" />${opts.yRefLabel ? `<text x="${Rr - 4}" y="${Y(opts.yRef) - 5}" text-anchor="end" font-size="11" style="fill: var(--text-dim);">${esc(opts.yRefLabel)}</text>` : ''}` : '';
     const trendPts = (opts.trend || []).filter(t => Number.isFinite(t.x) && Number.isFinite(t.y));
     const trend = trendPts.length >= 2
       ? `<polyline points="${trendPts.map(t => `${X(t.x)},${Y(t.y)}`).join(' ')}" fill="none" style="stroke: var(--text-dim); stroke-width: 1.5; stroke-dasharray: 5 4;" />` : '';
@@ -182,7 +190,7 @@
       return `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="${p.r || 5.5}" fill="${p.color || 'var(--accent-color)'}" fill-opacity="0.85" stroke="var(--card-bg)" stroke-width="1.5"${click}><title>${esc(p.title || '')}</title></circle>`;
     }).join('');
     return `<svg viewBox="0 0 ${W} ${H}" style="width: 100%; height: auto;" role="img" aria-label="${esc(opts.yLabel || '')} by ${esc(opts.xLabel || '')}">
-      ${grid}<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" style="stroke: var(--text-dim); stroke-width: 1.5;" />
+      ${bands}${grid}${yRef}<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" style="stroke: var(--text-dim); stroke-width: 1.5;" />
       ${xl}<text x="${(L + Rr) / 2}" y="${H - 6}" text-anchor="middle" font-size="11" style="fill: var(--text-dim);">${esc(opts.xLabel || '')}</text>
       ${trend}${dots}</svg>`;
   }
@@ -205,7 +213,90 @@
       </div>`).join('');
   }
 
-  const api = { seasonEndYear, ageAtSeasonEnd, projectCurve, developmentCurveSvg, radarSvg, scatterSvg, barsHtml };
+  // ---------------------------------------------------------------------------------------------------------
+  // Line chart (one or more series over the same labels, e.g. seasons)
+  // ---------------------------------------------------------------------------------------------------------
+
+  // labels: ['2024/25', ...]; series: [{ name, color, values: [n|null per label] }]; opts: { yFmt, width, height, dashed: [names] }.
+  // null values leave a gap; a single label draws dots only.
+  function lineChartSvg(labels, series, opts) {
+    opts = opts || {};
+    const n = (labels || []).length;
+    const all = (series || []).flatMap(s => s.values).filter(v => Number.isFinite(v));
+    if (n === 0 || all.length === 0) return '';
+    const yf = opts.yFmt || (v => Math.round(v));
+    // opts.width: a narrower canvas for a small card keeps the text readable (it scales with the card)
+    const W = opts.width || 600, H = opts.height || 220, L = 52, R = W - 26, T = 14, B = H - 30;
+    let y0 = Math.min(...all), y1 = Math.max(...all);
+    if (y1 === y0) { y0 -= 1; y1 += 1; }
+    const pad = (y1 - y0) * 0.12; y0 -= pad; y1 += pad;
+    const X = i => n > 1 ? L + (i / (n - 1)) * (R - L) : (L + R) / 2;
+    const Y = v => B - ((v - y0) / (y1 - y0)) * (B - T);
+    const grid = [0, 1, 2, 3].map(i => y0 + ((y1 - y0) * i) / 3).map(v => `
+      <line x1="${L}" y1="${Y(v)}" x2="${R}" y2="${Y(v)}" style="stroke: var(--border-color); stroke-width: 1; opacity: 0.6;" />
+      <text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="11" style="fill: var(--text-dim);">${esc(yf(v))}</text>`).join('');
+    const step = Math.max(1, Math.ceil(n / 8));
+    const xl = labels.map((l, i) => i % step === 0 || i === n - 1 ? `<text x="${X(i)}" y="${B + 18}" text-anchor="middle" font-size="11" style="fill: var(--text-dim);">${esc(l)}</text>` : '').join('');
+    const lines = series.map(s => {
+      const segs = []; let cur = [];
+      s.values.forEach((v, i) => { if (Number.isFinite(v)) cur.push(`${X(i)},${Y(v)}`); else if (cur.length) { segs.push(cur); cur = []; } });
+      if (cur.length) segs.push(cur);
+      const dash = (opts.dashed || []).includes(s.name) ? ' stroke-dasharray: 5 4;' : '';
+      const path = segs.filter(sg => sg.length > 1).map(sg => `<polyline points="${sg.join(' ')}" fill="none" style="stroke: ${s.color}; stroke-width: 2.5;${dash}" />`).join('');
+      const dots = s.values.map((v, i) => Number.isFinite(v) ? `<circle cx="${X(i)}" cy="${Y(v)}" r="4" fill="${s.color}" stroke="var(--card-bg)" stroke-width="1.5"><title>${esc(s.name)} · ${esc(labels[i])}: ${esc(yf(v))}</title></circle>` : '').join('');
+      return path + dots;
+    }).join('');
+    const legend = series.length > 1 ? `<div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); margin-top: 4px;">${series.map(s => `<span><span style="color: ${s.color};">━</span> ${esc(s.name)}</span>`).join('')}</div>` : '';
+    return `<svg viewBox="0 0 ${W} ${H}" style="width: 100%; height: auto;" role="img" aria-label="${esc(series.map(s => s.name).join(', '))} by season">
+      ${grid}<line x1="${L}" y1="${B}" x2="${R}" y2="${B}" style="stroke: var(--text-dim); stroke-width: 1.5;" />${xl}${lines}</svg>${legend}`;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Timeline (swimlanes of date ranges, e.g. injuries)
+  // ---------------------------------------------------------------------------------------------------------
+
+  const DAY = 86400000;
+  const toDate = v => { if (!v) return null; const d = v instanceof Date ? v : new Date(/^\d{8}$/.test(String(v)) ? `${String(v).slice(0, 4)}-${String(v).slice(4, 6)}-${String(v).slice(6, 8)}` : v); return isNaN(d.getTime()) ? null : d; };
+
+  // lanes: [{ label, id, items: [{ start, end (null = still open), title }] }]; opts: { to (date, default today), from,
+  // onClick: 'fnName' (called with lane id), laneHeight, width }. Open items run to `to` and are drawn in red.
+  function timelineSvg(lanes, opts) {
+    opts = opts || {};
+    const rows = (lanes || []).map(l => ({ ...l, items: (l.items || []).map(it => ({ ...it, s: toDate(it.start), e: toDate(it.end) })).filter(it => it.s) })).filter(l => l.items.length);
+    if (rows.length === 0) return '';
+    const to = toDate(opts.to) || new Date();
+    const starts = rows.flatMap(l => l.items.map(it => it.s.getTime()));
+    let from = toDate(opts.from) ? toDate(opts.from).getTime() : Math.min(...starts);
+    let end = Math.max(to.getTime(), ...rows.flatMap(l => l.items.map(it => (it.e || to).getTime())));
+    if (end - from < 60 * DAY) from = end - 60 * DAY; // at least two months wide, so a short injury is still visible
+    const labelW = rows.some(l => l.label) ? 130 : 0;
+    // opts.width: a wider canvas for a full-width card keeps the text at its normal size
+    const lh = opts.laneHeight || 26, W = opts.width || 600, L = labelW + 6, R = W - 10, T = 6, B = T + rows.length * lh, H = B + 22;
+    const X = t => L + ((t - from) / (end - from)) * (R - L);
+    // month ticks, thinned to at most ~8 labels
+    const ticks = []; const d = new Date(from); d.setDate(1); d.setMonth(d.getMonth() + 1);
+    while (d.getTime() <= end) { ticks.push(new Date(d)); d.setMonth(d.getMonth() + 1); }
+    const every = Math.max(1, Math.ceil(ticks.length / 8));
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const tickSvg = ticks.map((t, i) => i % every ? '' : `<line x1="${X(t.getTime())}" y1="${T}" x2="${X(t.getTime())}" y2="${B}" style="stroke: var(--border-color); stroke-width: 1; opacity: 0.5;" />
+      <text x="${X(t.getTime())}" y="${B + 15}" text-anchor="middle" font-size="10" style="fill: var(--text-dim);">${MONTHS[t.getMonth()]}${t.getMonth() === 0 || i === 0 ? ` '${String(t.getFullYear()).slice(2)}` : ''}</text>`).join('');
+    const laneSvg = rows.map((l, i) => {
+      const y = T + i * lh;
+      const click = opts.onClick && l.id != null ? ` onclick="${esc(opts.onClick)}('${esc(l.id)}')" style="cursor: pointer; fill: var(--text-color);"` : ' style="fill: var(--text-color);"';
+      const label = labelW ? `<text x="${labelW}" y="${y + lh / 2 + 4}" text-anchor="end" font-size="12"${click}>${esc(l.label)}</text>` : '';
+      // clipped to the window: an item that started before `from` begins at the left edge, one that ended before it is skipped
+      const bars = l.items.filter(it => (it.e || to).getTime() >= from).map(it => {
+        const a = X(Math.max(it.s.getTime(), from)), z = Math.max(X(Math.min((it.e || to).getTime(), end)), a + 3);
+        return `<rect x="${a}" y="${y + 5}" width="${z - a}" height="${lh - 10}" rx="3" fill="${it.e ? '#d29922' : '#f85149'}" fill-opacity="0.85"><title>${esc(it.title || '')}</title></rect>`;
+      }).join('');
+      return `<line x1="${L}" y1="${y + lh / 2}" x2="${R}" y2="${y + lh / 2}" style="stroke: var(--border-color); stroke-width: 1;" />${label}${bars}`;
+    }).join('');
+    const todayX = X(to.getTime());
+    return `<svg viewBox="0 0 ${W} ${H}" style="width: 100%; height: auto;" role="img" aria-label="Timeline">
+      ${tickSvg}${laneSvg}<line x1="${todayX}" y1="${T}" x2="${todayX}" y2="${B}" style="stroke: var(--accent-color); stroke-width: 1.5; stroke-dasharray: 3 3;"><title>Today (in game)</title></line></svg>`;
+  }
+
+  const api = { seasonEndYear, ageAtSeasonEnd, projectCurve, developmentCurveSvg, radarSvg, scatterSvg, barsHtml, lineChartSvg, timelineSvg };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Charts = api;
 })(typeof window !== 'undefined' ? window : globalThis);
