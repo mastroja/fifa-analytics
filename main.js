@@ -56,6 +56,11 @@ const dynamicLook = require('./js/dynamic_look');
 const squadNumbers = require('./js/squad_numbers');
 const licenseLib = require('./js/license');
 const licenseConfig = require('./js/license_config');
+// News rules (weekly editions, award race rules, headlines, club stories) and the Insights logic they reuse —
+// plain modules shared with the renderer, see js/news_rules.js.
+const NewsRules = require('./js/news_rules');
+const squadRules = require('./js/insights_squad');
+const injuryRules = require('./js/insights_injuries');
 // Pro licensing (see js/license.js). With no public key configured it is off and everything is unlocked.
 const license = licenseLib.create({
   userDataPath: app.getPath('userData'),
@@ -259,6 +264,17 @@ async function initDatabase() {
     db.run(`ALTER TABLE saves ADD COLUMN former_players_cleared_before DATETIME;`);
   } catch (e) {
     // column already exists, safe to ignore
+  }
+
+  // News rework (js/news_rules.js): weekly editions keyed by in-game week, stories that expire instead of queueing
+  // forever, and the in-game date an award race lead change was last announced (for its cooldown). Same
+  // ignore-already-exists pattern as above.
+  for (const sql of [
+    `ALTER TABLE news_editions ADD COLUMN week_key TEXT;`,
+    `ALTER TABLE news_items ADD COLUMN expired INTEGER DEFAULT 0;`,
+    `ALTER TABLE news_race_leaders ADD COLUMN announced_on TEXT;`
+  ]) {
+    try { db.run(sql); } catch (e) { /* column already exists */ }
   }
 
   // Added when the flat YOUTH_MODE_OVERALL_MARGIN constant was replaced by
@@ -782,17 +798,8 @@ function importCalendarMatches(calendarPayload) {
         recordGenericMatchNews(activeSaveId, currentSeasonId, match.date || '', match.competition || '', match.opponent || '', userScore, opponentScore, result);
         recordMatchAnticipationNews(activeSaveId, currentSeasonId, calendarPayload);
 
-        // "Once a matchweek" news curation — only a completed PRIMARY
-        // LEAGUE fixture counts as a matchweek boundary (cup rounds
-        // don't), matching this app's existing "matchweek" vocabulary
-        // (see buildFixtureCardBodyHtml in index.html, which counts the
-        // same way client-side).
-        if (findPyramidTierServer(match.competition)) {
-          const safeCompetition = String(match.competition).replace(/'/g, "''");
-          const matchweekRes = db.exec(`SELECT COUNT(*) FROM matches WHERE season_id = ${currentSeasonId} AND competition = '${safeCompetition}';`);
-          const matchweek = matchweekRes.length > 0 ? matchweekRes[0].values[0][0] : null;
-          curateNewsEditionIfNeeded(activeSaveId, currentSeasonId, matchweek);
-        }
+        // Editions are weekly by in-game date now (curateWeeklyEditionIfDue, run from the squad sync), so a
+        // match no longer triggers one: its stories just join this week's pending pool.
       }
     });
   } finally {
@@ -2710,112 +2717,109 @@ const YOUTH_PROMOTION_HEADLINES = [
   "🌱 {name} has made the leap from academy to first team, and scouts reckon this one's special."
 ];
 
-// Rough "how newsworthy is this" ordering used to pick a matchweek's (up
-// to) 3 stories out of whatever's pending (see curateNewsEditionIfNeeded)
-// — higher sorts first. Ties (including any news_type not listed here)
-// fall back to most recent first.
-const NEWS_TYPE_PRIORITY = {
-  competition_win: 100,
-  ballon_dor: 96, // a real once-a-season event, not the weekly noise this rebalance targets
-  hat_trick: 90,
-  red_card: 85,
-  player_of_month: 75,
-  motm: 70,
-  new_captain: 60,
-  free_agent_signing: 58,
-  youth_promotion: 55,
-  win_streak: 50,
-  unbeaten_streak: 48,
-  // Transfers and the mid-season leader-change races used to sit at
-  // 65/80 — high enough to win a story slot almost every single week,
-  // crowding out match-day stories (braces, streaks, milestones) per the
-  // user's "mostly seeing transfer news" feedback (2026-09-15). Dropped
-  // down to the same tier as those match-day events so they compete on
-  // an even footing instead of automatically dominating.
-  transfer: 45,
-  brace: 45,
-  race_lead_change: 42,
-  golden_boot_race: 42,
-  playmaker_race: 42,
-  golden_glove_race: 42,
-  milestone: 40,
-  playstyle_eligible: 40,
-  yellow_card_milestone: 38,
-  contract_signed: 35,
-  injury_recovery: 25,
-  injury: 20,
-  // Generic filler stories (see recordGenericMatchNews/
-  // recordMatchAnticipationNews) — grounded in a real match rather than
-  // invented from nothing, but ranked below every actual detected event
-  // so they only ever fill an edition out to 3 stories when there isn't
-  // enough real news that week.
-  notable_goal: 8,
-  match_anticipation: 7,
-  rivalry_battle: 6,
-  post_match_reaction: 5,
-  // A marquee fee ELSEWHERE in the league (see checkNotableTransfer) —
-  // deliberately below even the generic match filler above, since it's
-  // wider-football-world trivia rather than anything about the user's
-  // own club. Kept separate from 'transfer' (which is reserved for deals
-  // that actually involve our club, and stays high-priority) so it stops
-  // crowding out the user's own match/goal stories most weeks.
-  league_transfer: 3
-};
-
-// Groups whatever news_items are still pending (edition_id IS NULL) into
-// a fresh "edition" of up to 3 stories, ranked by NEWS_TYPE_PRIORITY then
-// recency — called once per matchweek (see the primary-league-fixture
-// check in importCalendarMatches), not on every sync, per the user's
-// ask for a curated weekly drop rather than a running feed. Anything
-// pending but not picked stays pending and is reconsidered next
-// matchweek alongside whatever's new by then — nothing is ever dropped
-// silently, just possibly delayed behind more newsworthy stories.
-function curateNewsEditionIfNeeded(saveId, seasonId, matchweek) {
+// Weekly news edition: on the first sync of a new in-game week, everything pending (not yet in an edition, not
+// expired) is curated by NewsRules.curateEdition — up to 5 stories, one per type, injuries / recoveries / youth
+// promotions guaranteed a slot, filler only on a quiet week and never the same filler two weeks running. Stories
+// older than NewsRules.FRESH_DAYS of in-game time are marked expired so they can never surface late. Runs from
+// importFifaData, so it works without fixtures (FC 27), in cup weeks and in the off-season.
+function curateWeeklyEditionIfDue(saveId, seasonId, inGameDate) {
   if (!db || !saveId) return;
-  const pendingRes = db.exec(`SELECT id, news_type, event_date FROM news_items WHERE save_id = ${saveId} AND edition_id IS NULL;`);
-  const pending = pendingRes.length > 0 ? pendingRes[0].values : [];
+  const week = NewsRules.weekKey(inGameDate);
+  if (!week) return;
+  const lastRes = db.exec(`SELECT id, week_key FROM news_editions WHERE save_id = ${saveId} ORDER BY id DESC LIMIT 1;`);
+  const last = lastRes.length > 0 && lastRes[0].values.length > 0 ? lastRes[0].values[0] : null;
+  if (last && last[1] === week) return; // this week's edition is already out
+
+  const pendingRes = db.exec(`SELECT id, news_type, event_date FROM news_items WHERE save_id = ${saveId} AND edition_id IS NULL AND COALESCE(expired, 0) = 0;`);
+  const pending = pendingRes.length > 0 ? pendingRes[0].values.map(([id, news_type, event_date]) => ({ id, news_type, event_date })) : [];
   if (pending.length === 0) return;
 
-  const ranked = pending
-    .map(([id, newsType, eventDate]) => ({ id, priority: NEWS_TYPE_PRIORITY[newsType] || 10, eventDate: eventDate || '' }))
-    .sort((a, b) => (b.priority - a.priority) || (b.eventDate.localeCompare(a.eventDate)))
-    .slice(0, 3);
-
-  db.run(`INSERT INTO news_editions (save_id, season_id, matchweek) VALUES (?, ?, ?);`, [saveId, seasonId || null, matchweek || null]);
-  const editionIdRes = db.exec('SELECT last_insert_rowid();');
-  const editionId = editionIdRes[0].values[0][0];
-
-  const assignStmt = db.prepare(`UPDATE news_items SET edition_id = ? WHERE id = ?;`);
-  try {
-    ranked.forEach(({ id }) => assignStmt.run([editionId, id]));
-  } finally {
-    assignStmt.free();
+  let lastFillerType = null;
+  if (last) {
+    const fillerRes = db.exec(`SELECT news_type FROM news_items WHERE edition_id = ${last[0]};`);
+    const types = fillerRes.length > 0 ? fillerRes[0].values.map(r => r[0]) : [];
+    lastFillerType = types.find(t => NewsRules.FILLER_TYPES.includes(t)) || null;
   }
-  saveDatabaseToDisk();
+
+  const { pick, expire } = NewsRules.curateEdition(pending, { today: inGameDate, lastFillerType });
+  const expireStmt = db.prepare(`UPDATE news_items SET expired = 1 WHERE id = ?;`);
+  try { expire.forEach(id => expireStmt.run([id])); } finally { expireStmt.free(); }
+  if (pick.length > 0) {
+    db.run(`INSERT INTO news_editions (save_id, season_id, week_key) VALUES (?, ?, ?);`, [saveId, seasonId || null, week]);
+    const editionId = db.exec('SELECT last_insert_rowid();')[0].values[0][0];
+    const assignStmt = db.prepare(`UPDATE news_items SET edition_id = ? WHERE id = ?;`);
+    try { pick.forEach(id => assignStmt.run([editionId, id])); } finally { assignStmt.free(); }
+  }
 }
 
-// The single most recent edition for the News tab — the carousel of (up
-// to) 3 stories plus whether it's been viewed yet (drives the News tab's
-// flashing indicator in index.html, cleared via markNewsEditionRead).
-function getLatestNewsEdition(saveId = activeSaveId) {
+// Club stories (contracts running out, physio concerns, scout reports on squad holes, breakthrough seasons) from the
+// squad as it stands after this sync — see NewsRules.clubStories. Each has a dedupe key, so running this on every
+// sync records a story once. Own-club players only: non-loan rows at the club's id that were refreshed by this sync
+// (a departed player's row keeps its last values, same staleness rule as getPastPlayers).
+function generateClubNews(saveId, seasonId, inGameDate) {
+  if (!db || !saveId || !seasonId) return;
+  const rows = getSquadFromDB(seasonId);
+  const latest = rows.reduce((m, r) => (r.updated_at && (!m || r.updated_at > m) ? r.updated_at : m), null);
+  const fresh = rows.filter(r => !latest || !r.updated_at || r.updated_at === latest);
+  const clubCounts = new Map();
+  fresh.filter(r => !r.on_loan && r.club_id != null).forEach(r => clubCounts.set(r.club_id, (clubCounts.get(r.club_id) || 0) + 1));
+  const club = [...clubCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (!club) return;
+  const squad = fresh.filter(r => !r.on_loan && r.club_id === club[0]);
+
+  const injRes = db.exec(`SELECT player_id, start_date, end_date FROM player_injury_history WHERE save_id = ${saveId};`);
+  const injuries = new Map();
+  (injRes.length > 0 ? injRes[0].values : []).forEach(([pid, start_date, end_date]) => {
+    if (!injuries.has(pid)) injuries.set(pid, []);
+    injuries.get(pid).push({ start_date, end_date });
+  });
+
+  const today = NewsRules.toDate(inGameDate);
+  const ageOf = p => {
+    const b = NewsRules.toDate(p.dob);
+    if (!b || !today) return null;
+    let a = today.getFullYear() - b.getFullYear();
+    if (today.getMonth() < b.getMonth() || (today.getMonth() === b.getMonth() && today.getDate() < b.getDate())) a--;
+    return a;
+  };
+  const stories = NewsRules.clubStories({
+    squad, injuries, today: inGameDate, seasonId, ageOf,
+    labelOf: id => NewsRules.POSITION_LABELS[Number(id)] || 'SUB',
+    squadRules, injuryRules
+  });
+  stories.forEach(st => recordNewsItem(saveId, {
+    seasonId, newsType: st.newsType, headline: st.headline, playerId: st.playerId, eventDate: inGameDate, dedupeKey: st.dedupeKey
+  }));
+}
+
+// One edition for the News card: offset 0 = the latest, 1 = the one before, ... (the card's archive arrows), with its
+// (up to 5) stories in the order they were curated and whether it has been viewed (drives the News tab's flashing
+// indicator in index.html, cleared via markNewsEditionRead). total = how many editions this save has.
+function getLatestNewsEdition(saveId = activeSaveId, offset = 0) {
   if (!db || !saveId) return null;
-  const editionRes = db.exec(`SELECT id, matchweek, is_read, created_at FROM news_editions WHERE save_id = ${saveId} ORDER BY id DESC LIMIT 1;`);
+  const off = Math.max(0, parseInt(offset, 10) || 0);
+  const totalRes = db.exec(`SELECT COUNT(*) FROM news_editions WHERE save_id = ${saveId};`);
+  const total = totalRes.length > 0 ? totalRes[0].values[0][0] : 0;
+  const editionRes = db.exec(`SELECT id, matchweek, is_read, created_at, week_key FROM news_editions WHERE save_id = ${saveId} ORDER BY id DESC LIMIT 1 OFFSET ${off};`);
   if (editionRes.length === 0 || editionRes[0].values.length === 0) return null;
-  const [id, matchweek, isRead, createdAt] = editionRes[0].values[0];
+  const [id, matchweek, isRead, createdAt, weekKey] = editionRes[0].values[0];
 
   const itemsRes = db.exec(`
     SELECT n.news_type, n.headline, n.body, n.player_id, p.name, n.team_name, n.event_date
     FROM news_items n
     LEFT JOIN players p ON p.player_id = n.player_id
     WHERE n.edition_id = ${id}
-    ORDER BY n.event_date DESC, n.id DESC;
+    ORDER BY n.id ASC;
   `);
   const items = itemsRes.length > 0 ? itemsRes[0].values.map(row => ({
     news_type: row[0], headline: row[1], body: row[2],
     player_id: row[3], player_name: row[4], team_name: row[5], event_date: row[6]
   })) : [];
+  // curation order (best story first) — the ids were assigned in news order, but older editions predate that, so
+  // fall back to the news priority for a stable best-first order either way
+  items.sort((a, b) => (NewsRules.NEWS_TYPE_PRIORITY[b.news_type] || 10) - (NewsRules.NEWS_TYPE_PRIORITY[a.news_type] || 10));
 
-  return { edition: { id, matchweek, is_read: !!isRead, created_at: createdAt }, items };
+  return { edition: { id, matchweek, week_key: weekKey, is_read: !!isRead, created_at: createdAt }, items, offset: off, total };
 }
 
 function markNewsEditionRead(editionId) {
@@ -2904,7 +2908,7 @@ function detectStreakNews(saveId, seasonId) {
 // (a real scorer, a real scoreline, a real opponent) rather than
 // invented from nothing, but deliberately NOT tied to a specific
 // detected achievement the way hat_trick/motm/etc. are. Ranked lowest
-// in NEWS_TYPE_PRIORITY so curateNewsEditionIfNeeded only ever reaches
+// in NewsRules.NEWS_TYPE_PRIORITY so curateWeeklyEditionIfDue only ever reaches
 // for these to round an edition out to 3 stories when there isn't
 // enough real news that week — see the user's own framing: "generic
 // stories if there isn't something big to update."
@@ -3463,67 +3467,66 @@ function checkPlaystyleEligibility(saveId, seasonId, playerId, playerName, posit
 // player_awards, which only ever records the real end-of-season winner.
 function checkRaceLeaderChanges(saveId, seasonId, leaguePlayers, ourClubName, eventDate) {
   if (!db || !saveId || !seasonId || !Array.isArray(leaguePlayers) || leaguePlayers.length === 0) return;
+  const today = normalizeDateForCompare(eventDate);
+  const poolIds = new Set(leaguePlayers.map(p => p.player_id));
 
-  function announceIfChanged(category, newsType, label, emoji, playerId, playerName, teamName, statValue, statLabel) {
-    if (!playerId || !(statValue > 0)) return;
-    const prevRes = db.exec(`SELECT player_id FROM news_race_leaders WHERE season_id = ${seasonId} AND category = '${category}';`);
-    const prevPlayerId = (prevRes.length > 0 && prevRes[0].values.length > 0) ? prevRes[0].values[0][0] : null;
+  // next: { player_id, stat, name, team_name } — the race leader as of this sync. NewsRules.raceDecision decides
+  // whether the stored leader changes (only on a strict overtake, never a tie) and whether that is announced
+  // (a cooldown per race, except when our own player takes the lead).
+  function updateRace(category, newsType, label, emoji, next, statLabel) {
+    if (!next) return;
+    const prevRes = db.exec(`SELECT player_id, stat_value, announced_on FROM news_race_leaders WHERE season_id = ${seasonId} AND category = '${category}';`);
+    const row = prevRes.length > 0 && prevRes[0].values.length > 0 ? prevRes[0].values[0] : null;
+    const prev = row ? { player_id: row[0], stat_value: row[1], announced_on: row[2] } : null;
+    const isOurs = !!(next.team_name && ourClubName && next.team_name === ourClubName);
+    const decision = NewsRules.raceDecision(prev, next, { today, isOurs, prevInPool: prev ? poolIds.has(prev.player_id) : true });
 
+    if (!decision.leaderChanged) {
+      // same leader: keep their running total current (a tie leaves the stored leader alone)
+      if (prev && prev.player_id === next.player_id) {
+        db.run(`UPDATE news_race_leaders SET stat_value = ?, updated_at = CURRENT_TIMESTAMP WHERE season_id = ? AND category = ?;`, [next.stat, seasonId, category]);
+      }
+      return;
+    }
     db.run(`
-      INSERT INTO news_race_leaders (season_id, category, player_id, stat_value, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(season_id, category) DO UPDATE SET player_id=excluded.player_id, stat_value=excluded.stat_value, updated_at=CURRENT_TIMESTAMP;
-    `, [seasonId, category, playerId, statValue]);
-
-    // Only news-worthy once there WAS a previous leader and it's a
-    // DIFFERENT player now — the first sync of a season has nothing to
-    // overtake, so this would otherwise fire for literally whoever
-    // scores the season's first goal.
-    if (prevPlayerId === null || prevPlayerId === playerId) return;
-
-    const isOurs = teamName && ourClubName && teamName === ourClubName;
-    const headline = isOurs
-      ? `${emoji} ${playerName} takes the ${label} lead with ${statValue} ${statLabel}!`
-      : `${emoji} ${playerName} (${teamName || 'Rival'}) takes the ${label} lead with ${statValue} ${statLabel}.`;
-
+      INSERT INTO news_race_leaders (season_id, category, player_id, stat_value, announced_on, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(season_id, category) DO UPDATE SET player_id = excluded.player_id, stat_value = excluded.stat_value,
+        announced_on = excluded.announced_on, updated_at = CURRENT_TIMESTAMP;
+    `, [seasonId, category, next.player_id, next.stat, decision.announce ? today : (prev ? prev.announced_on : null)]);
+    if (!decision.announce) return;
     recordNewsItem(saveId, {
-      seasonId, newsType, headline, playerId, teamName, eventDate,
-      dedupeKey: `${newsType}:${seasonId}:${playerId}:${statValue}`
+      seasonId, newsType, playerId: next.player_id, teamName: next.team_name, eventDate,
+      headline: NewsRules.headline(isOurs ? 'race_ours' : 'race_rival', { emoji, name: next.name, team: next.team_name || 'Rival', label, stat: next.stat, statLabel }),
+      dedupeKey: `${newsType}:${seasonId}:${next.player_id}:${next.stat}`
     });
   }
 
-  // Each award now has its own dedicated news_type (and matching
-  // assets/news/<type>/ folder — golden boot/playmaker/golden glove art
-  // added 2026-09-15) instead of sharing 'race_lead_change', since a
-  // random pick out of one shared folder was showing e.g. a Golden Glove
-  // graphic for a Playmaker lead change.
+  // Each award has its own news_type (and matching assets/news/<type>/ art), so a Golden Glove graphic never
+  // illustrates a Playmaker story.
   const categories = [
-    { key: 'goals', category: 'golden_boot', newsType: 'golden_boot_race', label: 'Golden Boot', emoji: '👢' },
-    { key: 'assists', category: 'playmaker', newsType: 'playmaker_race', label: 'Playmaker award', emoji: '🎯' },
-    { key: 'clean_sheets', category: 'golden_glove', newsType: 'golden_glove_race', label: 'Golden Glove', emoji: '🧤', positionFilter: 0 } // GK only
+    { key: 'goals', category: 'golden_boot', newsType: 'golden_boot_race', label: 'Golden Boot', emoji: '👢', statLabel: 'goals' },
+    { key: 'assists', category: 'playmaker', newsType: 'playmaker_race', label: 'Playmaker award', emoji: '🎯', statLabel: 'assists' },
+    { key: 'clean_sheets', category: 'golden_glove', newsType: 'golden_glove_race', label: 'Golden Glove', emoji: '🧤', statLabel: 'clean sheets', positionFilter: 0 } // GK only
   ];
-  categories.forEach(({ key, category, newsType, label, emoji, positionFilter }) => {
+  categories.forEach(({ key, category, newsType, label, emoji, statLabel, positionFilter }) => {
     const pool = leaguePlayers.filter(p => positionFilter === undefined || p.position_id === positionFilter);
-    if (pool.length === 0) return;
-    const top = [...pool].sort((a, b) => (b[key] || 0) - (a[key] || 0))[0];
-    if (!top) return;
-    announceIfChanged(category, newsType, label, emoji, top.player_id, top.name, top.team_name, top[key], key === 'clean_sheets' ? 'clean sheets' : key);
+    const prevRes = db.exec(`SELECT player_id FROM news_race_leaders WHERE season_id = ${seasonId} AND category = '${category}';`);
+    const prevId = prevRes.length > 0 && prevRes[0].values.length > 0 ? prevRes[0].values[0][0] : null;
+    const top = NewsRules.raceLeader(pool, key, prevId);
+    if (top) updateRace(category, newsType, label, emoji, { player_id: top.player_id, stat: Number(top[key]) || 0, name: top.name, team_name: top.team_name }, statLabel);
   });
 
-  // Player of the Year race news is gated to the business end of the
-  // season (April-June) per the user's ask — early on, small sample
-  // sizes make computeSeasonPotyWinner's leader flip nearly every
-  // matchweek, which at this news type's high priority was crowding out
-  // other stories all season instead of reading as a real end-of-season
-  // award race. eventDate is normalized to digits-only YYYYMMDD (see
-  // normalizeDateForCompare), so chars 4-5 are the month.
-  const potyMonth = normalizeDateForCompare(eventDate).slice(4, 6);
+  // Player of the Year race news is gated to the business end of the season (April-June): early on, small
+  // samples make computeSeasonPotyWinner's leader flip nearly every matchweek. eventDate is normalized to
+  // digits-only YYYYMMDD (see normalizeDateForCompare), so chars 4-5 are the month.
+  const potyMonth = today.slice(4, 6);
   if (['04', '05', '06'].includes(potyMonth)) {
     const poty = computeSeasonPotyWinner(leaguePlayers);
     if (poty) {
       const potyPlayer = leaguePlayers.find(p => p.player_id === poty.player_id);
-      announceIfChanged('poty', 'race_lead_change', 'Player of the Year race', '🏅', poty.player_id,
-        potyPlayer ? potyPlayer.name : 'Unknown', potyPlayer ? potyPlayer.team_name : null, Math.round(poty.score), 'pts');
+      updateRace('poty', 'race_lead_change', 'Player of the Year race', '🏅',
+        { player_id: poty.player_id, stat: Math.round(poty.score), name: potyPlayer ? potyPlayer.name : 'Unknown', team_name: potyPlayer ? potyPlayer.team_name : null }, 'pts');
     }
   }
 }
@@ -4767,14 +4770,14 @@ function importFifaData(jsonPayload) {
           injuryOpenStmt.run([activeSaveId, p.player_id, syncInGameDate]);
           recordNewsItem(activeSaveId, {
             seasonId: currentSeasonId, newsType: 'injury', playerId: p.player_id, eventDate: syncInGameDate,
-            headline: `🚑 ${p.name || 'Unknown'} has picked up an injury.`,
+            headline: NewsRules.headline('injury', { name: p.name || 'Unknown' }),
             dedupeKey: `injury:${p.player_id}:${syncInGameDate}`
           });
         } else if (!p.injury && hadOpenEpisode) {
           injuryCloseStmt.run([syncInGameDate, openInjuryEpisodeByPlayer.get(p.player_id)]);
           recordNewsItem(activeSaveId, {
             seasonId: currentSeasonId, newsType: 'injury_recovery', playerId: p.player_id, eventDate: syncInGameDate,
-            headline: `✅ ${p.name || 'Unknown'} is back from injury.`,
+            headline: NewsRules.headline('injury_recovery', { name: p.name || 'Unknown' }),
             dedupeKey: `injury_recovery:${p.player_id}:${syncInGameDate}`
           });
         }
@@ -4878,6 +4881,19 @@ function importFifaData(jsonPayload) {
       lockYouthRevealTiers(jsonPayload.players.map(p => p.player_id).filter(Boolean));
     } catch (tierErr) {
       console.error('[DB] Failed to lock youth reveal tiers:', tierErr);
+    }
+
+    // Club stories from the squad as it now stands, then this week's news edition if one is due. Each wrapped
+    // separately so a bug here can't undo the real squad sync above.
+    try {
+      generateClubNews(activeSaveId, currentSeasonId, syncInGameDate);
+    } catch (clubNewsErr) {
+      console.error('[News] Failed to generate club stories:', clubNewsErr);
+    }
+    try {
+      curateWeeklyEditionIfDue(activeSaveId, currentSeasonId, syncInGameDate);
+    } catch (editionErr) {
+      console.error('[News] Failed to curate the weekly edition:', editionErr);
     }
 
     saveDatabaseToDisk();
@@ -6487,7 +6503,7 @@ ipcMain.handle('dismiss-may-reminder', (_event, saveId, seasonId) => dismissMayR
 ipcMain.handle('get-season-overview-preview', (_event, saveId) => getSeasonOverviewPreview(saveId));
 ipcMain.handle('export-season-overview-pdf', (_event, suggestedFileName) => exportSeasonOverviewPdf(suggestedFileName));
 ipcMain.handle('get-match-events', (_event, seasonId, matchDate, competition, opponent) => getMatchEvents(seasonId || currentSeasonId, matchDate, competition, opponent));
-ipcMain.handle('get-latest-news-edition', (_event, saveId) => getLatestNewsEdition(saveId || activeSaveId));
+ipcMain.handle('get-latest-news-edition', (_event, saveId, offset) => getLatestNewsEdition(saveId || activeSaveId, offset || 0));
 ipcMain.handle('mark-news-edition-read', (_event, editionId) => markNewsEditionRead(editionId));
 ipcMain.handle('list-news-images', (_event, newsType) => listNewsImages(newsType));
 ipcMain.handle('get-opponent-roster-for-match', (_event, seasonId, opponentTeamName) => getOpponentRosterForMatch(seasonId || currentSeasonId, opponentTeamName));
