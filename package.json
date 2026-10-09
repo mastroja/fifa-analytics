@@ -6,8 +6,8 @@
   "scripts": {
     "start": "electron .",
     "bump": "node scripts/bump-version.js",
-    "test": "node scripts/license/test_license.js && node scripts/test_depth_chart.js && node scripts/test_legacy_data.js",
-    "check": "node --check main.js && node --check js/app.js && node --check js/depth_chart.js && node --check js/academy_tracker.js && node --check js/license.js && node --check js/license_ui.js && node --check js/player_editor.js && node --check js/player_editor_ui.js && node --check js/preload.js",
+    "test": "node scripts/license/test_license.js && node scripts/test_depth_chart.js && node scripts/test_charts.js && node scripts/test_squad_analytics.js && node scripts/test_legacy_data.js",
+    "check": "node --check main.js && node --check js/app.js && node --check js/depth_chart.js && node --check js/charts.js && node --check js/squad_analytics.js && node --check js/academy_tracker.js && node --check js/license.js && node --check js/license_ui.js && node --check js/player_editor.js && node --check js/player_editor_ui.js && node --check js/preload.js",
     "dist": "electron-builder --win nsis",
     "release": "electron-builder --win nsis --publish always"
   },

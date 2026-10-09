@@ -635,6 +635,8 @@ ${academySection}</aside>
     renderControls();
     if (!host || mode === 'list') return;
     if (mode === 'academy') { if (root.AcademyTracker) root.AcademyTracker.show(); return; }
+    if (mode === 'finance') { if (root.SquadFinance) root.SquadFinance.show(); return; }
+    if (mode === 'compare') { if (root.SquadCompare) root.SquadCompare.show(); return; }
     host.innerHTML = depthHtml();
     refreshModal();
   }
@@ -644,7 +646,7 @@ ${academySection}</aside>
     const list = mode === 'list';
     ['squad-season-bar', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
     const host = $('squad-alt-view'); if (host) host.style.display = list ? 'none' : '';
-    ['list', 'depth', 'academy'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
+    ['list', 'depth', 'academy', 'finance', 'compare'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
     if (mode !== 'depth') { edit = null; refreshModal(); }
   }
   function setView(m) {
@@ -659,7 +661,7 @@ ${academySection}</aside>
     refresh() {
       renderGapsCard();
       if (root.AcademyTracker) { root.AcademyTracker.invalidate(); if (mode === 'academy') root.AcademyTracker.reload(); }
-      if (mode === 'depth') render();
+      if (mode === 'depth' || mode === 'finance' || mode === 'compare') render();
     },
     setView,
     setFormation(f) { if (!FORMATIONS[f]) return; active().formation = f; saveLineups(); renderAll(); },

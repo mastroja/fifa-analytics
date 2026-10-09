@@ -2994,6 +2994,17 @@ let currentCalendar = [];
 
       const attributeGrowthHtml = buildAttributeGrowthHtml(chronoSeasons, isGoalkeeper);
 
+      // One point per season (age at season end, overall, potential) for the Development card's chart.
+      const developmentBirthDate = parseBirthDate(player.dob || player.birthdate);
+      const developmentHtml = window.Charts
+        ? window.Charts.developmentCurveSvg(chronoSeasons.map(s => ({
+            age: window.Charts.ageAtSeasonEnd(developmentBirthDate, s.year_label),
+            overall: Number(s.overall),
+            potential: Number(s.potential),
+            label: s.season_name
+          })), { isGoalkeeper, showProjection: !player.__isFormerPlayer })
+        : '';
+
       // headshot_path is a locally-bundled stand-in photo picked
       // server-side by age/nationality/skin tone (see resolveHeadshotPath
       // in main.js) — not a real photo of this specific player, since no
@@ -3214,6 +3225,11 @@ let currentCalendar = [];
                 </span>
               </h3>
               <div>${playStylesHtml}</div>
+            </div>
+
+            <div class="profile-card">
+              <h3>Development</h3>
+              ${developmentHtml}
             </div>
 
             <div class="profile-card">
