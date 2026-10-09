@@ -5229,6 +5229,7 @@ Live Editor will end each loan and then release the player from your club to fre
 
       if (mode === 'news') {
         if (watermarkEl) watermarkEl.style.backgroundImage = '';
+        homeNewsOffset = 0; // (re)opening News or a fresh sync always lands on this week's edition
         renderHomeNewsFeed();
         return;
       }
@@ -5313,7 +5314,12 @@ Live Editor will end each loan and then release the player from your club to fre
       notable_goal: { emoji: '⚽' },
       rivalry_battle: { emoji: '⚔️' },
       post_match_reaction: { emoji: '🗣️' },
-      match_anticipation: { emoji: '👥' }
+      match_anticipation: { emoji: '👥' },
+      // club stories (js/news_rules.js clubStories)
+      contract_expiring: { emoji: '📋' },
+      physio_concern: { emoji: '🩺' },
+      scout_report: { emoji: '🔍' },
+      breakthrough: { emoji: '📈' }
     };
 
     // Drop real artwork into assets/news/<news_type>/ (one folder per
@@ -5342,6 +5348,12 @@ Live Editor will end each loan and then release the player from your club to fre
     // renderNewsStory call) can flip between stories without re-fetching.
     let homeNewsEdition = null;
     let homeNewsStoryIndex = 0;
+    let homeNewsOffset = 0; // 0 = this week's edition; the card's ‹ › arrows step back through older ones
+
+    function showNewsEdition(offset) {
+      homeNewsOffset = Math.max(0, offset);
+      renderHomeNewsFeed();
+    }
 
     function renderHomeNewsFeed() {
       const container = document.getElementById('home-upcoming-match-body');
@@ -5351,24 +5363,26 @@ Live Editor will end each loan and then release the player from your club to fre
         container.innerHTML = `<div class="empty-state" style="padding: 12px;">News isn't available yet.</div>`;
         return;
       }
-      window.api.getLatestNewsEdition(null).then(result => {
+      const requested = homeNewsOffset;
+      window.api.getLatestNewsEdition(null, requested).then(result => {
         // The card may have switched away from News (or re-rendered
-        // again) before this resolved — bail rather than clobber
-        // whatever's showing now.
-        if (homeMatchCardMode !== 'news') return;
+        // again, or the user clicked an arrow again) before this
+        // resolved — bail rather than clobber whatever's showing now.
+        if (homeMatchCardMode !== 'news' || requested !== homeNewsOffset) return;
         const el = document.getElementById('home-upcoming-match-body');
         if (!el) return;
         homeNewsEdition = result;
         if (!result || !result.items || result.items.length === 0) {
-          el.innerHTML = `<div class="empty-state" style="padding: 12px;">No news yet — check back after this week's match.</div>`;
+          el.innerHTML = `<div class="empty-state" style="padding: 12px;">No news yet. A new edition comes out every in-game week: sync (F10) again after the next week starts.</div>`;
           return;
         }
         homeNewsStoryIndex = 0;
         renderNewsStory();
         // Viewing the edition is what clears its unread state — not just
         // it existing — so the tab keeps flashing until the user actually
-        // looks, then stays quiet until the NEXT matchweek's edition.
-        if (!result.edition.is_read) {
+        // looks, then stays quiet until the NEXT week's edition. Only the
+        // latest edition can be unread; browsing old ones changes nothing.
+        if (requested === 0 && !result.edition.is_read) {
           window.api.markNewsEditionRead(result.edition.id);
           setNewsTabUnread(false);
         }
@@ -5395,8 +5409,18 @@ Live Editor will end each loan and then release the player from your club to fre
       if (homeMatchCardMode !== 'news' || homeNewsStoryIndex !== idx) return;
 
       const dotsHtml = items.map((_, i) => `<span class="news-story-dot${i === idx ? ' active' : ''}" data-idx="${i}"></span>`).join('');
+      // Edition archive: ‹ older · newer › with the in-game week it covers.
+      const off = homeNewsEdition.offset || 0, total = homeNewsEdition.total || 1;
+      const wk = homeNewsEdition.edition && homeNewsEdition.edition.week_key;
+      const navBtn = (label, target, enabled, title) => `<button class="news-edition-arrow" ${enabled ? `onclick="event.stopPropagation(); showNewsEdition(${target});"` : 'disabled'} title="${title}">${label}</button>`;
+      const navHtml = `<div class="news-edition-nav" onclick="event.stopPropagation();">
+          ${navBtn('‹', off + 1, off + 1 < total, 'Older edition')}
+          <span>${wk ? `Week of ${formatDateMMDDYYYY(wk)}` : 'Edition'}${off === 0 ? ' · latest' : ''} <span style="opacity: 0.6;">(${total - off}/${total})</span></span>
+          ${navBtn('›', off - 1, off > 0, 'Newer edition')}
+        </div>`;
 
       el.innerHTML = `
+        ${navHtml}
         <div class="news-story-dots" onclick="event.stopPropagation();">${dotsHtml}</div>
         <div class="news-story">
           ${imageUrl ? `<img class="news-story-img" src="${imageUrl}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}

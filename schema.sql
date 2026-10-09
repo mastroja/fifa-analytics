@@ -730,6 +730,7 @@ CREATE TABLE IF NOT EXISTS news_editions (
     save_id INTEGER NOT NULL,
     season_id INTEGER,
     matchweek INTEGER,
+    week_key TEXT,            -- Monday of the in-game week this weekly edition covers (js/news_rules.js weekKey)
     is_read INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(save_id) REFERENCES saves(id),
@@ -766,6 +767,7 @@ CREATE TABLE IF NOT EXISTS news_items (
     team_name TEXT,
     event_date TEXT,          -- in-game date the news is ABOUT, for sorting/month-bucketing — not wall-clock time
     dedupe_key TEXT NOT NULL, -- e.g. 'hat_trick:20270815:premier league:arsenal:12345' — see recordNewsItem
+    expired INTEGER DEFAULT 0, -- 1 = too old to run (NewsRules.FRESH_DAYS) without making an edition
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(save_id) REFERENCES saves(id),
     FOREIGN KEY(season_id) REFERENCES seasons(id),
@@ -785,6 +787,7 @@ CREATE TABLE IF NOT EXISTS news_race_leaders (
     category TEXT NOT NULL,   -- 'golden_boot' | 'playmaker' | 'golden_glove' | 'poty'
     player_id INTEGER NOT NULL,
     stat_value INTEGER NOT NULL,
+    announced_on TEXT,        -- in-game date (YYYYMMDD) a lead change in this race was last announced (cooldown)
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (season_id, category)
 );

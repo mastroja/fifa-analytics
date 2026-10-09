@@ -311,6 +311,33 @@
 
     /* News tab flash — an unread edition (see setNewsTabUnread) pulses
        the button until the user actually opens News and views it. */
+    /* Weekly edition archive arrows above the news story (renderNewsStory). */
+    .news-edition-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .news-edition-arrow {
+      background: none;
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+      border-radius: 6px;
+      width: 26px;
+      height: 22px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .news-edition-arrow:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
     @keyframes news-tab-flash {
 
       0%,
