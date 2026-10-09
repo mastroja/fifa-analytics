@@ -13,10 +13,10 @@ let currentCalendar = [];
 
     function processIncomingCalendar(data) {
       currentCalendar = Array.isArray(data) ? data : (data?.calendar || []);
-      applyLeagueTheme(getPrimaryLeagueName());
       const activeDate = data?.current_date || 'N/A';
       currentIngameDate = data?.current_date || null;
       currentTeamColors = (data && data.team_colors) || null;
+      applyTheme(); // league / team / default, per Settings > Display > Theme
       currentTrophies = (data && data.trophies) || null;
       currentManager = (data && data.manager) || null;
       currentLeagueFixtures = Array.isArray(data?.league_fixtures) ? data.league_fixtures : [];
@@ -851,21 +851,93 @@ let currentCalendar = [];
     // league), so a leftover override from a PREVIOUS league can never
     // survive a promotion/relegation or a fall-through to "unknown".
     const THEMEABLE_CSS_VARS = ['--accent-color', '--bg-color', '--card-bg', '--border-color', '--hover-color'];
-    let currentAppliedLeagueTheme = null; // avoids touching the DOM on every calendar sync when the league hasn't actually changed
+    let currentAppliedLeagueTheme = null; // last applied theme (its vars as JSON): avoids touching the DOM on every sync when nothing changed
 
-    function applyLeagueTheme(leagueName) {
+    // Settings > Display > Theme: 'league' (the league themes above — the
+    // default, since it's what the app always did), 'team' (the club's own
+    // in-game kit colours from the calendar export's team_colors, or a
+    // colour the user picks; see ClubPresentation.teamThemeVars) or
+    // 'default' (the plain :root look). Remembered per viewer.
+    const THEME_STORAGE_KEY = 'displayTheme';
+    const TEAM_COLOUR_STORAGE_KEY = 'teamThemeColour';
+    let currentThemeMode = 'league';
+    let teamThemeColourOverride = ''; // '#rrggbb' or '' = use the kit colours
+
+    function leagueThemeVars(leagueName) {
       const lower = String(leagueName || '').toLowerCase();
       const theme = LEAGUE_THEMES.find(t => lower.includes(t.match));
-      const themeKey = theme ? theme.match : null;
-      if (themeKey === currentAppliedLeagueTheme) return;
-      currentAppliedLeagueTheme = themeKey;
+      return theme ? theme.vars : null;
+    }
 
+    function currentThemeVars() {
+      if (currentThemeMode === 'league') return leagueThemeVars(getPrimaryLeagueName());
+      if (currentThemeMode === 'team' && window.ClubPresentation) {
+        return window.ClubPresentation.teamThemeVars(teamThemeColourOverride || window.ClubPresentation.kitColours(currentTeamColors));
+      }
+      return null;
+    }
+
+    function applyTheme() {
+      const vars = currentThemeVars();
+      const key = vars ? JSON.stringify(vars) : 'default';
+      if (key === currentAppliedLeagueTheme) return; // nothing changed: leave the DOM alone on every sync
+      currentAppliedLeagueTheme = key;
       const root = document.documentElement.style;
       THEMEABLE_CSS_VARS.forEach(v => root.removeProperty(v));
-      if (theme) {
-        Object.entries(theme.vars).forEach(([k, v]) => root.setProperty(k, v));
+      if (vars) Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
+      updateThemeSettingsUi();
+    }
+
+    function updateThemeSettingsUi() {
+      const select = document.getElementById('settings-theme-select');
+      if (select) select.value = currentThemeMode;
+      const row = document.getElementById('settings-team-colour-row');
+      if (row) row.style.display = currentThemeMode === 'team' ? '' : 'none';
+      const picker = document.getElementById('settings-team-colour');
+      const hasKit = !!(window.ClubPresentation && window.ClubPresentation.teamThemeVars(window.ClubPresentation.kitColours(currentTeamColors)));
+      if (picker) {
+        const vars = currentThemeMode === 'team' ? currentThemeVars() : null;
+        picker.value = teamThemeColourOverride || (vars ? hslToHex(vars['--accent-color']) : '#00ff87');
+      }
+      const note = document.getElementById('settings-team-colour-note');
+      if (note) {
+        note.textContent = teamThemeColourOverride ? 'Your colour' : hasKit ? 'From your kit' : 'No kit colours yet: sync (F10) or pick one';
       }
     }
+
+    // 'hsl(h, s%, l%)' or '#rrggbb' -> '#rrggbb', for the colour picker's value.
+    function hslToHex(c) {
+      if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+      const m = String(c).match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+      if (!m) return '#00ff87';
+      const h = Number(m[1]), s = Number(m[2]) / 100, l = Number(m[3]) / 100;
+      const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+      const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+      return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    function onThemeChange(mode) {
+      currentThemeMode = ['league', 'team', 'default'].includes(mode) ? mode : 'league';
+      try { localStorage.setItem(THEME_STORAGE_KEY, currentThemeMode); } catch (e) { /* just won't persist */ }
+      applyTheme();
+      updateThemeSettingsUi();
+    }
+
+    function onTeamColourChange(hex) {
+      teamThemeColourOverride = /^#[0-9a-f]{6}$/i.test(hex) ? hex : '';
+      try { localStorage.setItem(TEAM_COLOUR_STORAGE_KEY, teamThemeColourOverride); } catch (e) { /* just won't persist */ }
+      applyTheme();
+      updateThemeSettingsUi();
+    }
+
+    (function restoreThemePreferences() {
+      try {
+        const mode = localStorage.getItem(THEME_STORAGE_KEY);
+        if (['league', 'team', 'default'].includes(mode)) currentThemeMode = mode;
+        const colour = localStorage.getItem(TEAM_COLOUR_STORAGE_KEY);
+        if (/^#[0-9a-f]{6}$/i.test(colour || '')) teamThemeColourOverride = colour;
+      } catch (e) { /* defaults: league theme, kit colours */ }
+    })();
     // Trophy renders (a physical trophy, not a competition badge) — used
     // next to something actually WON (Trophies widget), as opposed to the
     // flat logo above used just to identify a competition. Play-off wins
@@ -4895,8 +4967,19 @@ Live Editor will end each loan and then release the player from your club to fre
         if (group) roundItems.push(group);
       }
 
-      // League-wide rounds lead the ticker; the user's own results/fixtures follow.
-      const allItems = [...roundItems, ...resultItems, ...fixtureItems];
+      // CLUB: in-game date, transfer window, contracts and injuries (see
+      // ClubPresentation.clubTickerItems) — after the scores, and enough on
+      // its own to keep the ticker running when there are no fixtures (FC 27).
+      const TONE_COLOUR = { good: '#3fb950', warn: '#d29922', alert: '#f85149' };
+      const clubItems = window.ClubPresentation ? window.ClubPresentation.clubTickerItems({
+        date: currentIngameDate,
+        squad: currentPlayers.filter(p => p.__clubStatus === 'normal'),
+        monthsUntil: computeMonthsUntilExpiry
+      }).map(i => `<span${i.tone ? ` style="color:${TONE_COLOUR[i.tone]};"` : ''}>${i.text}</span>`) : [];
+      const clubGroup = buildTickerGroup('CLUB', clubItems);
+
+      // League-wide rounds lead the ticker; the user's own results/fixtures follow, then the club.
+      const allItems = [...roundItems, ...resultItems, ...fixtureItems, ...(clubGroup ? [clubGroup] : [])];
       if (allItems.length === 0) {
         wrap.style.display = 'none';
         track.innerHTML = '';
@@ -9291,6 +9374,8 @@ Live Editor will end each loan and then release the player from your club to fre
       console.error('window.api is not available — check that preload.js is wired up in main.js (webPreferences.preload).');
     }
 
+    applyTheme(); // the saved Theme choice, before the first sync arrives
+    updateThemeSettingsUi();
     renderHomeDashboard();
     renderLeagueStatsTab();
     populateAroundWorldSeasonSelector();
