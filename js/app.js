@@ -1116,6 +1116,24 @@ let currentCalendar = [];
       return ` <span style="color:var(--text-dim); font-size:11px;">–</span>`;
     }
 
+    // Profile "Development" card: Chart (OVR/POT by age, js/charts.js) or
+    // Table (buildAttributeGrowthHtml below). The choice is remembered per
+    // viewer; it is only a display preference, so storage failures are fine.
+    const PROFILE_DEV_VIEW_KEY = 'profileDevelopmentView';
+    let profileDevelopmentView = 'chart';
+    try { if (localStorage.getItem(PROFILE_DEV_VIEW_KEY) === 'table') profileDevelopmentView = 'table'; } catch (e) { /* defaults to chart */ }
+
+    function setProfileDevelopmentView(mode) {
+      profileDevelopmentView = mode === 'table' ? 'table' : 'chart';
+      try { localStorage.setItem(PROFILE_DEV_VIEW_KEY, profileDevelopmentView); } catch (e) { /* just won't persist */ }
+      ['chart', 'table'].forEach(m => {
+        const body = document.getElementById(`profile-dev-${m}`);
+        const btn = document.getElementById(`profile-dev-btn-${m}`);
+        if (body) body.style.display = m === profileDevelopmentView ? '' : 'none';
+        if (btn) btn.classList.toggle('active', m === profileDevelopmentView);
+      });
+    }
+
     // Renders a per-season table of each attribute category so growth (or
     // decline) across career mode seasons is visible at a glance.
     function buildAttributeGrowthHtml(chronoSeasons, isGoalkeeper) {
@@ -1358,6 +1376,7 @@ let currentCalendar = [];
       // push. Re-rendering on every switch guarantees it always reflects
       // current state instead of depending on that timing.
       if (tabName === 'league-stats') renderLeagueStatsTab();
+      if (tabName === 'insights' && window.Insights) window.Insights.render();
     }
 
     function goBackFromProfile() {
@@ -3088,6 +3107,7 @@ let currentCalendar = [];
                 <span class="badge">Height: ${formatHeight(player.height)}</span>
                 <span class="badge">Weight: ${formatWeight(player.weight)}</span>
                 <span id="profile-edit-player-slot"></span>
+                ${player.__clubStatus === 'normal' && player.player_id && window.Insights ? `<button class="refresh-btn" style="font-size: 12px; padding: 4px 12px;" title="Compare with another squad player in Insights" onclick="Insights.open('compare', ${Number(player.player_id)})">⇄ Compare</button>` : ''}
                 ${player.__clubStatus === 'loan' ? `<span class="badge" style="background:#388bfd22; border-color:#388bfd55; color:#58a6ff;">Loaned to ${player.club_name || 'Unknown Club'} until ${(activeLoanInfo && activeLoanInfo.endLabel) || formatDateMMDDYYYY(player.loan_date_end)}${(activeLoanInfo && activeLoanInfo.lengthLabel) ? ` (${activeLoanInfo.lengthLabel})` : ''} ${player.is_loan_to_buy ? '[Option to Buy]' : ''}</span>` : ''}
                 ${player.injury ? `<span class="injury-badge">INJURED</span>` : ''}
               </div>
@@ -3228,13 +3248,15 @@ let currentCalendar = [];
             </div>
 
             <div class="profile-card">
-              <h3>Development</h3>
-              ${developmentHtml}
-            </div>
-
-            <div class="profile-card">
-              <h3>Attribute Growth</h3>
-              ${attributeGrowthHtml}
+              <h3>
+                <span>Development</span>
+                <span class="home-toggle">
+                  <button class="home-toggle-btn${profileDevelopmentView === 'chart' ? ' active' : ''}" id="profile-dev-btn-chart" onclick="setProfileDevelopmentView('chart')">Chart</button>
+                  <button class="home-toggle-btn${profileDevelopmentView === 'table' ? ' active' : ''}" id="profile-dev-btn-table" onclick="setProfileDevelopmentView('table')">Table</button>
+                </span>
+              </h3>
+              <div id="profile-dev-chart" style="${profileDevelopmentView === 'chart' ? '' : 'display: none;'}">${developmentHtml}</div>
+              <div id="profile-dev-table" style="${profileDevelopmentView === 'table' ? '' : 'display: none;'}">${attributeGrowthHtml}</div>
             </div>
           </div>
 
@@ -4164,6 +4186,7 @@ Live Editor will end each loan and then release the player from your club to fre
 
       careerTotalsCache = null;
       if (typeof SquadViews !== 'undefined') SquadViews.refresh();
+      if (window.Insights) window.Insights.refresh();
       renderHomeDashboard();
       filterAndRenderTransfers(); // Loaned view reads currentPlayers directly
     }
@@ -4797,6 +4820,7 @@ Live Editor will end each loan and then release the player from your club to fre
       renderHomeDashboard();
       filterAndRenderTransfers();
       renderLeagueStatsTab();
+      if (window.Insights) window.Insights.refresh();
       reopenActiveProfileIfOpen();
     }
 
@@ -9101,6 +9125,7 @@ Live Editor will end each loan and then release the player from your club to fre
         </table>
       `, 'No youth academy data loaded.');
       if (typeof SquadViews !== 'undefined') SquadViews.refresh();
+      if (window.Insights) window.Insights.refresh();
     }
 
     function refreshYouthAcademy() {
@@ -9365,6 +9390,7 @@ Live Editor will end each loan and then release the player from your club to fre
       renderYouthModeDangerZone();
       renderSquadAgeProfile();
       renderInjuryReport();
+      if (window.Insights) window.Insights.renderHomeWidget();
       renderUpcomingMatchWidget();
       refreshNewsUnreadIndicator();
       renderLeagueTableWidget();

@@ -1047,6 +1047,16 @@
       grid-template-columns: 1fr 1fr;
     }
 
+    .home-grid-three {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    @media (max-width: 1100px) {
+      .home-grid-three {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 1100px) {
       .home-grid-stats {
         grid-template-columns: 1fr;
@@ -3525,6 +3535,7 @@
   <div class="nav-tabs" id="main-nav-tabs">
     <button class="tab-btn active" onclick="switchTab('home')" id="btn-home">Home</button>
     <button class="tab-btn" onclick="switchTab('squad')" id="btn-squad">Squad</button>
+    <button class="tab-btn" onclick="switchTab('insights')" id="btn-insights">Insights</button>
     <button class="tab-btn" onclick="switchTab('league-stats')" id="btn-league-stats">League Stats</button>
     <button class="tab-btn" onclick="switchTab('transfers')" id="btn-transfers">Transfers Hub</button>
     <button class="tab-btn" onclick="switchTab('past-players')" id="btn-past-players">Former Players</button>
@@ -3707,7 +3718,7 @@
       </div>
     </div>
 
-    <div class="home-dashboard-grid home-grid-stats">
+    <div class="home-dashboard-grid home-grid-three">
       <div class="profile-card home-widget">
         <h3><span>Squad Age Profile</span></h3>
         <div id="home-age-profile-body"></div>
@@ -3721,6 +3732,11 @@
         <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin: 14px 0 6px;">This Season
         </div>
         <div id="home-injury-history-body"></div>
+      </div>
+
+      <div class="profile-card home-widget">
+        <h3><span>Contracts</span><button class="home-toggle-btn" onclick="Insights.open('wages')">Wages &amp; Contracts →</button></h3>
+        <div id="home-contracts-body"></div>
       </div>
     </div>
   </div>
@@ -3743,8 +3759,6 @@
         <button class="home-toggle-btn active" id="squad-view-list" onclick="SquadViews.setView('list')">List</button>
         <button class="home-toggle-btn" id="squad-view-depth" onclick="SquadViews.setView('depth')">Depth</button>
         <button class="home-toggle-btn" id="squad-view-academy" data-pro="academy-tracker" onclick="SquadViews.setView('academy')">Academy</button>
-        <button class="home-toggle-btn" id="squad-view-finance" onclick="SquadViews.setView('finance')">Finance</button>
-        <button class="home-toggle-btn" id="squad-view-compare" onclick="SquadViews.setView('compare')">Compare</button>
       </div>
       <div id="squad-view-controls" class="dc-toolbar-controls"></div>
     </div>
@@ -3796,6 +3810,18 @@
   </div>
 
   <!-- Former Players Tab -->
+  <!-- Insights Tab: cross-squad analysis and charts (js/squad_analytics.js). New analysis views go here as another
+       toggle button, so the Squad tab stays List / Depth / Academy. -->
+  <div id="insights-tab" class="tab-content">
+    <div class="dc-toolbar">
+      <div class="home-toggle" id="insights-view-toggle">
+        <button class="home-toggle-btn active" id="insights-view-wages" onclick="Insights.setView('wages')">Wages &amp; Contracts</button>
+        <button class="home-toggle-btn" id="insights-view-compare" onclick="Insights.setView('compare')">Compare</button>
+      </div>
+    </div>
+    <div id="insights-view"></div>
+  </div>
+
   <div id="past-players-tab" class="tab-content">
     <div
       style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px;">

@@ -1,11 +1,13 @@
-// Squad tab "Finance" and "Compare" views.
+// Insights tab (index.html #insights-tab): cross-squad analysis views, plus the Home "Contracts" card.
 //
-// Finance: wage bill, contract expiry timeline, and a wage-vs-overall scatter with a fitted curve that flags who is
-// paid above / below what their overall usually earns in this squad. Compare: radar + side-by-side table for 2-3 players.
-// The pure helpers (fitWageCurve, wageRatings, contractBuckets, compareAxes) take plain arrays and are exported via
-// module.exports for scripts/test_squad_analytics.js. Rendering reads app.js globals at render time only
-// (currentPlayers, getPositionInfo, computeAge, computeMonthsUntilExpiry, formatMoney, formatWageAmount, calculate*,
-// estimateMarketValue, openPlayerProfile) and the chart builders from js/charts.js.
+// Wages & Contracts: wage bill, contract expiry timeline, and a wage-vs-overall scatter with a fitted curve that flags
+// who is paid well above / below what their overall usually earns in this squad. Compare: radar + side-by-side table
+// for 2-3 players (also opened from a player profile's "Compare" button via Insights.open('compare', id)).
+// New analysis views belong here as another toggle button (VIEWS below), not in the Squad tab.
+// The pure helpers (fitWageCurve, wageRatings, contractBuckets, compareAxes, companionFor) take plain arrays and are
+// exported via module.exports for scripts/test_squad_analytics.js. Rendering reads app.js globals at render time only
+// (currentPlayers, getPositionInfo, computeAge, computeMonthsUntilExpiry, formatWageAmount, currencySymbol,
+// convertFromEur, calculate*, openPlayerProfile, switchTab) and the chart builders from js/charts.js.
 (function (root) {
   'use strict';
 
@@ -53,6 +55,14 @@
     return { buckets: [...map.values()].sort((a, b) => a.year - b.year), unknown };
   }
 
+  // Who to compare `player` with when only one is chosen: the best other player in the same position group (so a
+  // profile's "Compare" lands on a like-for-like rival), else the best other player at all. null if nobody else.
+  function companionFor(player, players, groupOf) {
+    const others = (players || []).filter(p => String(p.player_id) !== String(player.player_id))
+      .sort((a, b) => (Number(b.overall) || 0) - (Number(a.overall) || 0));
+    return others.find(p => groupOf(p) === groupOf(player)) || others[0] || null;
+  }
+
   // Axes for the compare radar: goalkeepers get their own six, anything else the outfield six. `isGk` picks.
   const OUTFIELD_AXES = [['PAC', 'calculatePace'], ['SHO', 'calculateShooting'], ['PAS', 'calculatePassing'], ['DRI', 'calculateDribbling'], ['DEF', 'calculateDefending'], ['PHY', 'calculatePhysical']];
   const GK_AXES = [['DIV', 'diving'], ['HAN', 'handling'], ['KIC', 'kicking'], ['REF', 'reflexes'], ['SPE', 'speed'], ['POS', 'gk_positioning']];
@@ -71,7 +81,7 @@
 
   const squad = () => (typeof currentPlayers !== 'undefined' ? currentPlayers : []).filter(p => p.__clubStatus === 'normal');
   const loanedOut = () => (typeof currentPlayers !== 'undefined' ? currentPlayers : []).filter(p => p.__clubStatus === 'loan').length;
-  const host = () => document.getElementById('squad-alt-view');
+  const host = () => document.getElementById('insights-view');
   const wk = v => `${root.currencySymbol()}${Math.round(root.convertFromEur(v) / 1000).toLocaleString()}K`;
   const tile = (label, value, sub) => `<div class="profile-card" style="margin: 0; padding: 12px 14px;">
     <div style="font-size: 11px; text-transform: uppercase; color: var(--text-dim);">${esc(label)}</div>
@@ -81,18 +91,24 @@
   const GROUP_COLOR = { GK: '#d29922', DEF: '#58a6ff', MID: '#3fb950', ATT: '#f85149' };
 
   // ---------------------------------------------------------------------------------------------------------
-  // Finance view
+  // Wages & Contracts view
   // ---------------------------------------------------------------------------------------------------------
 
-  function financeHtml() {
+  // Contracts that end within 12 months of the in-game date (same helper the rest of the app uses), soonest first.
+  function expiringSoon(players) {
+    return players.map(p => ({ p, months: root.computeMonthsUntilExpiry(p.contract_expiry) }))
+      .filter(x => x.months != null && x.months <= 12)
+      .sort((a, b) => a.months - b.months || (Number(b.p.wage) || 0) - (Number(a.p.wage) || 0)).map(x => x.p);
+  }
+
+  function wagesHtml() {
     const players = squad();
     const priced = players.filter(p => Number(p.wage) > 0);
     if (priced.length === 0) return '<div class="empty-state">No wage data for this squad yet. Sync from the game (F10) to load it.</div>';
 
     const total = priced.reduce((s, p) => s + Number(p.wage), 0);
     const top = priced.reduce((b, p) => (Number(p.wage) > Number(b.wage) ? p : b), priced[0]);
-    // "Expiring" = contract ends within 12 months of the in-game date (same helper the rest of the app uses).
-    const expiring = priced.filter(p => { const m = root.computeMonthsUntilExpiry(p.contract_expiry); return m != null && m <= 12; });
+    const expiring = expiringSoon(priced);
     const expiringWage = expiring.reduce((s, p) => s + Number(p.wage), 0);
 
     const { buckets, unknown } = contractBuckets(players);
@@ -154,16 +170,18 @@
 
   const isGk = p => Number(p.position_id) === 0 || root.getPositionInfo(p.position_id).label === 'GK';
   const byId = id => squad().find(p => String(p.player_id) === String(id));
+  const groupOf = p => root.getPositionInfo(p.position_id).group;
 
   function compareHtml() {
     const players = squad().slice().sort((a, b) => (Number(b.overall) || 0) - (Number(a.overall) || 0));
     if (players.length === 0) return '<div class="empty-state">No squad loaded.</div>';
     picks = picks.filter(id => byId(id));
-    if (picks.length === 0) picks = players.slice(0, 2).map(p => String(p.player_id)); // start with the two best, not a blank page
+    if (picks.length === 0 && players.length) picks = [String(players[0].player_id)]; // start with the best player, not a blank page
+    if (picks.length === 1) { const c = companionFor(byId(picks[0]), players, groupOf); if (c) picks.push(String(c.player_id)); }
     const chosen = picks.map(byId);
 
     const selects = [0, 1, 2].map(i => `<label class="dc-ctl">${i === 2 ? 'Player 3 (optional)' : 'Player ' + (i + 1)}
-      <select onchange="SquadCompare.pick(${i}, this.value)">${i === 2 ? '<option value="">None</option>' : ''}${players.map(p => `<option value="${esc(p.player_id)}"${String(p.player_id) === picks[i] ? ' selected' : ''}>${esc(p.name)} (${root.getPositionInfo(p.position_id).label} ${p.overall})</option>`).join('')}</select></label>`).join('');
+      <select onchange="Insights.pick(${i}, this.value)">${i === 2 ? '<option value="">None</option>' : ''}${players.map(p => `<option value="${esc(p.player_id)}"${String(p.player_id) === picks[i] ? ' selected' : ''}>${esc(p.name)} (${root.getPositionInfo(p.position_id).label} ${p.overall})</option>`).join('')}</select></label>`).join('');
 
     const { gk, axes } = compareAxes(chosen, isGk);
     const series = chosen.map((p, i) => ({ name: p.name, color: COMPARE_COLORS[i], values: axes.map(a => axisValue(p, a, gk)) }));
@@ -204,22 +222,58 @@
   }
 
   // ---------------------------------------------------------------------------------------------------------
-  // Public API (called by SquadViews in js/depth_chart.js)
+  // Home "Contracts" card (#home-contracts-body)
   // ---------------------------------------------------------------------------------------------------------
 
-  const wrap = fn => () => { const h = host(); if (h) h.innerHTML = fn(); };
-  const Finance = { show: wrap(financeHtml) };
-  const Compare = {
-    show: wrap(compareHtml),
+  function homeContractsHtml() {
+    const players = squad();
+    if (players.length === 0) return '<div style="color: var(--text-dim); font-size: 13px;">No squad loaded.</div>';
+    const soon = expiringSoon(players);
+    if (soon.length === 0) {
+      const next = contractBuckets(players).buckets[0];
+      return `<div style="color: var(--text-dim); font-size: 13px;">No contracts run out in the next 12 months.${next ? ` Next: ${next.year} (${next.count} player${next.count === 1 ? '' : 's'}).` : ''}</div>`;
+    }
+    const wage = soon.reduce((s, p) => s + (Number(p.wage) || 0), 0);
+    const shown = soon.slice(0, 5);
+    return `<div style="font-size: 13px; margin-bottom: 8px;"><strong>${soon.length}</strong> expiring within 12 months${wage ? ` · <span style="color: var(--text-dim);">${wk(wage)}/wk</span>` : ''}</div>
+      <ul class="injury-report-list">${shown.map(p => `<li class="clickable-name" onclick="openPlayerProfile('${esc(p.player_id)}')"><span>${esc(p.name)}</span>
+        <span class="injury-report-meta">${root.getPositionInfo(p.position_id).label} · ${p.overall || '?'} OVR · ends ${esc(p.contract_expiry)}</span></li>`).join('')}</ul>
+      ${soon.length > shown.length ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 6px;">+${soon.length - shown.length} more</div>` : ''}`;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // Public API: Insights.setView / open / pick (index.html buttons, profile), refresh (data or settings changed),
+  // renderHomeWidget (renderHomeDashboard in app.js)
+  // ---------------------------------------------------------------------------------------------------------
+
+  const VIEWS = { wages: wagesHtml, compare: compareHtml };
+  let view = 'wages';
+  const isActive = () => { const t = document.getElementById('insights-tab'); return !!(t && t.classList.contains('active')); };
+
+  const Insights = {
+    render() {
+      Object.keys(VIEWS).forEach(v => { const b = document.getElementById('insights-view-' + v); if (b) b.classList.toggle('active', v === view); });
+      const h = host(); if (h) h.innerHTML = VIEWS[view]();
+    },
+    setView(v) { if (!VIEWS[v]) return; view = v; Insights.render(); },
+    // Jump here from elsewhere; with a player id, Compare opens on that player and a like-for-like rival.
+    open(v, playerId) {
+      if (v === 'compare' && playerId != null) picks = [String(playerId)];
+      if (VIEWS[v]) view = v;
+      root.switchTab('insights'); // switchTab calls Insights.render()
+    },
     pick(slot, id) {
       if (slot === 2 && !id) picks = picks.slice(0, 2); else picks[slot] = String(id);
       picks = picks.filter((id, i) => id && picks.indexOf(id) === i); // no empty slots, no player twice
-      Compare.show();
-    }
+      Insights.render();
+    },
+    refresh() { if (isActive()) Insights.render(); },
+    renderHomeWidget() { const el = document.getElementById('home-contracts-body'); if (el) el.innerHTML = homeContractsHtml(); }
   };
 
-  root.SquadFinance = Finance;
-  root.SquadCompare = Compare;
-  const api = { fitWageCurve, expectedWage, wageRatings, contractBuckets, compareAxes, MIN_WAGE_SAMPLE, OVERPAID_RATIO, GOOD_VALUE_RATIO };
+  root.Insights = Insights;
+  // app.js runs its first renderHomeDashboard before this file loads, so fill the Home card once here too.
+  if (typeof document !== 'undefined') Insights.renderHomeWidget();
+  const api = { fitWageCurve, expectedWage, wageRatings, contractBuckets, compareAxes, companionFor, MIN_WAGE_SAMPLE, OVERPAID_RATIO, GOOD_VALUE_RATIO };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

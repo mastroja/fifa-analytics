@@ -40,4 +40,12 @@ assert.strictEqual(A.compareAxes([{ gk: true }, { gk: false }], gk).gk, false);
 assert.strictEqual(A.compareAxes([], gk).gk, false);
 assert.strictEqual(A.compareAxes([{ gk: false }], gk).axes.length, 6);
 
+// compare companion: same position group first, never the player themself, null when alone
+const grp = p => p.g;
+const sq = [{ player_id: 1, overall: 80, g: 'DEF' }, { player_id: 2, overall: 85, g: 'ATT' }, { player_id: 3, overall: 70, g: 'DEF' }, { player_id: 4, overall: 75, g: 'DEF' }];
+assert.strictEqual(A.companionFor(sq[0], sq, grp).player_id, 4, 'best other defender, not the better forward');
+assert.strictEqual(A.companionFor({ player_id: 9, overall: 60, g: 'GK' }, sq, grp).player_id, 2, 'no other keeper -> best overall');
+assert.strictEqual(A.companionFor(sq[0], [sq[0]], grp), null, 'nobody else in the squad');
+assert.strictEqual(A.companionFor({ player_id: '1', g: 'DEF' }, sq, grp).player_id, 4, 'string vs number ids still exclude self');
+
 console.log('squad analytics tests passed');
