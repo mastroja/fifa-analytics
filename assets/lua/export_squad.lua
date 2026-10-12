@@ -200,7 +200,8 @@ function get_squad_data()
                 local foot_val = players_table:GetRecordFieldValue(current_record, "preferredfoot") or 1
                 local preferred_foot = (foot_val == 2) and "Left" or "Right"
                 
-                local skill_moves_val = players_table:GetRecordFieldValue(current_record, "skillmoves") or 3
+                -- FC27 stores skill moves 0-based (raw 1 = 2 stars), so add 1 for the star count
+                local skill_moves_val = (players_table:GetRecordFieldValue(current_record, "skillmoves") or 2) + 1
                 local weak_foot_val = players_table:GetRecordFieldValue(current_record, "weakfootabilitytypecode") or 3
                 local contract_valid_until = players_table:GetRecordFieldValue(current_record, "contractvaliduntil") or 2028
                 
@@ -283,7 +284,8 @@ function get_squad_data()
 
                 player.is_among_top_scorers = tpl_info and (tpl_info.is_among_top_scorers == 1) or false
                 player.jersey_number = tpl_info and tpl_info.jersey_number or 0
-                player.injury = tpl_info and (tpl_info.injury == 1) or false
+                -- injury is a 6-bit injury-type id (0 = fit), not a boolean
+                player.injury = tpl_info and (tpl_info.injury ~= 0) or false
                 player.league_goals_prev_three_matches = tpl_info and tpl_info.league_goals_prev_three_matches or 0
                 player.is_among_top_scorers_in_team = tpl_info and (tpl_info.is_among_top_scorers_in_team == 1) or false
                 player.form = tpl_info and tpl_info.form or 0
