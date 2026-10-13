@@ -2020,6 +2020,7 @@ let currentCalendar = [];
             <div class="injury-summary-grid">
               <div class="injury-summary-item"><span>Injury Date</span><input type="date" id="new-injury-date" value="${currentIngameDate || new Date().toISOString().slice(0, 10)}"></div>
               <div class="injury-summary-item"><span>Injury Type</span>${buildInjuryTypeSelectHtml({ injury_type_id: null }, 'new-injury-type', false)}</div>
+              <div class="injury-summary-item"><span>Duration (days, as shown in game)</span><input type="number" id="new-injury-days" min="1" max="999" step="1" placeholder="e.g. 21"></div>
             </div>
             <div class="injury-entry-edit-actions">
               <button class="refresh-btn" onclick="cancelNewInjuryForm()">Cancel</button>
@@ -2073,15 +2074,22 @@ let currentCalendar = [];
       const rawType = typeSelect ? parseInt(typeSelect.value, 10) : 0;
       const injuryTypeId = rawType === 0 ? null : rawType;
 
+      const daysInput = document.getElementById('new-injury-days');
+      const durationDays = daysInput ? parseInt(daysInput.value, 10) : NaN;
+
       if (!startDate) {
         alert('Enter the date the player was injured.');
+        return;
+      }
+      if (!Number.isInteger(durationDays) || durationDays < 1) {
+        alert('Enter the injury duration in days, as the game shows it. The player returns to fitness automatically once the in-game date reaches it.');
         return;
       }
       if (!currentProfilePlayerId || !window.api || !window.api.markPlayerCurrentlyInjured) return;
 
       let result;
       try {
-        result = await window.api.markPlayerCurrentlyInjured(currentProfilePlayerId, startDate, injuryTypeId, currentSaveId);
+        result = await window.api.markPlayerCurrentlyInjured(currentProfilePlayerId, startDate, injuryTypeId, currentSaveId, durationDays);
       } catch (e) {
         console.error('Failed to mark player currently injured:', e);
         alert('Could not save this injury: ' + (e && e.message ? e.message : e));
@@ -2194,8 +2202,9 @@ let currentCalendar = [];
                 <div>
                   <div class="injury-entry-date">Injured on ${formatPrettyDate(ep.start_date)}</div>
                   <span class="injury-entry-status-badge">ONGOING</span>
+                  ${ep.expected_return_date ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">${ep.expected_days} days, expected back ${formatPrettyDate(ep.expected_return_date)}</div>` : ''}
                 </div>
-                <button class="refresh-btn" style="font-size: 12px; padding: 4px 10px;" onclick="returnPlayerToFullFitness(${ep.id})" title="Use this if the player has recovered in-game but Live Editor's injury flag hasn't cleared on its own">✅ Returned to Full Fitness</button>
+                <button class="refresh-btn" style="font-size: 12px; padding: 4px 10px;" onclick="returnPlayerToFullFitness(${ep.id})" title="Use this if the player is back earlier than the entered duration">✅ Returned to Full Fitness</button>
               </div>
               <div class="injury-entry-type-row">
                 <span>Injury Type</span>

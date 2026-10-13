@@ -85,6 +85,7 @@ const FEATURE_DEFAULTS = { hair: true, beard: true, colour: true, boots: true, a
 const HEIGHT_MEAN = 178.6;            // cm, before the position offset
 const HEIGHT_SD = 4.7;                // cm, spread within a position
 const HEIGHT_MIN = 162, HEIGHT_MAX = 204;
+const MAX_VALID_HEIGHT = 206;         // the editor's own limit; anything above is a bad value (see planGrowth)
 const POSITION_OFFSET = { gk: 8, cb: 3.5, fb: -1.5, dm: 1, cm: 0, wide: -2.5, fw: -0.5, st: 1.5 };
 // share of adult height reached at a given age (years); linear in between. After 19 everyone is fully grown.
 const GROWTH_CURVE = [[10, 0.78], [12, 0.84], [13, 0.88], [14, 0.92], [15, 0.955], [16, 0.98], [17, 0.99], [18, 0.997], [19, 1]];
@@ -150,6 +151,20 @@ function weightFor(playerId, heightCm, bodyType, ageYears, tempo) {
  */
 function planGrowth({ playerId, state, ageYears, record }) {
   const rec = Object.assign({ target_cm: null, tempo: null, applied_cm: null, prev_cm: null, locked: 0 }, record || {});
+  // A height beyond what any player can have (the game itself has been seen writing 256 cm / 8'5" for a youth player) is
+  // a bad value, not a real height: ignore any lock and any "never lower" rule and bring the player back to the model.
+  if (state.height > MAX_VALID_HEIGHT) {
+    if (rec.target_cm === null || rec.target_cm > HEIGHT_MAX) rec.target_cm = drawAdultHeight(playerId, state.preferredposition1);
+    if (rec.tempo === null) rec.tempo = drawTempo(playerId);
+    const height = heightAt(rec.target_cm, ageYears, rec.tempo);
+    const bodytype = bodyTypeFor(height, state.bodytypecode);
+    const changes = { height };
+    const weight = weightFor(playerId, height, bodytype, ageYears, rec.tempo);
+    if (weight !== state.weight) changes.weight = weight;
+    if (bodytype !== state.bodytypecode) changes.bodytypecode = bodytype;
+    rec.prev_cm = state.height; rec.applied_cm = height;
+    return { changes, record: rec };
+  }
   // A height set by hand stays as it is, but a weight that makes no sense for it is still corrected (only when it is
   // clearly off, 6 kg or more, so a weight chosen on purpose is not fought over).
   const weightOnly = () => {
@@ -443,7 +458,12 @@ class DynamicLook {
     const from = Math.max(monthIndexOf(s.lastMonth) + 1, monthIndexOf(month) - 2); // catch up at most three months
     const months = [];
     for (let i = from; i <= monthIndexOf(month); i++) months.push(keyOfIndex(i));
-    await this.run(saveId, months, { manual: false });
+    const res = await this.run(saveId, months, { manual: false });
+    // Tell the user when the automatic update could not run (once per month, not on every sync).
+    if (res && !res.success && this.failedMonth !== month) {
+      this.failedMonth = month;
+      this.ctx.notify({ saveId, changed: 0, automatic: true, months, error: res.error });
+    } else if (res && res.success) this.failedMonth = null;
   }
 
   setLastMonth(saveId, month) {
@@ -656,7 +676,7 @@ class DynamicLook {
         let record = records.get(row.player_id) || null;
         let heightRec = heightRecords.get(row.player_id) || null;
         const notes = [];
-        let lastMonth = null;
+        let lastMonth = null, touchedHeight = false;
         for (const month of months) {
           const age = ageAt(row.dob, month);
           if (age === null) break;
@@ -670,7 +690,8 @@ class DynamicLook {
             plan.notes.forEach(n => notes.push(n));
             lastMonth = month;
           }
-          if (features.growth) {
+          if (features.growth || state.height > MAX_VALID_HEIGHT) { // an impossible height is repaired even with growth switched off
+            touchedHeight = true;
             const ageYears = ageYearsAt(row.dob, month);
             if (ageYears !== null) {
               const g = planGrowth({ playerId: row.player_id, state, ageYears, record: heightRec });
@@ -683,7 +704,7 @@ class DynamicLook {
             }
           }
         }
-        if (features.growth && heightRec) this.saveHeightRecord(saveId, row.player_id, heightRec);
+        if (touchedHeight && heightRec) this.saveHeightRecord(saveId, row.player_id, heightRec);
         if (record) {
           this.ctx.getDb().run(`INSERT INTO dynamic_look_players (save_id, player_id, natural_haircolor, dyed_until) VALUES (?, ?, ?, ?)
             ON CONFLICT(save_id, player_id) DO UPDATE SET natural_haircolor = excluded.natural_haircolor, dyed_until = excluded.dyed_until`,
@@ -718,7 +739,10 @@ class DynamicLook {
         const ok = await this.ctx.pressApply();
         if (!ok) break;
       }
-      this.ctx.notify({ saveId, changed: edits.length });
+      this.ctx.notify({
+        saveId, changed: edits.length, automatic: !manual, months,
+        details: edits.map(q => ({ name: q.row.name || '', summary: q.notes.join(', ') }))
+      });
       return { success: true, changed: edits.length, months };
     } catch (err) {
       this.ctx.log(`[DynamicLook] run failed: ${err && err.stack ? err.stack : err}`);

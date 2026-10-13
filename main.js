@@ -371,6 +371,20 @@ async function initDatabase() {
     // column already exists, safe to ignore
   }
 
+  // Expected duration entered by hand when an injury is recorded (the game
+  // shows it at the start of an injury) — see player_injury_history in
+  // schema.sql and expireDueInjuries in main.js.
+  try {
+    db.run(`ALTER TABLE player_injury_history ADD COLUMN expected_days INTEGER;`);
+  } catch (e) {
+    // column already exists, safe to ignore
+  }
+  try {
+    db.run(`ALTER TABLE player_injury_history ADD COLUMN expected_return_date TEXT;`);
+  } catch (e) {
+    // column already exists, safe to ignore
+  }
+
   // Which season a PlayStyle roll happened in — added to enforce "at most
   // one NEW PlayStyle win per player per season" (see
   // PLAYSTYLE_MAX_WINS_PER_SEASON / checkPlaystyleEligibility), per the
@@ -3670,13 +3684,13 @@ function getPlayerTransferHistory(playerId, saveId = activeSaveId) {
 function getPlayerInjuryHistory(playerId, saveId = activeSaveId) {
   if (!db || !saveId || !playerId) return [];
   const res = db.exec(`
-    SELECT id, start_date, end_date, injury_type_id
+    SELECT id, start_date, end_date, injury_type_id, expected_days, expected_return_date
     FROM player_injury_history
     WHERE save_id = ${saveId} AND player_id = ${playerId}
     ORDER BY start_date DESC;
   `);
   if (res.length === 0) return [];
-  return res[0].values.map(([id, start_date, end_date, injury_type_id]) => ({ id, start_date, end_date, injury_type_id }));
+  return res[0].values.map(([id, start_date, end_date, injury_type_id, expected_days, expected_return_date]) => ({ id, start_date, end_date, injury_type_id, expected_days, expected_return_date }));
 }
 
 // Whole-squad injury view for the Home dashboard's Injury Report widget —
@@ -3769,13 +3783,45 @@ function returnPlayerToFullFitness(episodeId, endDate) {
 // something to act on. Refuses if an open episode already exists for
 // this player — the existing one should be classified/closed instead of
 // creating a duplicate.
-function markPlayerCurrentlyInjured(playerId, startDate, injuryTypeId, saveId = activeSaveId) {
+//
+// durationDays is the duration the game shows at the start of the injury;
+// the episode closes itself once the in-game date reaches start + duration
+// (see expireDueInjuries), or earlier via "Returned to Full Fitness".
+function addDaysISO(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  if (isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Closes manual injuries whose expected return date has been reached by the
+// in-game date, clears the INJURED badge and records the recovery news.
+function expireDueInjuries(saveId, inGameDate, seasonId) {
+  if (!db || !saveId || !/^\d{4}-\d{2}-\d{2}$/.test(inGameDate || '')) return;
+  const res = db.exec(`SELECT h.id, h.player_id, h.expected_return_date, p.name
+    FROM player_injury_history h LEFT JOIN players p ON p.player_id = h.player_id
+    WHERE h.save_id = ${saveId} AND h.end_date IS NULL AND h.expected_return_date IS NOT NULL AND h.expected_return_date <= '${inGameDate}';`);
+  if (res.length === 0) return;
+  res[0].values.forEach(([id, playerId, returnDate, name]) => {
+    db.run('UPDATE player_injury_history SET end_date = ? WHERE id = ? AND end_date IS NULL;', [returnDate, id]);
+    if (seasonId) db.run('UPDATE player_season_stats SET injury = 0 WHERE player_id = ? AND season_id = ?;', [playerId, seasonId]);
+    recordNewsItem(saveId, {
+      seasonId, newsType: 'injury_recovery', playerId, eventDate: returnDate,
+      headline: NewsRules.headline('injury_recovery', { name: name || 'Unknown' }),
+      dedupeKey: `injury_recovery:${playerId}:${returnDate}`
+    });
+  });
+}
+
+function markPlayerCurrentlyInjured(playerId, startDate, injuryTypeId, saveId = activeSaveId, durationDays = null) {
   if (!db || !playerId || !startDate || !saveId) return { success: false };
+  const days = Number.isInteger(durationDays) && durationDays > 0 ? durationDays : null;
+  const returnDate = days ? addDaysISO(startDate, days) : null;
 
   const openRes = db.exec(`SELECT id FROM player_injury_history WHERE save_id = ${saveId} AND player_id = ${playerId} AND end_date IS NULL;`);
   if (openRes.length > 0 && openRes[0].values.length > 0) return { success: false, error: 'already_open' };
 
-  db.run('INSERT INTO player_injury_history (save_id, player_id, start_date, injury_type_id) VALUES (?, ?, ?, ?);', [saveId, playerId, startDate, injuryTypeId]);
+  db.run('INSERT INTO player_injury_history (save_id, player_id, start_date, injury_type_id, expected_days, expected_return_date) VALUES (?, ?, ?, ?, ?, ?);', [saveId, playerId, startDate, injuryTypeId, days, returnDate]);
   const idRes = db.exec('SELECT last_insert_rowid();');
   const episodeId = idRes[0].values[0][0];
 
@@ -4461,6 +4507,7 @@ function importFifaData(jsonPayload) {
   // rather than a running flag on player_season_stats.
   const openInjuryEpisodeByPlayer = new Map();
   if (activeSaveId) {
+    expireDueInjuries(activeSaveId, jsonPayload.current_date, currentSeasonId);
     const openRes = db.exec(`SELECT player_id, id FROM player_injury_history WHERE save_id = ${activeSaveId} AND end_date IS NULL;`);
     if (openRes.length > 0) {
       openRes[0].values.forEach(([playerId, episodeId]) => openInjuryEpisodeByPlayer.set(playerId, episodeId));
@@ -4739,7 +4786,9 @@ function importFifaData(jsonPayload) {
         p.is_loan_to_buy ? 1 : 0,
         p.wage || 0,
         p.jersey_number || 0,
-        p.injury ? 1 : 0,
+        // Injuries are tracked by hand now: the badge follows the open manual
+        // episode, not the game's flag (which never reliably flipped).
+        (activeSaveId ? openInjuryEpisodeByPlayer.has(p.player_id) : p.injury) ? 1 : 0,
         p.goals || 0,
         p.assists || 0,
         p.appearances || 0,
@@ -4764,24 +4813,11 @@ function importFifaData(jsonPayload) {
       // openInjuryEpisodeByPlayer, built before this loop started), so a
       // player who's been injured for 10 syncs in a row gets exactly one
       // row, not one per sync.
-      if (activeSaveId) {
-        const hadOpenEpisode = openInjuryEpisodeByPlayer.has(p.player_id);
-        if (p.injury && !hadOpenEpisode) {
-          injuryOpenStmt.run([activeSaveId, p.player_id, syncInGameDate]);
-          recordNewsItem(activeSaveId, {
-            seasonId: currentSeasonId, newsType: 'injury', playerId: p.player_id, eventDate: syncInGameDate,
-            headline: NewsRules.headline('injury', { name: p.name || 'Unknown' }),
-            dedupeKey: `injury:${p.player_id}:${syncInGameDate}`
-          });
-        } else if (!p.injury && hadOpenEpisode) {
-          injuryCloseStmt.run([syncInGameDate, openInjuryEpisodeByPlayer.get(p.player_id)]);
-          recordNewsItem(activeSaveId, {
-            seasonId: currentSeasonId, newsType: 'injury_recovery', playerId: p.player_id, eventDate: syncInGameDate,
-            headline: NewsRules.headline('injury_recovery', { name: p.name || 'Unknown' }),
-            dedupeKey: `injury_recovery:${p.player_id}:${syncInGameDate}`
-          });
-        }
-      }
+      // DISABLED: opening/closing episodes from the game's injury flag.
+      // The flag is unreliable (it never reliably set or cleared), and the
+      // close branch was ending manually-entered injuries on the next sync.
+      // Episodes are now opened by hand (markPlayerCurrentlyInjured) and
+      // closed by expireDueInjuries or the "Returned to Full Fitness" button.
 
       // Contract renewal tracking — see player_contract_state in
       // schema.sql. A new contract_date (re-signing after leaving, or a
@@ -6376,7 +6412,7 @@ ipcMain.handle('get-player-injury-history', (_event, playerId, saveId) => getPla
 ipcMain.handle('get-injury-report', (_event, saveId) => getInjuryReport(saveId));
 ipcMain.handle('set-injury-episode-type', (_event, episodeId, injuryTypeId) => setInjuryEpisodeType(episodeId, injuryTypeId));
 ipcMain.handle('return-player-to-full-fitness', (_event, episodeId, endDate) => returnPlayerToFullFitness(episodeId, endDate));
-ipcMain.handle('mark-player-currently-injured', (_event, playerId, startDate, injuryTypeId, saveId) => markPlayerCurrentlyInjured(playerId, startDate, injuryTypeId, saveId));
+ipcMain.handle('mark-player-currently-injured', (_event, playerId, startDate, injuryTypeId, saveId, durationDays) => markPlayerCurrentlyInjured(playerId, startDate, injuryTypeId, saveId, durationDays));
 ipcMain.handle('delete-injury-episode', (_event, episodeId) => deleteInjuryEpisode(episodeId));
 ipcMain.handle('update-injury-episode', (_event, episodeId, startDate, endDate, injuryTypeId) => updateInjuryEpisode(episodeId, startDate, endDate, injuryTypeId));
 ipcMain.handle('get-player-contract-renewal', (_event, playerId, saveId) => getPlayerContractRenewal(playerId, saveId));

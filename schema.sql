@@ -611,7 +611,11 @@ CREATE TABLE IF NOT EXISTS transfer_fees (
 );
 
 -- One row per injury EPISODE (not per sync) — opened the first time a
--- squad sync sees teamplayerlinks.injury flip to true for a player with
+-- MANUAL NOW: the game's injury flag is not used any more. Episodes are only
+-- opened by hand (with a duration) and close when the in-game date reaches
+-- expected_return_date or via "Returned to Full Fitness". The text below
+-- describes the older flag-based detection.
+-- (older) squad sync sees teamplayerlinks.injury flip to true for a player with
 -- no already-open episode, closed (end_date set) the first sync that
 -- sees it flip back to false. See the injury-transition detection in
 -- importFifaData in main.js. Live Editor only exposes a boolean injury
@@ -641,6 +645,8 @@ CREATE TABLE IF NOT EXISTS player_injury_history (
     start_date TEXT NOT NULL,  -- in-game date (YYYY-MM-DD), from the squad export's current_date
     end_date TEXT,             -- NULL while the episode is still open
     injury_type_id INTEGER,    -- see INJURY_TYPES in index.html; NULL = not yet classified
+    expected_days INTEGER,     -- duration entered by hand when the injury was recorded (shown by the game at the start)
+    expected_return_date TEXT, -- start_date + expected_days; the episode closes itself once the in-game date reaches it
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(player_id) REFERENCES players(player_id),
     FOREIGN KEY(save_id) REFERENCES saves(id)

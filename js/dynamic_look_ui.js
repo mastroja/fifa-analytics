@@ -236,11 +236,13 @@
     else if (d.error) body = `<div class="dl-warn">${esc(d.error)}</div>`;
     else body = { overview: viewOverview, changes: viewChanges, players: viewPlayers, heights: viewHeights, activity: viewActivity, undo: viewUndo }[S.tab]();
     const enabled = d && d.settings && d.settings.enabled;
+    const toast = dlg.querySelector('#dl-toast'); // survives re-renders
     dlg.innerHTML = `<div class="dl-shell">
       <div class="dl-top"><h2>Dynamic look</h2><span class="dl-pill ${enabled ? 'on' : 'off'}">${enabled ? 'On' : 'Off'}</span><button class="dl-x" data-close title="Close">✕</button></div>
       <div class="dl-msg ${S.msg ? S.msgKind || '' : 'empty'}">${esc(S.msg || '')}</div>
       <div class="dl-main"><nav class="dl-nav">${TABS.map(([id, label]) => `<button class="dl-tab${S.tab === id ? ' on' : ''}" data-tab="${id}">${label}</button>`).join('')}</nav>
         <div class="dl-panel" data-panel="${S.tab}">${body}</div></div></div>`;
+    if (toast) dlg.appendChild(toast);
     const np = dlg.querySelector('.dl-panel');
     if (np) np.scrollTop = prevScroll;
     if (S.focus) {
@@ -361,8 +363,66 @@
     } catch (e) { el.textContent = ''; }
   }
 
+  // ---------- toast: tells the user when a monthly update ran and what it changed ----------
+  const MAX_TOAST_ROWS = 8;
+  function monthLabel(key) {
+    const m = /^(\d{4})-(\d{2})$/.exec(key || '');
+    if (!m) return key || '';
+    return new Date(Number(m[1]), Number(m[2]) - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  }
+  function showToast(p) {
+    if (!document.getElementById('dl-toast-styles')) {
+      const st = document.createElement('style');
+      st.id = 'dl-toast-styles';
+      st.textContent = `
+        #dl-toast { position: fixed; right: 20px; bottom: 20px; z-index: 100000; width: 360px; max-height: 70vh; overflow-y: auto; background: var(--card-bg, #161b22); color: var(--text-main, #e6edf3); border: 1px solid var(--border-color, #30363d); border-left: 4px solid #3fb950; border-radius: 10px; padding: 14px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.5); font-size: 13px; }
+        #dl-toast.err { border-left-color: #f85149; }
+        #dl-toast .dlt-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; font-size: 14px; }
+        #dl-toast .dlt-x { background: none; border: 0; color: var(--text-dim, #8b949e); cursor: pointer; font-size: 16px; padding: 0 4px; }
+        #dl-toast ul { margin: 10px 0 0; padding: 0; list-style: none; }
+        #dl-toast li { padding: 5px 0; border-top: 1px solid var(--border-color, #30363d); }
+        #dl-toast li small { display: block; color: var(--text-dim, #8b949e); }
+        #dl-toast a { color: var(--accent-color, #58a6ff); cursor: pointer; display: inline-block; margin-top: 10px; }
+      `;
+      document.head.appendChild(st);
+    }
+    let el = document.getElementById('dl-toast');
+    if (el) el.remove();
+    el = document.createElement('div');
+    el.id = 'dl-toast';
+    const months = (p.months || []).map(monthLabel);
+    const when = months.length > 1 ? `${months[0]} to ${months[months.length - 1]}` : (months[0] || 'this month');
+    const details = p.details || [];
+    let html;
+    if (p.error) {
+      el.className = 'err';
+      html = `<div class="dlt-head"><span>Dynamic look could not update (${esc(when)})</span><button class="dlt-x" data-x>✕</button></div>
+        <div style="margin-top:8px">${esc(p.error)}</div><div class="dlt-hint" style="margin-top:6px;color:var(--text-dim)">It will try again on the next refresh.</div>`;
+    } else if (!details.length) {
+      html = `<div class="dlt-head"><span>Dynamic look ran for ${esc(when)}</span><button class="dlt-x" data-x>✕</button></div>
+        <div style="margin-top:8px;color:var(--text-dim)">No player changed their look this time.</div>`;
+    } else {
+      const rows = details.slice(0, MAX_TOAST_ROWS).map(d => `<li><b>${esc(d.name)}</b><small>${esc(d.summary)}</small></li>`).join('');
+      const more = details.length > MAX_TOAST_ROWS ? `<li><small>and ${details.length - MAX_TOAST_ROWS} more</small></li>` : '';
+      html = `<div class="dlt-head"><span>Dynamic look: ${details.length} player${details.length === 1 ? '' : 's'} updated (${esc(when)})</span><button class="dlt-x" data-x>✕</button></div>
+        <ul>${rows}${more}</ul><a data-more>See full activity log</a>`;
+    }
+    el.innerHTML = html;
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('[data-x]')) el.remove();
+      else if (e.target.closest('[data-more]')) { el.remove(); open('activity'); }
+    });
+    // a modal dialog covers the page, so show it inside the dialog while that is open
+    const dlg = document.getElementById('dl-dialog');
+    (dlg && dlg.open ? dlg : document.body).appendChild(el);
+  }
+
   if (window.api && window.api.onDynamicLookUpdated) {
-    window.api.onDynamicLookUpdated(() => { if (S) load(true); updateSettingsStatus(); });
+    window.api.onDynamicLookUpdated((payload) => {
+      if (S) load(true);
+      updateSettingsStatus();
+      if (payload && (payload.error || payload.details)) showToast(payload);
+    });
   }
   document.addEventListener('DOMContentLoaded', () => setTimeout(() => { updateSettingsStatus(); }, 1500));
 
