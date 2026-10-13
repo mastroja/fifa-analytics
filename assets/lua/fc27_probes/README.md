@@ -25,6 +25,7 @@ heap range the manager objects live in (0x66000000-0x6B000000), pointer-followin
 | `inspect_fc27_find_fce_lists.lua` | Stage 4: looks for list objects under `FCEDataManager`; also tallies the match-rating table | medium |
 | `inspect_fc27_find_standings.lua` | Stages 5-6: scans the schedule-related managers' big pools for fixture-shaped runs (YYYYMMDD dates at a 0x18 stride) and standings-shaped runs (the user's league team ids at a 0x18 stride) | medium (reads only inside arena-bounded vectors, chunked, flushed) |
 | `inspect_fc27_next_match.lua` | Stage 7: dumps the small result/next-match managers (NextMatchManager, SimResultsManager, InterestingResultManager, StandingsViewManager, ...) and their pointer targets, tagging league team ids and dates in four encodings, to find where one fixture lives | medium (arena / near-object pointers only) |
+| `inspect_fc27_find_injury.lua` | Stage 8: searches News/Events/UnexpectedEvents/PersistentEvents/PlayerStatus/Fitness managers' vectors for an injured player's id (Malik Kane 460012) and dumps the surrounding bytes; run WHILE he is injured | medium (arena-bounded, capped, flushed) |
 
 ## What was learned (v27.1.2, tested 2026-10-05/06)
 
