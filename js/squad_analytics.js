@@ -180,45 +180,67 @@
     if (picks.length === 1) { const c = companionFor(byId(picks[0]), players, groupOf); if (c) picks.push(String(c.player_id)); }
     const chosen = picks.map(byId);
 
-    const selects = [0, 1, 2].map(i => `<label class="dc-ctl">${i === 2 ? 'Player 3 (optional)' : 'Player ' + (i + 1)}
-      <select onchange="Insights.pick(${i}, this.value)">${i === 2 ? '<option value="">None</option>' : ''}${players.map(p => `<option value="${esc(p.player_id)}"${String(p.player_id) === picks[i] ? ' selected' : ''}>${esc(p.name)} (${root.getPositionInfo(p.position_id).label} ${p.overall})</option>`).join('')}</select></label>`).join('');
+    // Dropdowns are grouped by position group, best overall first inside each.
+    const GROUPS = [['GK', 'Goalkeepers'], ['DEF', 'Defenders'], ['MID', 'Midfielders'], ['ATT', 'Attackers']];
+    const selects = [0, 1, 2].map(i => {
+      const groups = GROUPS.map(([g, label]) => {
+        const list = players.filter(p => groupOf(p) === g);
+        return list.length ? `<optgroup label="${label}">${list.map(p => `<option value="${esc(p.player_id)}"${String(p.player_id) === picks[i] ? ' selected' : ''}>${esc(p.name)} (${root.getPositionInfo(p.position_id).label} ${p.overall})</option>`).join('')}</optgroup>` : '';
+      }).join('');
+      return `<label class="dc-ctl">${i === 2 ? 'Player 3 (optional)' : 'Player ' + (i + 1)}
+        <select onchange="Insights.pick(${i}, this.value)">${i === 2 ? '<option value="">None</option>' : ''}${groups}</select></label>`;
+    }).join('');
 
     const { gk, axes } = compareAxes(chosen, isGk);
     const series = chosen.map((p, i) => ({ name: p.name, color: COMPARE_COLORS[i], values: axes.map(a => axisValue(p, a, gk)) }));
     const radar = root.Charts.radarSvg(axes.map(a => a[0]), series);
     const legend = chosen.map((p, i) => `<span style="font-weight: 700; color: ${COMPARE_COLORS[i]};">● ${esc(p.name)}</span>`).join('<span style="margin: 0 8px;"></span>');
 
-    // [label, value fn, higher-is-better?]. A row's best value is highlighted when 2+ players have a real number.
+    // [label, value fn, higher-is-better?, formatter]. A row's best value is highlighted when 2+ players have a real number.
     const hasStats = chosen.some(p => Number(p.appearances) > 0);
-    const rows = [
+    const bioRows = [
       ['Position', p => root.getPositionInfo(p.position_id).label],
+      ['Alt positions', p => root.getAltPositionsLabel(p.alt_positions) || null],
       ['Age', p => root.computeAge(p.dob)],
+      ['Height', p => parseInt(p.height, 10) || null, null, v => root.formatHeight(`${v} cm`)],
+      ['Preferred foot', p => p.preferred_foot || null],
+      ['Skill moves', p => Number(p.skill_moves) || null, true],
+      ['Weak foot', p => Number(p.weak_foot) || null, true]
+    ];
+    const ratingRows = [
       ['Overall', p => Number(p.overall) || null, true],
       ['Potential', p => Number(p.potential) || null, true],
-      ...axes.map(a => [a[0], p => axisValue(p, a, gk), true]),
-      ['Skill moves', p => Number(p.skill_moves) || null, true],
-      ['Weak foot', p => Number(p.weak_foot) || null, true],
+      ...axes.map(a => [a[0], p => axisValue(p, a, gk), true])
+    ];
+    const dealRows = [
       ['Wage / wk', p => Number(p.wage) || null, null, v => root.formatWageAmount(v)],
       ['Contract ends', p => parseInt(p.contract_expiry, 10) || null],
       ...(hasStats ? [['Appearances', p => Number(p.appearances) || 0, true], ['Goals', p => Number(p.goals) || 0, true], ['Assists', p => Number(p.assists) || 0, true], ['Avg rating', p => Number(p.avg_rating) > 0 ? Number(p.avg_rating).toFixed(2) : null, true]] : [])
     ];
-    const body = rows.map(([label, fn, higher, fmt]) => {
+    const textRows = new Set(['Position', 'Alt positions', 'Preferred foot']);
+    const tableFor = rows => `<table class="sub-table"><thead><tr><th></th>${chosen.map((p, i) => `<th style="color: ${COMPARE_COLORS[i]};">${nameLink(p)}</th>`).join('')}</tr></thead><tbody>${rows.map(([label, fn, higher, fmt]) => {
       const vals = chosen.map(fn);
-      const nums = vals.map(v => (typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)) && label !== 'Position')) ? Number(v) : null);
+      const nums = vals.map(v => (typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)) && !textRows.has(label))) ? Number(v) : null);
       const real = nums.filter(v => v != null);
       const best = higher == null || real.length < 2 ? null : (higher ? Math.max(...real) : Math.min(...real));
       return `<tr><td style="color: var(--text-dim);">${esc(label)}</td>${vals.map((v, i) => {
         const win = best != null && nums[i] === best && real.filter(x => x === best).length < real.length;
         return `<td style="${win ? 'color: #3fb950; font-weight: 700;' : ''}">${v == null ? '–' : esc(fmt && nums[i] != null ? fmt(nums[i]) : v)}</td>`;
       }).join('')}</tr>`;
-    }).join('');
+    }).join('')}</tbody></table>`;
 
+    // Top row: radar beside the player profile (similar heights); below: ratings beside contract and season numbers.
+    const grid = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start;';
     return `<div class="dc-toolbar-controls" style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px;">${selects}</div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start;">
+      <div style="${grid}">
         <div class="profile-card" style="text-align: center;"><h3>${gk ? 'Goalkeeping' : 'Attributes'}</h3>${radar}<div style="font-size: 13px; margin-top: 4px;">${legend}</div></div>
-        <div class="profile-card"><h3>Side by side</h3><table class="sub-table"><thead><tr><th></th>${chosen.map((p, i) => `<th style="color: ${COMPARE_COLORS[i]};">${nameLink(p)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>
-          <div style="font-size: 11px; color: var(--text-dim); margin-top: 8px;">Green = best in the row (performance rows only; age, wage and contract are just shown). Attribute scores are the same PAC/SHO/PAS/DRI/DEF/PHY (outfield) or goalkeeping values shown on profiles.</div></div>
-      </div>`;
+        <div class="profile-card"><h3>Profile</h3>${tableFor(bioRows)}</div>
+      </div>
+      <div style="${grid} margin-top: 16px;">
+        <div class="profile-card"><h3>Ratings</h3>${tableFor(ratingRows)}</div>
+        <div class="profile-card"><h3>Contract${hasStats ? ' and season' : ''}</h3>${tableFor(dealRows)}</div>
+      </div>
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">Green = best in the row (ratings, skill moves, weak foot and season numbers only; age, height, foot, wage and contract are just shown). Attribute scores are the same PAC/SHO/PAS/DRI/DEF/PHY (outfield) or goalkeeping values shown on profiles.</div>`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
