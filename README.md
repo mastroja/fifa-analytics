@@ -11,7 +11,7 @@ This app depends on a specific combination of game version + Live Editor version
 | Component | Version |
 |---|---|
 | EA Sports FC 27 (Steam) | Build `1.0.141.12554` |
-| FC 27 Live Editor | `v27.1.3` |
+| FC 27 Live Editor | `v27.1.4` |
 | FIFA Analytics | `27.0.7` |
 
 
@@ -32,8 +32,8 @@ If your game has *already* auto-updated past the pinned build, Steam's client do
 
 ## 2. Install Live Editor
 
-1. Download **FC 27 Live Editor v27.1.3** from [(Patreon/official site — not linked here since it changes over time; get it from the current official source)](https://www.patreon.com/xAranaktu/posts/fc-26-live-v26-3-166271704).
-2. Extract it to a folder (e.g. `D:\Mods\fc27\FC 27 LE v27.1.3\`)
+1. Download **FC 27 Live Editor v27.1.4** from [(Patreon/official site — not linked here since it changes over time; get it from the current official source)](https://www.patreon.com/xAranaktu/posts/fc-27-live-v27-1-172353618).
+2. Extract it to a folder (e.g. `D:\Mods\fc27\FC 27 LE v27.1.4\`)
 3. Confirm the extracted folder's `le_offsets.json` has a `GAME_VER` matching your actual installed game build — if it says a different build number, this Live Editor version doesn't match your game and you need a different LE build (or a different game build — see section 1).
 
 ## 3. Install FIFA Analytics
@@ -84,5 +84,5 @@ The in-app **Edit player** feature (generic / regen / academy players) talks to 
 - **Game crashes or won't load after pressing F10** — almost always a game-version mismatch (section 1). Confirm `le_offsets.json`'s `GAME_VER` matches your actual game build before doing anything else.
 - **App shows no data at all** — confirm the five export JSON files actually exist and have recent timestamps in `C:\Users\Public\`. If they're missing, F10 isn't reaching the script (check the hotkey binding in Live Editor).
 - **App was working, then a Steam update landed and it broke** — see section 1; you'll need to either pin an older manifest or wait for a matching Live Editor update, then update the versions table at the top of this file once confirmed.
-- **FC 27 limitations (Live Editor v27.1.3)** — squad, attributes, PlayStyles, loans, contracts (wage and end year), youth academy, manager data and the player editor all work. **Not available yet:** goals / assists / clean sheets / cards, league standings, fixtures and results, transfers, trophies won, league-wide stats and the in-game dynamic overall (the `overall` shown is the player's **base** overall). Live Editor's `GetPlayersStats` and competition-name functions return nothing in FC 27 and the FC 26 memory offsets for standings, fixtures and transfers are wrong, so those Home widgets say "Not available in FC 27 yet". Appearances and an approximate average rating are rebuilt from the game's per-match rating table. See `assets/design_docs/fc27_port_status.md` for the full table and `assets/lua/fc27_probes/README.md` for the test findings and how to re-test after a Live Editor update.
+- **FC 27 limitations (Live Editor v27.1.4)** — squad, attributes, PlayStyles, loans, contracts (wage and end year), youth academy, manager data and the player editor all work. **Not available yet:** goals / assists / clean sheets / cards, league standings, fixtures and results, transfers, trophies won, league-wide stats and the in-game dynamic overall (the `overall` shown is the player's **base** overall). Live Editor's `GetPlayersStats` and competition-name functions return nothing in FC 27 and the FC 26 memory offsets for standings, fixtures and transfers are wrong, so those Home widgets say "Not available in FC 27 yet". Appearances and an approximate average rating are rebuilt from the game's per-match rating table. See `assets/design_docs/fc27_port_status.md` for the full table and `assets/lua/fc27_probes/README.md` for the test findings and how to re-test after a Live Editor update.
 - **Data looks wrong right around a promotion/relegation or season rollover** — restart the companion app fully (not just close the window — confirm no `electron.exe` processes are left) before syncing again. The app self-heals some season-labeling data on every full startup, but a still-running old session can otherwise overwrite a fix with stale in-memory data.

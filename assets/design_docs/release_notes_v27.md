@@ -2,7 +2,7 @@
 
 The companion app for Career Mode, rebuilt for FC 27. It reads your save through Live Editor and turns it into a Home dashboard, squad tools, a depth chart, an academy tracker and an in-app player editor. Everything stays on your PC.
 
-**Works with:** EA SPORTS FC 27 build `1.0.141.12554` and FC 27 Live Editor `v27.1.3`. Live Editor reads game memory, so a different game build can break it. Pin your game version first (see the README).
+**Works with:** EA SPORTS FC 27 build `1.0.141.12554` and FC 27 Live Editor `v27.1.4`. Live Editor reads game memory, so a different game build can break it. Pin your game version first (see the README).
 
 ## Read this first
 - **This release is for FC 27 only.** If you are still playing FC 26, stay on your current version; this update is not for you.
