@@ -2488,63 +2488,6 @@ let currentCalendar = [];
       openPlayerProfile(playstylePickerPlayerId);
     }
 
-    // Manual headshot photo picker — see player_manual_headshots in
-    // schema.sql and resolveHeadshotPath/setManualHeadshot/
-    // clearManualHeadshot in main.js. Defaults to whichever bucket the
-    // automatic age/nationality/skin-tone matching picked for this
-    // player (see getPlayerHeadshotBucket), but lets the user browse any
-    // of the 21 buckets — useful when the auto-detection guessed wrong,
-    // not just when they simply prefer a different photo.
-    let headshotPickerPlayerId = null;
-
-    async function openHeadshotPicker(playerId) {
-      if (!window.api || !window.api.getHeadshotBucketOptions) return;
-      headshotPickerPlayerId = playerId;
-
-      const [{ ageDirs, ethnicityDirs }, autoBucket] = await Promise.all([
-        window.api.getHeadshotBucketOptions(),
-        window.api.getPlayerHeadshotBucket ? window.api.getPlayerHeadshotBucket(playerId) : null
-      ]);
-
-      const ageSelect = document.getElementById('headshot-picker-age-select');
-      const ethnicitySelect = document.getElementById('headshot-picker-ethnicity-select');
-      if (!ageSelect || !ethnicitySelect) return;
-
-      ageSelect.innerHTML = ageDirs.map(d => `<option value="${d}" ${autoBucket && autoBucket.ageDir === d ? 'selected' : ''}>${d}</option>`).join('');
-      ethnicitySelect.innerHTML = ethnicityDirs.map(d => `<option value="${d}" ${autoBucket && autoBucket.ethnicityDir === d ? 'selected' : ''}>${d}</option>`).join('');
-
-      await renderHeadshotPickerGrid();
-      const dialog = document.getElementById('headshot-picker-dialog');
-      if (dialog) dialog.showModal();
-    }
-
-    function closeHeadshotPicker() {
-      const dialog = document.getElementById('headshot-picker-dialog');
-      if (dialog) dialog.close();
-    }
-
-    async function onHeadshotPickerBucketChange() {
-      await renderHeadshotPickerGrid();
-    }
-
-    async function renderHeadshotPickerGrid() {
-      const grid = document.getElementById('headshot-picker-grid');
-      if (!grid || !window.api || !window.api.getHeadshotFilesForBucket) return;
-
-      const ageDir = document.getElementById('headshot-picker-age-select').value;
-      const ethnicityDir = document.getElementById('headshot-picker-ethnicity-select').value;
-      const files = await window.api.getHeadshotFilesForBucket(ageDir, ethnicityDir);
-
-      if (files.length === 0) {
-        grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1; padding: 20px;">No photos in this folder yet.</div>`;
-        return;
-      }
-
-      grid.innerHTML = files.map(path => `
-        <img src="${path}" loading="lazy" style="width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-color); cursor: pointer;" onclick="selectHeadshotThumbnail('${path}')" onmouseover="this.style.borderColor='var(--accent-color)'" onmouseout="this.style.borderColor='var(--border-color)'" />
-      `).join('');
-    }
-
     // Re-fetches every player list that computes its own headshot_path
     // (getSquadFromDB, getPastPlayers, getSignedPlayers in main.js) so
     // whichever one the edited player actually belongs to — current
@@ -2571,32 +2514,61 @@ let currentCalendar = [];
       }
     }
 
-    async function selectHeadshotThumbnail(path) {
-      if (!headshotPickerPlayerId || !window.api || !window.api.setManualHeadshot) return;
+    // Settings > Player customization > Player faces: Live Editor renders a real face per player (see minifaces.js);
+    // main.js prefers those over the bundled stand-ins, and the folder watcher pushes 'minifaces-updated' whenever a
+    // face is generated here or after a player editor save.
+    async function refreshMinifacesStatus(extra) {
+      const el = document.getElementById('settings-minifaces-status');
+      if (!el || !window.api || !window.api.getMinifacesStatus) return;
       try {
-        await window.api.setManualHeadshot(headshotPickerPlayerId, path);
-      } catch (e) {
-        console.error('Failed to save manual headshot:', e);
-      }
-      closeHeadshotPicker();
-      await refreshSquadAfterHeadshotChange();
-      openPlayerProfile(headshotPickerPlayerId);
+        const st = await window.api.getMinifacesStatus();
+        const base = st.faceCount ? `${st.faceCount} generated` : 'none yet';
+        el.textContent = extra || (st.sourceExists ? base : `${base} (Live Editor folder not found)`);
+      } catch (e) { el.textContent = 'unavailable'; }
     }
 
-    async function resetHeadshotToAutomatic() {
-      if (!headshotPickerPlayerId || !window.api || !window.api.clearManualHeadshot) {
-        closeHeadshotPicker();
-        return;
-      }
+    async function generateSquadMinifaces() {
+      const btn = document.getElementById('settings-minifaces-generate-btn');
+      const el = document.getElementById('settings-minifaces-status');
+      if (!window.api || !window.api.generateSquadMinifaces || (btn && btn.disabled)) return;
+      if (btn) btn.disabled = true;
+      if (el) el.textContent = 'generating (about 2 s per player)…';
       try {
-        await window.api.clearManualHeadshot(headshotPickerPlayerId);
+        const res = await window.api.generateSquadMinifaces();
+        if (!res.success) { await refreshMinifacesStatus(); alert(res.error || 'Face generation failed.'); }
+        else {
+          await refreshSquadAfterHeadshotChange();
+          await refreshMinifacesStatus(`${res.found}/${res.requested} faces generated`);
+        }
       } catch (e) {
-        console.error('Failed to clear manual headshot:', e);
+        console.error('Face generation failed:', e);
+        await refreshMinifacesStatus();
+      } finally {
+        if (btn) btn.disabled = false;
       }
-      closeHeadshotPicker();
-      await refreshSquadAfterHeadshotChange();
-      openPlayerProfile(headshotPickerPlayerId);
     }
+
+    async function chooseMinifacesFolder() {
+      if (!window.api || !window.api.chooseMinifacesFolder) return;
+      const res = await window.api.chooseMinifacesFolder();
+      if (res && res.success) { await refreshSquadAfterHeadshotChange(); }
+      else if (res && !res.canceled && res.error) alert(res.error);
+      await refreshMinifacesStatus();
+    }
+
+    if (window.api && window.api.onMinifacesUpdated) {
+      window.api.onMinifacesUpdated(async () => {
+        await refreshSquadAfterHeadshotChange();
+        refreshMinifacesStatus();
+      });
+    }
+    if (window.api && window.api.onMinifacesProgress) {
+      window.api.onMinifacesProgress(p => {
+        const el = document.getElementById('settings-minifaces-status');
+        if (el && p) el.textContent = `generating… ${p.done}/${p.total}`;
+      });
+    }
+    setTimeout(refreshMinifacesStatus, 1500);
 
     async function openPlayerProfile(identifier) {
       lastOpenedProfileIdentifier = identifier;
@@ -3166,7 +3138,6 @@ let currentCalendar = [];
         <div class="profile-header" style="display: flex; align-items: center; gap: 20px;">
           <div style="position: relative; flex-shrink: 0;">
             ${headAssetDisplay}
-            <button title="Change Photo" onclick="openHeadshotPicker(${player.player_id})" style="position: absolute; bottom: -8px; right: -8px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-color); color: #0d1117; border: 2px solid var(--card-bg); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">✏️</button>
           </div>
           <div class="profile-main-info" style="flex: 1;">
             <div>

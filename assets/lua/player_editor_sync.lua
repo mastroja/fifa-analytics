@@ -20,6 +20,226 @@
 require 'imports/other/helpers'
 local json = require 'imports/external/json'
 
+-- ---------- FACE CAPTURE (minifaces) ----------
+-- Players whose look changed this run (run_apply adds them) plus any ids the app queued in
+-- C:\Users\Public\ea_fc_face_capture_pending.json ({ "player_ids": [...] }; the app's "Generate faces" button).
+-- Live Editor renders one PNG per player to its heads folder as p<playerid>.PNG; the app imports them from there.
+-- Tested in v27.1.4 (inspect_fc27_miniface_capture.lua): all players must be queued BEFORE a single
+-- PlayerCaptureStart(), which returns at once and renders in the background (~2 s per player), so a second
+-- Start() straight after the first drops players. Result: ea_fc_face_capture_result.json.
+local capture_queue = {}
+local capture_seen = {}
+local function queue_capture(pid)
+    if type(pid) == "number" and pid > 0 and not capture_seen[pid] then
+        capture_seen[pid] = true
+        table.insert(capture_queue, pid)
+    end
+end
+
+local function run_capture()
+    local IN_PATH = "C:\\Users\\Public\\ea_fc_face_capture_pending.json"
+    local OUT_PATH = "C:\\Users\\Public\\ea_fc_face_capture_result.json"
+    local MAX_CAPTURES = 60
+    local ACADEMY_TEAM = 112264 -- Live Editor's own scripts skip this team: capturing it is reported to crash the game
+
+    local fin = io.open(IN_PATH, "r")
+    if fin then
+        local raw = fin:read("*a")
+        fin:close()
+        pcall(os.remove, IN_PATH)
+        local okP, data = pcall(json.decode, raw)
+        if okP and type(data) == "table" and type(data.player_ids) == "table" then
+            for _, pid in ipairs(data.player_ids) do queue_capture(pid) end
+        end
+    end
+    if #capture_queue == 0 then return end
+
+    local queued, skipped = {}, {}
+    local function write_result(err)
+        local f = io.open(OUT_PATH, "w+")
+        if f then f:write(json.encode({ queued = queued, skipped = skipped, error = err })); f:close() end
+    end
+
+    if not IsInCM() then write_result("not in career mode"); return end
+    for _, nm in ipairs({ "PlayerCaptureSetOutputDirectory", "PlayerCaptureSetCamera", "PlayerCaptureSetSize",
+                          "PlayerCaptureSetType", "PlayerCaptureSetArgs", "PlayerCaptureAddPlayer",
+                          "PlayerCaptureStart", "GetGoalkeepers" }) do
+        if type(_G[nm]) ~= "function" then write_result(nm .. " is not available in this Live Editor version"); return end
+    end
+
+    local okU, user_team_id = pcall(GetUserTeamID)
+    if not okU or not user_team_id or user_team_id <= 0 then write_result("could not determine your club"); return end
+    local okG, goalkeepers = pcall(GetGoalkeepers)
+    if not okG or type(goalkeepers) ~= "table" then goalkeepers = {} end
+
+    local okC, errC = pcall(function()
+        PlayerCaptureSetOutputDirectory("<default>")
+        PlayerCaptureSetCamera(0)          -- head and shoulders
+        PlayerCaptureSetSize(256, 256)
+        PlayerCaptureSetType(0)            -- PNG
+        PlayerCaptureSetArgs(0, 0)
+        for i, pid in ipairs(capture_queue) do
+            if i > MAX_CAPTURES then
+                table.insert(skipped, { player_id = pid, reason = "over the per-run limit" })
+            else
+                -- the kit needs a team: academy / free-agent players use your club's
+                local okT, team = pcall(GetTeamIdFromPlayerId, pid)
+                if not okT or not team or team <= 0 or team == ACADEMY_TEAM then team = user_team_id end
+                PlayerCaptureAddPlayer(pid, team, goalkeepers[pid] ~= nil)
+                table.insert(queued, pid)
+            end
+        end
+        PlayerCaptureStart()
+    end)
+    if okC then
+        Log("[PlayerEditorSync] face capture started for " .. #queued .. " player(s)")
+        write_result(nil)
+    else
+        Log("[PlayerEditorSync] face capture failed: " .. tostring(errC))
+        write_result(tostring(errC))
+    end
+end
+
+-- ---------- FACE PREVIEW ----------
+-- The editor's "Preview in game" button: temporarily writes the pending (unsaved) look to ONE generic player, captures
+-- his face, and reverts on the NEXT F11 run (a capture renders in the background, so reverting in the same run could
+-- change the picture). Safety:
+--   * the originals are written to ea_fc_face_preview_backup.json BEFORE any write, so a revert survives a crash;
+--   * run_preview_restore() is the first step of EVERY F11 run, so a Save (or any other F11) reverts a stale preview
+--     before it applies anything, and the apply step's drift check sees the real values;
+--   * only look columns, only generic heads (hashighqualityhead == 0), every value range-checked and read back.
+local PREVIEW_PENDING = "C:\\Users\\Public\\ea_fc_face_preview_pending.json"
+local PREVIEW_RESULT = "C:\\Users\\Public\\ea_fc_face_preview_result.json"
+local PREVIEW_BACKUP = "C:\\Users\\Public\\ea_fc_face_preview_backup.json"
+local PREVIEW_RESTORE_RESULT = "C:\\Users\\Public\\ea_fc_face_preview_restore.json"
+-- KEEP IN SYNC with the look columns of FIELD_LIMITS in run_apply (and LOOK_FIELDS in player_editor.js)
+local PREVIEW_LIMITS = {
+    skintonecode = { 10, 100 }, skincomplexion = { 1, 10 }, skintypecode = { 0, 7 },
+    hairtypecode = { 0, 2100 }, haircolorcode = { 0, 27 },
+    facialhairtypecode = { 0, 400 }, facialhaircolorcode = { 0, 27 },
+    eyecolorcode = { 1, 10 }, eyedetail = { 0, 6 }, eyebrowcode = { 0, 3000000 },
+}
+
+local function preview_write(path, tbl)
+    local f = io.open(path, "w+")
+    if not f then return false end
+    f:write(json.encode(tbl))
+    f:close()
+    return true
+end
+
+local function preview_find_record(players, pid)
+    local rec, n = players:GetFirstRecord(), 0
+    while rec and rec > 0 and n < 30000 do
+        n = n + 1
+        local okp, p = pcall(players.GetRecordFieldValue, players, rec, "playerid")
+        if okp and p == pid then return rec end
+        rec = players:GetNextValidRecord()
+    end
+    return nil
+end
+
+local function run_preview_restore()
+    local fin = io.open(PREVIEW_BACKUP, "r")
+    if not fin then return end
+    local raw = fin:read("*a")
+    fin:close()
+    local okP, data = pcall(json.decode, raw)
+    if not okP or type(data) ~= "table" or type(data.player_id) ~= "number" or type(data.originals) ~= "table" then
+        Log("[PlayerEditorSync] preview restore: backup file unreadable, left in place")
+        preview_write(PREVIEW_RESTORE_RESULT, { ok = false, error = "backup unreadable" })
+        return
+    end
+    local pid = data.player_id
+    local players = LE.db:GetTable("players")
+    local rec = players and preview_find_record(players, pid)
+    if not rec then
+        preview_write(PREVIEW_RESTORE_RESULT, { ok = false, player_id = pid, error = "player record not found" })
+        return
+    end
+    local err = nil
+    for field, value in pairs(data.originals) do
+        if PREVIEW_LIMITS[field] and type(value) == "number" then
+            local okW, errW = pcall(players.SetRecordFieldValue, players, rec, field, value)
+            local okR, back = pcall(players.GetRecordFieldValue, players, rec, field)
+            if not okW then err = "restore failed for " .. field .. ": " .. tostring(errW); break end
+            if not okR or back ~= value then err = "restore read-back mismatch for " .. field; break end
+        end
+    end
+    if err then
+        Log("[PlayerEditorSync] preview restore FAILED for player " .. pid .. ": " .. err)
+        preview_write(PREVIEW_RESTORE_RESULT, { ok = false, player_id = pid, error = err })
+    else
+        pcall(os.remove, PREVIEW_BACKUP)
+        Log("[PlayerEditorSync] preview restored for player " .. pid)
+        preview_write(PREVIEW_RESTORE_RESULT, { ok = true, player_id = pid })
+    end
+end
+
+local function run_preview_apply()
+    local fin = io.open(PREVIEW_PENDING, "r")
+    if not fin then return end
+    local raw = fin:read("*a")
+    fin:close()
+    pcall(os.remove, PREVIEW_PENDING)
+
+    local previewId = nil
+    local function result(ok, err)
+        if not ok then Log("[PlayerEditorSync] preview FAILED: " .. tostring(err)) end
+        preview_write(PREVIEW_RESULT, { preview_id = previewId, ok = ok, error = err })
+    end
+
+    local okP, data = pcall(json.decode, raw)
+    if not okP or type(data) ~= "table" then result(false, "pending file is not valid"); return end
+    previewId = data.preview_id
+    local pid, fields = data.player_id, data.fields
+    if type(pid) ~= "number" or type(fields) ~= "table" then result(false, "malformed preview request"); return end
+    if not IsInCM() then result(false, "not in career mode"); return end
+
+    local bk = io.open(PREVIEW_BACKUP, "r")
+    if bk then bk:close(); result(false, "an earlier preview could not be reverted yet; try again"); return end
+
+    local players = LE.db:GetTable("players")
+    local rec = players and preview_find_record(players, pid)
+    if not rec then result(false, "player record not found"); return end
+    local okH, hq = pcall(players.GetRecordFieldValue, players, rec, "hashighqualityhead")
+    if not okH or hq ~= 0 then result(false, "player has a scanned/real head; only generic players can be previewed"); return end
+
+    local originals, changes, any = {}, {}, false
+    for field, value in pairs(fields) do
+        local lim = PREVIEW_LIMITS[field]
+        if not lim then result(false, "column not previewable: " .. tostring(field)); return end
+        if type(value) ~= "number" or value ~= math.floor(value) or value < lim[1] or value > lim[2] then
+            result(false, "value out of range for " .. field .. ": " .. tostring(value)); return
+        end
+        local okC, cur = pcall(players.GetRecordFieldValue, players, rec, field)
+        if not okC or cur == nil then result(false, "column missing in this game version: " .. field); return end
+        if cur ~= value then changes[field] = value; originals[field] = cur; any = true end
+    end
+
+    if any then
+        -- backup FIRST: if anything below dies, the next F11 run puts the originals back
+        if not preview_write(PREVIEW_BACKUP, { player_id = pid, originals = originals }) then
+            result(false, "could not write the backup file, nothing was changed"); return
+        end
+        local err = nil
+        for field, value in pairs(changes) do
+            local okW, errW = pcall(players.SetRecordFieldValue, players, rec, field, value)
+            local okR, back = pcall(players.GetRecordFieldValue, players, rec, field)
+            if not okW then err = "write failed for " .. field .. ": " .. tostring(errW); break end
+            if not okR or back ~= value then err = "read-back mismatch for " .. field; break end
+        end
+        if err then
+            run_preview_restore() -- put back whatever was written
+            result(false, err)
+            return
+        end
+    end
+
+    queue_capture(pid) -- rendered by run_capture in this same run (one PlayerCaptureStart per run)
+    result(true, nil)
+end
+
 -- ---------- ACTIONS: release loaned-out players ----------
 -- The app's Transfer Hub "Release" button queues { type = "release_loaned", player_id } actions in
 -- C:\Users\Public\ea_fc_player_actions_pending.json. For each one (max 10 per run) this:
@@ -161,6 +381,13 @@ local ATTRIBUTES = {
     "defensiveawareness", "standingtackle", "slidingtackle",
     "gkdiving", "gkhandling", "gkkicking", "gkpositioning", "gkreflexes",
 }
+-- columns that change how the face looks: a successful edit of any of them re-renders the player's miniface
+local LOOK_FIELDS = {}
+for _, f in ipairs({ "skintonecode", "skincomplexion", "skintypecode", "hairtypecode", "haircolorcode",
+                     "facialhairtypecode", "facialhaircolorcode", "eyecolorcode", "eyedetail", "eyebrowcode",
+                     "accessorycode1", "accessorycode2", "accessorycode3", "accessorycode4",
+                     "accessorycolourcode1", "accessorycolourcode2", "accessorycolourcode3", "accessorycolourcode4",
+                     "bodytypecode", "height", "weight" }) do LOOK_FIELDS[f] = true end
 local IS_ATTRIBUTE = {}
 for _, a in ipairs(ATTRIBUTES) do
     FIELD_LIMITS[a] = { 1, 99 }
@@ -414,6 +641,9 @@ for _, e in ipairs(edits) do
                 local n = 0
                 for _ in pairs(merged) do n = n + 1 end
                 log(string.format("edit %s player %s OK (%d columns)", tostring(e.edit_id), tostring(pid), n))
+                for field in pairs(merged) do
+                    if LOOK_FIELDS[field] then queue_capture(pid); break end
+                end
                 table.insert(results, { edit_id = e.edit_id, ok = true })
             end
         end
@@ -573,9 +803,15 @@ print("[PlayerEditorExport] done: " .. #out .. " players")
 
 end
 
+local okV, errV = pcall(run_preview_restore) -- first: a leftover preview is reverted before anything reads or writes
+if not okV then Log("[PlayerEditorSync] preview restore crashed: " .. tostring(errV)) end
 local okX, errX = pcall(run_actions)
 if not okX then Log("[PlayerEditorSync] actions step crashed: " .. tostring(errX)) end
 local okA, errA = pcall(run_apply)
 if not okA then Log("[PlayerEditorSync] apply step crashed: " .. tostring(errA)) end
+local okW, errW = pcall(run_preview_apply)
+if not okW then Log("[PlayerEditorSync] preview apply crashed: " .. tostring(errW)) end
+local okF, errF = pcall(run_capture)
+if not okF then Log("[PlayerEditorSync] face capture step crashed: " .. tostring(errF)) end
 local okE, errE = pcall(run_export)
 if not okE then Log("[PlayerEditorSync] export step crashed: " .. tostring(errE)) end

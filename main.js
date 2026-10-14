@@ -53,6 +53,7 @@ const watchlistStatusPath = 'C:\\Users\\Public\\ea_fc_watchlist_status.json';
 const youthExportPath = 'C:\\Users\\Public\\ea_fc_youth_export.json';
 const playerEditor = require('./js/player_editor');
 const dynamicLook = require('./js/dynamic_look');
+const minifaces = require('./js/minifaces');
 const squadNumbers = require('./js/squad_numbers');
 const licenseLib = require('./js/license');
 const licenseConfig = require('./js/license_config');
@@ -5010,78 +5011,18 @@ function importYouthAcademy(jsonPayload) {
 }
 
 // ------------------------------------------------------------------
-// Local headshot bucketing — no real in-game player photo source exists
-// (see reference-player-photo-capture memory), so the user supplied a
-// static library of headshot photos under assets/headshots/<age
-// bracket>/<ethnicity bucket>/, and this picks a consistent one per
-// player from nationality + skintone_code (a real field on the game's
-// "players" table — see the schema.sql comment on players.skintone_code
-// for how its value range was empirically confirmed).
+// Player faces: only real renders made by Live Editor (js/minifaces.js). There are no bundled stand-in photos; a player
+// without a generated face yet shows the silhouette placeholder until the next capture (automatic, see minifaces.autoCapture).
 // ------------------------------------------------------------------
-
-const HEADSHOT_AGE_BRACKETS = [
-  { maxAge: 20, dir: '15-20' },
-  { maxAge: 28, dir: '20-28' },
-  { maxAge: Infinity, dir: '28+' }
-];
-
-function getHeadshotAgeDir(dob) {
-  if (!dob) return '20-28';
-  const birth = new Date(dob);
-  if (isNaN(birth.getTime())) return '20-28';
-  const now = new Date();
-  let age = now.getFullYear() - birth.getFullYear();
-  const m = now.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
-  const bracket = HEADSHOT_AGE_BRACKETS.find(b => age < b.maxAge) || HEADSHOT_AGE_BRACKETS[HEADSHOT_AGE_BRACKETS.length - 1];
-  return bracket.dir;
-}
-
-// Nationality ids whose real-world population is consistently one
-// headshot bucket regardless of individual skin tone — skintonecode
-// can't tell "eastern european" apart from "western european" (a Polish
-// and a Norwegian player can share the exact same code), so these route
-// straight off nationality instead. Ids match this app's own
-// NATIONALITY_MAP (see index.html) plus a couple confirmed via the
-// assets/inspect_skintone.lua diagnostic CSV (e.g. 147 = Zambia) that
-// aren't in that curated display map. Any nationality NOT listed here
-// (Western Europe, North America, Oceania, or unrecognized) falls
-// through to the skintone-based white/black split below instead.
-const NATIONALITY_HEADSHOT_REGION = {
-  // Eastern Europe / Balkans / Baltics / Russia
-  1: 'eastern europe', 3: 'eastern europe', 5: 'eastern europe', 6: 'eastern europe',
-  8: 'eastern europe', 9: 'eastern europe', 10: 'eastern europe', 12: 'eastern europe',
-  15: 'eastern europe', 19: 'eastern europe', 20: 'eastern europe', 23: 'eastern europe',
-  28: 'eastern europe', 30: 'eastern europe', 33: 'eastern europe', 37: 'eastern europe',
-  39: 'eastern europe', 40: 'eastern europe', 43: 'eastern europe', 44: 'eastern europe',
-  49: 'eastern europe', 51: 'eastern europe',
-  // Middle East / North Africa (Arab)
-  26: 'middle east', 48: 'middle east', 97: 'middle east', 111: 'middle east',
-  129: 'middle east', 145: 'middle east', 161: 'middle east',
-  // Asia
-  155: 'asia', 159: 'asia', 163: 'asia', 167: 'asia',
-  // Sub-Saharan Africa
-  103: 'african', 117: 'african', 133: 'african', 136: 'african', 140: 'african', 147: 'african',
-  // South America
-  52: 'south america', 53: 'south america', 54: 'south america', 55: 'south america',
-  56: 'south america', 57: 'south america', 58: 'south america', 59: 'south america',
-  60: 'south america', 61: 'south america'
-};
-
-// skintonecode is a 1 (palest) - 10 (darkest) lightness gradient, NOT a
-// discrete ethnicity code — confirmed against real players via
-// assets/inspect_skintone.lua (Messi=1, Haaland/Lewandowski/De
-// Bruyne=2, Kane/Salah=3, Ronaldo/Mahrez=5, Mbappé/Bellingham/Yamal=7,
-// Sterling/Rashford=8, Saka=9, Mainoo=10). 7+ reliably catches clearly
-// Black players with good precision; a lighter-skinned Black player in a
-// fallback nation (e.g. a Van Dijk, code 4) will land on "white" instead
-// — an accepted limitation, since skintonecode alone can't separate that
-// from a light-skinned white/olive player at the same code.
-const HEADSHOT_SKINTONE_BLACK_THRESHOLD = 7;
-
 // FC 26 exported skintonecode as 1-10; FC 27 exports 10-100 in steps of 10
 // (plus the odd off-grid value). Everything in the app keys off the 1-10
 // scale, so fold the 10-100 scale down at ingest. Values <= 10 pass through.
+function normalizeSkintoneCode(raw) {
+  const n = Number(raw);
+  if (!n || n < 0) return null;
+  return n > 10 ? Math.max(1, Math.round(n / 10)) : n;
+}
+
 // No player is stored taller than 6'9" (206 cm); a bad game value (e.g. 8'5") is capped on import. Non-numeric input
 // is passed through unchanged (empty string if missing).
 const MAX_HEIGHT_CM = 206;
@@ -5091,168 +5032,10 @@ function capHeightCm(raw) {
   return n > MAX_HEIGHT_CM ? String(MAX_HEIGHT_CM) : raw;
 }
 
-function normalizeSkintoneCode(raw) {
-  const n = Number(raw);
-  if (!n || n < 0) return null;
-  return n > 10 ? Math.max(1, Math.round(n / 10)) : n;
+function resolveHeadshotPath(playerId) {
+  return minifaces.faceUrl(playerId);
 }
-
-function getHeadshotEthnicityDir(nationalityId, skintoneCode) {
-  const region = NATIONALITY_HEADSHOT_REGION[Number(nationalityId)];
-  if (region) return region;
-  return (skintoneCode && Number(skintoneCode) >= HEADSHOT_SKINTONE_BLACK_THRESHOLD) ? 'black' : 'white';
-}
-
-// Directory listings are cached in memory (per age/ethnicity folder)
-// since the file set on disk never changes while the app is running —
-// avoids a fs.readdirSync call for every single player on every render.
-const headshotDirCache = new Map();
-
-function listHeadshotFiles(ageDir, ethnicityDir) {
-  const key = `${ageDir}/${ethnicityDir}`;
-  if (headshotDirCache.has(key)) return headshotDirCache.get(key);
-  let files = [];
-  try {
-    const fullPath = path.join(__dirname, 'assets', 'headshots', ageDir, ethnicityDir);
-    files = fs.readdirSync(fullPath)
-      .filter(f => /\.(jpe?g|png)$/i.test(f))
-      .sort();
-  } catch (e) {
-    files = [];
-  }
-  headshotDirCache.set(key, files);
-  return files;
-}
-
-// Deterministic (not random) so the same player always gets the same
-// headshot across syncs/relaunches without needing to persist anything —
-// this is recomputed fresh every read from player_id alone.
-function hashPlayerIdForHeadshot(playerId) {
-  let h = 0;
-  const s = String(playerId);
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-// Returns a relative path (e.g. "assets/headshots/20-28/white/w12.jpg")
-// usable directly as an <img src> in index.html — same file://-relative
-// convention already proven working for the "Around the World" tab's
-// trophy images — or null if this player's bucket has no photos yet
-// (an empty/not-yet-filled folder), so the UI can fall back to the
-// existing silhouette placeholder.
-function resolveHeadshotPath(playerId, dob, nationalityId, skintoneCode) {
-  const ageDir = getHeadshotAgeDir(dob);
-  const ethnicityDir = getHeadshotEthnicityDir(nationalityId, skintoneCode);
-  const files = listHeadshotFiles(ageDir, ethnicityDir);
-  if (files.length === 0) return null;
-  const file = files[hashPlayerIdForHeadshot(playerId) % files.length];
-  return `assets/headshots/${ageDir}/${ethnicityDir}/${file}`;
-}
-
-// The full folder taxonomy (fixed, matches the user's own headshots
-// folder layout) plus, for a specific player, which bucket the automatic
-// matching would have picked — both needed by the "Change Photo" picker
-// so it can default to the player's own auto-detected bucket while still
-// letting the user browse every other one.
-const HEADSHOT_AGE_DIRS = ['15-20', '20-28', '28+'];
-const HEADSHOT_ETHNICITY_DIRS = ['african', 'asia', 'black', 'eastern europe', 'middle east', 'south america', 'white'];
-
-function getHeadshotBucketOptions() {
-  return { ageDirs: HEADSHOT_AGE_DIRS, ethnicityDirs: HEADSHOT_ETHNICITY_DIRS };
-}
-
-// Every filename in one bucket folder, for the picker's thumbnail grid —
-// returns full relative paths (not just bare filenames) so the renderer
-// can use them directly as <img src>/as the value to save.
-function getHeadshotFilesForBucket(ageDir, ethnicityDir) {
-  if (!HEADSHOT_AGE_DIRS.includes(ageDir) || !HEADSHOT_ETHNICITY_DIRS.includes(ethnicityDir)) return [];
-  return listHeadshotFiles(ageDir, ethnicityDir).map(f => `assets/headshots/${ageDir}/${ethnicityDir}/${f}`);
-}
-
-// Which bucket a specific player's photo would come from automatically —
-// the picker preselects this so "browse the right folder" is the
-// default, not "browse from scratch."
-function getPlayerHeadshotBucket(playerId) {
-  if (!db || !playerId) return null;
-  const res = db.exec(`SELECT dob, nationality, skintone_code FROM players WHERE player_id = ${playerId};`);
-  if (res.length === 0 || res[0].values.length === 0) return null;
-  const [dob, nationality, skintoneCode] = res[0].values[0];
-  return { ageDir: getHeadshotAgeDir(dob), ethnicityDir: getHeadshotEthnicityDir(nationality, skintoneCode) };
-}
-
-function setManualHeadshot(playerId, headshotPath) {
-  if (!db || !playerId || !headshotPath) return { success: false };
-  db.run(`
-    INSERT INTO player_manual_headshots (player_id, headshot_path, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(player_id) DO UPDATE SET headshot_path = excluded.headshot_path, updated_at = CURRENT_TIMESTAMP;
-  `, [playerId, headshotPath]);
-  saveDatabaseToDisk();
-  return { success: true };
-}
-
-function clearManualHeadshot(playerId) {
-  if (!db || !playerId) return { success: false };
-  db.run(`DELETE FROM player_manual_headshots WHERE player_id = ?;`, [playerId]);
-  saveDatabaseToDisk();
-  return { success: true };
-}
-
-// Same age-bracket matching as resolveHeadshotPath, but the ethnicity
-// folder is picked essentially at random (still a stable hash of
-// player_id, so it doesn't change on every render) rather than from
-// nationality/skin tone — used for League Stats leaderboard entries who
-// aren't our own player, where we have no bio data to match on at all
-// (season_league_stats only captures name/team/stats, not nationality or
-// skintone_code) and the user explicitly said ethnicity doesn't matter
-// for these, just "a face from the right age group."
-function resolveHeadshotPathRandomEthnicity(playerId, dob) {
-  const ageDir = getHeadshotAgeDir(dob);
-  const hash = hashPlayerIdForHeadshot(playerId);
-  const ethnicityDir = HEADSHOT_ETHNICITY_DIRS[hash % HEADSHOT_ETHNICITY_DIRS.length];
-  const files = listHeadshotFiles(ageDir, ethnicityDir);
-  if (files.length === 0) return null;
-  const file = files[Math.floor(hash / HEADSHOT_ETHNICITY_DIRS.length) % files.length];
-  return `assets/headshots/${ageDir}/${ethnicityDir}/${file}`;
-}
-
-// The one headshot resolver for anyone shown in a League Stats
-// leaderboard/award-winner spotlight — checks, in order: (1) a manual
-// override (player_manual_headshots — this is how a past/historical
-// season's opposing-team winner, who has no bio data at all, gets a
-// permanent photo assigned by hand, see setManualHeadshot), (2) real bio
-// data if this player_id has ever been on our own squad (a row in
-// "players" — full age/nationality/skin-tone matching, same as everyone
-// else in the app), (3) age-only random matching as a last resort for
-// an unrecognized opposing player. Always returns something (or null
-// only if the relevant folder is genuinely empty), so the UI never needs
-// a separate "is this our player" branch.
-function resolveLeagueLeaderHeadshot(playerId, dob) {
-  if (!db || !playerId) return null;
-
-  const manualRes = db.exec(`SELECT headshot_path FROM player_manual_headshots WHERE player_id = ${playerId};`);
-  if (manualRes.length > 0 && manualRes[0].values.length > 0) return manualRes[0].values[0][0];
-
-  const ownRes = db.exec(`SELECT dob, nationality, skintone_code FROM players WHERE player_id = ${playerId};`);
-  if (ownRes.length > 0 && ownRes[0].values.length > 0) {
-    const [ownDob, nationality, skintoneCode] = ownRes[0].values[0];
-    return resolveHeadshotPath(playerId, ownDob, nationality, skintoneCode);
-  }
-
-  return resolveHeadshotPathRandomEthnicity(playerId, dob);
-}
-
-// Every player_id with a manual headshot override (see "Change Photo" on
-// the player profile and player_manual_headshots in schema.sql), as a
-// Map for fast per-row lookup — one query per squad read rather than one
-// per player.
-function getManualHeadshotOverrides() {
-  const map = new Map();
-  if (!db) return map;
-  const res = db.exec(`SELECT player_id, headshot_path FROM player_manual_headshots;`);
-  if (res.length > 0) res[0].values.forEach(([playerId, path]) => map.set(playerId, path));
-  return map;
-}
+const resolveLeagueLeaderHeadshot = resolveHeadshotPath;
 
 // ------------------------------------------------------------------
 // Reads
@@ -5281,7 +5064,6 @@ function getSquadFromDB(seasonId = currentSeasonId) {
 
   if (res.length === 0) return [];
 
-  const manualHeadshots = getManualHeadshotOverrides();
 
   return res[0].values.map(row => ({
     player_id: row[0],
@@ -5329,7 +5111,7 @@ function getSquadFromDB(seasonId = currentSeasonId) {
     overall_delta: row[42] || 0,
     attribute_deltas: JSON.parse(row[43] || '{}'),
     youth_reveal_tier: row[44],
-    headshot_path: manualHeadshots.get(row[0]) || resolveHeadshotPath(row[0], row[5], row[4], row[45])
+    headshot_path: resolveHeadshotPath(row[0])
   }));
 }
 
@@ -5585,7 +5367,6 @@ function getPastPlayers(saveId = activeSaveId) {
   }
 
   const watchlistStatus = readWatchlistStatus();
-  const manualHeadshots = getManualHeadshotOverrides();
 
   const results = [];
   lastKnown.forEach((info, playerId) => {
@@ -5629,7 +5410,7 @@ function getPastPlayers(saveId = activeSaveId) {
       departed_season: info.year_label,
       years_active: yearsActive,
       current_club: currentClub,
-      headshot_path: manualHeadshots.get(info.player_id) || resolveHeadshotPath(info.player_id, info.dob, info.nationality, info.skintone_code)
+      headshot_path: resolveHeadshotPath(info.player_id)
     });
   });
 
@@ -5758,7 +5539,6 @@ function getSignedPlayers(saveId = activeSaveId) {
   const bioById = new Map();
   if (bioRes.length > 0) bioRes[0].values.forEach(([player_id, name, position_id, dob, nationality, skintone_code]) => bioById.set(player_id, { name, position_id, dob, nationality, skintone_code }));
 
-  const manualHeadshots = getManualHeadshotOverrides();
 
   const results = [];
   activeIds.forEach(playerId => {
@@ -5797,7 +5577,7 @@ function getSignedPlayers(saveId = activeSaveId) {
       is_academy: isAcademy,
       signed_season: earliest ? earliest.year_label : null,
       contract_date: contractDateByPlayer.get(playerId) || '',
-      headshot_path: manualHeadshots.get(playerId) || resolveHeadshotPath(playerId, bio.dob, bio.nationality, bio.skintone_code)
+      headshot_path: resolveHeadshotPath(playerId)
     });
   });
 
@@ -6437,6 +6217,21 @@ ipcMain.handle('license-open-membership', () => { if (licenseConfig.MEMBERSHIP_U
 playerEditor.configure({ isPro: feature => license.isPro(feature), getDb: () => db, getActiveSaveId: () => activeSaveId, saveDatabaseToDisk, userDataPath: app.getPath('userData') });
 playerEditor.register(ipcMain);
 
+// Minifaces (minifaces.js): Live Editor renders real faces; they replace the bundled stand-in headshots.
+minifaces.configure({
+  userDataPath: app.getPath('userData'),
+  triggerF11: manual => triggerLiveEditorRefresh(manual !== false, 'F11'),
+  getSquadPlayerIds: () => getSquadFromDB().map(p => p.player_id),
+  isPro: feature => license.isPro(feature),
+  onChanged: count => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('minifaces-updated', { count });
+  }
+});
+minifaces.register(ipcMain, { dialog, getWindow: () => mainWindow });
+app.whenReady().then(() => {
+  try { minifaces.importAll(); minifaces.startWatching(); } catch (e) { console.error('[Minifaces] startup failed:', e); }
+});
+
 // Dynamic player look (dynamic_look.js): monthly appearance changes, applied through the F11 editor sync.
 let lastKnownGameDate = null; // 'YYYY-MM-DD' from the latest squad export
 function editorStateStamp(saveId) {
@@ -6525,11 +6320,6 @@ ipcMain.handle('set-manual-play-styles', (_event, playerId, styles) => setManual
 ipcMain.handle('get-playstyle-suggestions', (_event, playerId) => getPlaystyleSuggestions(playerId));
 ipcMain.handle('get-pending-playstyle-alerts', () => getPendingPlaystyleAlerts());
 ipcMain.handle('get-playstyle-rules', () => getPlaystyleRulesForDisplay());
-ipcMain.handle('get-headshot-bucket-options', () => getHeadshotBucketOptions());
-ipcMain.handle('get-headshot-files-for-bucket', (_event, ageDir, ethnicityDir) => getHeadshotFilesForBucket(ageDir, ethnicityDir));
-ipcMain.handle('get-player-headshot-bucket', (_event, playerId) => getPlayerHeadshotBucket(playerId));
-ipcMain.handle('set-manual-headshot', (_event, playerId, headshotPath) => setManualHeadshot(playerId, headshotPath));
-ipcMain.handle('clear-manual-headshot', (_event, playerId) => clearManualHeadshot(playerId));
 ipcMain.handle('get-untouchable-player-ids', (_event, saveId) => getUntouchablePlayerIds(saveId));
 ipcMain.handle('set-player-untouchable', (_event, saveId, playerId, untouchable) => setPlayerUntouchable(saveId, playerId, untouchable));
 ipcMain.handle('get-pending-season-overview', (_event, saveId) => getPendingSeasonOverview(saveId));
@@ -6635,6 +6425,7 @@ app.whenReady().then(async () => {
 
         importFifaData(jsonPayload);
         if (jsonPayload.current_date) lastKnownGameDate = jsonPayload.current_date;
+        minifaces.autoCapture((jsonPayload.players || []).map(p => p.player_id)); // new signings/promotions get a face
         squadNumbers.instance.onSquadSync({ saveId: activeSaveId, players: jsonPayload.players })
           .catch(err => console.error('[SquadNumbers] sync hook failed:', err));
         dynamicLook.instance.onSquadSync({ saveId: activeSaveId, currentDate: jsonPayload.current_date })
@@ -6691,6 +6482,7 @@ app.whenReady().then(async () => {
       try {
         const { data: youthPayload } = await readJsonFileWithRetry(youthExportPath);
         importYouthAcademy(youthPayload);
+        minifaces.autoCapture((youthPayload.youth_academy || []).map(p => p.player_id));
 
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('youth-updated', { save_id: activeSaveId, data: getYouthAcademy() });
