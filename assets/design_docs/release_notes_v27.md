@@ -37,6 +37,7 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 ### Player editor and customization
 - **Edit player** for generic, regen and academy players: appearance, attributes, positions, PlayStyles and height, written to the game through the F11 hotkey, with undo and edit history.
 - **Dynamic look:** monthly automatic look changes, realistic heights and growth, and undo, for the whole team.
+- **Real player faces (needs Live Editor v27.1.4 or newer):** Settings > Player customization > Player faces > "Generate for squad" has Live Editor render a real face for each squad player (about 2 s each, game running, F11 bound to `player_editor_sync.lua`). These replace the stand-in photos. When you save an appearance edit in the player editor (hair, colour, eyes, skin and so on), that player's face is re-rendered automatically so it matches.
 - Hair filtering follows skin tone: "Suggested for skin tone" now counts only styles in the suggested categories, with the rest under "Other". Heights are capped at 6'9" (206 cm).
 
 ## FC 27 limitations (Live Editor does not provide these yet)

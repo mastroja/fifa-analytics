@@ -154,6 +154,20 @@
       .pe-tab.on { background: var(--card-bg); color: inherit; font-weight: 600; box-shadow: inset 3px 0 0 var(--accent-color); }
       .pe-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-color); }
       .pe-panel { overflow-y: auto; padding: 24px 34px 34px; }
+      .pe-look { display: grid; grid-template-columns: 270px 1fr; gap: 30px; align-items: start; }
+      .pe-face { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+      .pe-face img, .pe-face .pe-face-none { width: 100%; aspect-ratio: 1; border-radius: 14px; background: #000; border: 1px solid var(--border-color); object-fit: cover; display: block; }
+      .pe-face .pe-face-none { display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; font-size: 13px; color: var(--text-dim); box-sizing: border-box; }
+      .pe-face-img { position: relative; }
+      .pe-face-badge { position: absolute; left: 8px; top: 8px; padding: 3px 9px; border-radius: 999px; background: #d4a72c; color: #0d1117; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+      .pe-face-badge.stale { background: #8b949e; }
+      .pe-face-note { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+      .pe-face-note.pending { color: #d4a72c; }
+      .pe-subtabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--border-color); }
+      .pe-subtab { padding: 9px 18px; border: 0; background: none; color: var(--text-dim); font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; align-items: center; gap: 7px; }
+      .pe-subtab:hover { color: inherit; }
+      .pe-subtab.on { color: inherit; font-weight: 600; border-bottom-color: var(--accent-color); }
+      @media (max-width: 900px) { .pe-look { grid-template-columns: 1fr; } .pe-face { position: static; max-width: 270px; } }
       .pe-card { margin-bottom: 26px; }
       .pe-card > h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
       .pe-card > p { margin: 0 0 12px; font-size: 12px; color: var(--text-dim); }
@@ -338,21 +352,67 @@
   // ---------- tabs ----------
   const randomBar = (which, label) => `<div class="pe-randbar"><button class="pe-chip" data-random="${which}">🎲 ${label}</button></div>`;
 
-  function tabLook() {
-    return `${randomBar('head', 'Randomize head')}
-      <div class="pe-card"><h3>Skin</h3><p>Tone follows the game's ten-step scale; complexion and type fine-tune it.</p>
+  // Look tab: the player's miniface on the left, option groups as sub-tabs on the right. The face is a render made by
+  // the game (Live Editor), so it shows the player as last saved; it re-renders after Save or "Generate miniface".
+  const LOOK_TABS = [['skin', 'Skin & eyes'], ['hair', 'Hair'], ['facial', 'Facial hair']];
+  const LOOK_KEYS = {
+    skin: ['skintonecode', 'skincomplexion', 'skintypecode', 'eyecolorcode', 'eyedetail', 'eyebrowcode'],
+    hair: ['hairtypecode', 'haircolorcode'],
+    facial: ['facialhairtypecode', 'facialhaircolorcode']
+  };
+  const lookTabChanged = id => LOOK_KEYS[id].some(isChanged);
+
+  const PREVIEW_KEYS = ['skintonecode', 'skincomplexion', 'skintypecode', 'hairtypecode', 'haircolorcode',
+    'facialhairtypecode', 'facialhaircolorcode', 'eyecolorcode', 'eyedetail', 'eyebrowcode'];
+  const lookSignature = () => JSON.stringify(PREVIEW_KEYS.map(k => ed.cur[k]));
+
+  function faceColumn() {
+    const pending = LOOK_TABS.some(([id]) => lookTabChanged(id));
+    if (!pending) ed.previewUrl = null; // nothing unsaved left to preview (saved or reset)
+    const showPreview = !!ed.previewUrl;
+    const previewStale = showPreview && ed.previewSig !== lookSignature();
+    const src = showPreview ? ed.previewUrl : ed.faceUrl;
+    const img = src
+      ? `<img src="${esc(src)}" alt="${esc(ed.name)}">`
+      : `<div class="pe-face-none">No miniface yet.<br>Use Generate miniface (needs the game running).</div>`;
+    let note;
+    if (ed.previewing) note = 'Applying the look in the game, rendering, then reverting… about 10 seconds. Keep the game running.';
+    else if (showPreview) note = previewStale
+      ? 'Preview of an earlier selection. Preview again to refresh. Nothing is saved yet.'
+      : 'Preview from the game. Nothing is saved yet: press Save to keep this look.';
+    else if (pending) note = 'You have unsaved look changes. Preview in game to see them on the face, or Save and it re-renders automatically.';
+    else note = ed.faceUrl ? 'Rendered by the game. Changes you save here re-render it automatically.' : '';
+    const badge = showPreview ? `<div class="pe-face-badge${previewStale ? ' stale' : ''}">PREVIEW (not saved)</div>` : '';
+    const btn = `<button class="pe-btn" data-preview${pending && !ed.previewing && !ed.saving ? '' : ' disabled'} title="Temporarily applies your unsaved look to this player in the game, renders his face, and reverts. Needs the game running.">${ed.previewing ? 'Previewing…' : '👁 Preview in game'}</button>`;
+    const back = showPreview && !ed.previewing ? `<button class="pe-chip" data-preview-clear>Back to saved face</button>` : '';
+    return `<div class="pe-face"><div class="pe-face-img">${img}${badge}</div><div class="pe-face-note${pending && !showPreview ? ' pending' : ''}">${note}</div>${btn}${back}${randomBar('head', 'Randomize head')}</div>`;
+  }
+
+  function lookCards(tab) {
+    if (tab === 'hair') {
+      return `<div class="pe-card"><h3>Hair style</h3>${hairGrid('hair', 'hairtypecode')}</div>
+      <div class="pe-card"><h3>Hair colour</h3>${swatchPicker('haircolorcode', HAIR_COLORS.filter(id => L('hairColor', id, null)), hairName, HAIR_SWATCH, 'Hair colour')}
+        <div class="pe-hint" style="margin-top:6px">Only colours with a name are offered. A striped swatch is the player's current colour when it has no name.</div></div>`;
+    }
+    if (tab === 'facial') {
+      return `<div class="pe-card"><h3>Facial hair style</h3>${hairGrid('facial', 'facialhairtypecode')}</div>
+      <div class="pe-card"><h3>Facial hair colour</h3>${swatchPicker('facialhaircolorcode', FACIAL_COLORS.filter(id => L('facialHairColor', id, null)), facialName, HAIR_SWATCH, 'Facial hair colour')}</div>`;
+    }
+    return `<div class="pe-card"><h3>Skin</h3><p>Tone follows the game's ten-step scale; complexion and type fine-tune it.</p>
         ${swatchPicker('skintonecode', SKIN_TONES, skinName, SKIN_SWATCH, 'Skin tone')}
         <div class="pe-row" style="margin-top:14px">${selectField('Complexion', 'skincomplexion', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])}
           ${selectField('Skin type (advanced)', 'skintypecode', [0, 1, 2, 3, 4, 5, 6, 7])}</div></div>
       <div class="pe-card"><h3>Eyes</h3>
         ${swatchPicker('eyecolorcode', EYE_COLORS, eyeName, EYE_SWATCH, 'Eye colour')}
         <div class="pe-row" style="margin-top:14px">${selectField('Eye detail', 'eyedetail', [0, 1, 2, 3, 4, 5, 6])}${numberField('Eyebrow code', 'eyebrowcode', 0, 3000000)}</div>
-        <div class="pe-hint">Eyebrows are a packed code (e.g. 240302); copy one from another generic player rather than inventing one.</div></div>
-      <div class="pe-card"><h3>Hair style</h3>${hairGrid('hair', 'hairtypecode')}</div>
-      <div class="pe-card"><h3>Hair colour</h3>${swatchPicker('haircolorcode', HAIR_COLORS.filter(id => L('hairColor', id, null)), hairName, HAIR_SWATCH, 'Hair colour')}
-        <div class="pe-hint" style="margin-top:6px">Only colours with a name are offered. A striped swatch is the player's current colour when it has no name.</div></div>
-      <div class="pe-card"><h3>Facial hair style</h3>${hairGrid('facial', 'facialhairtypecode')}</div>
-      <div class="pe-card"><h3>Facial hair colour</h3>${swatchPicker('facialhaircolorcode', FACIAL_COLORS.filter(id => L('facialHairColor', id, null)), facialName, HAIR_SWATCH, 'Facial hair colour')}</div>`;
+        <div class="pe-hint">Eyebrows are a packed code (e.g. 240302); copy one from another generic player rather than inventing one.</div></div>`;
+  }
+
+  function tabLook() {
+    const sub = ed.lookTab || 'skin';
+    return `<div class="pe-look">${faceColumn()}
+      <div><div class="pe-subtabs">${LOOK_TABS.map(([id, label]) => `<button class="pe-subtab${sub === id ? ' on' : ''}" data-looktab="${id}">${label}${lookTabChanged(id) ? '<span class="pe-dot"></span>' : ''}</button>`).join('')}</div>
+      ${lookCards(sub)}</div></div>`;
   }
 
   // ---------- kit & accessories ----------
@@ -586,8 +646,9 @@
       </div>
       <div class="pe-foot">
         <span class="pe-msg ${ed.msgKind || ''}">${esc(ed.msg || (changes.length ? `${changes.length} unsaved change${changes.length > 1 ? 's' : ''}` : 'No changes'))}</span>
-        <span style="display:flex;gap:10px"><button class="pe-btn" data-reset${changes.length ? '' : ' disabled'}>Reset</button>
-        <button class="pe-btn primary" data-save${changes.length && !ed.saving ? '' : ' disabled'}>${ed.saving ? 'Saving…' : 'Save'}</button></span>
+        <span style="display:flex;gap:10px"><button class="pe-btn" data-miniface title="Re-render this player's face in the game so the app shows how he looks now (needs the game running)"${ed.saving || ed.facing || ed.previewing ? ' disabled' : ''}>${ed.facing ? 'Generating…' : '📷 Generate miniface'}</button>
+        <button class="pe-btn" data-reset${changes.length ? '' : ' disabled'}>Reset</button>
+        <button class="pe-btn primary" data-save${changes.length && !ed.saving && !ed.previewing ? '' : ' disabled'}>${ed.saving ? 'Saving…' : 'Save'}</button></span>
       </div></div>`;
     const np = dlg.querySelector('.pe-panel');
     if (np && prevTab === ed.tab) np.scrollTop = prevScroll;
@@ -767,7 +828,7 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!ed) return;
-      const t = e.target.closest('[data-close],[data-save],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-model-height],[data-reserve-number]');
+      const t = e.target.closest('[data-close],[data-save],[data-miniface],[data-preview],[data-preview-clear],[data-reset],[data-set],[data-filter],[data-ps],[data-undo],[data-tab],[data-looktab],[data-toggle-gk],[data-dd],[data-boot],[data-unlink],[data-link-mode],[data-random],[data-model-height],[data-reserve-number]');
       if (t && t.dataset.dd) { ed.openDd = ed.openDd === t.dataset.dd ? null : t.dataset.dd; render(); return; }
       if (ed.openDd && !e.target.closest('.pe-dd')) { ed.openDd = null; render(); if (!t) return; }
       if (!t) return;
@@ -809,9 +870,42 @@
       }
       if (t.hasAttribute('data-close')) { dlg.close(); return; }
       if (t.hasAttribute('data-save')) { await save(); return; }
+      if (t.hasAttribute('data-preview-clear')) { ed.previewUrl = null; render(); return; }
+      if (t.hasAttribute('data-preview')) {
+        if (ed.previewing || ed.saving || !api().previewMiniface) return;
+        const sig = lookSignature();
+        const changes = {};
+        PREVIEW_KEYS.forEach(k => { changes[k] = ed.cur[k]; });
+        ed.previewing = true; ed.msg = ''; ed.msgKind = ''; render();
+        try {
+          const res = await api().previewMiniface(ed.playerId, changes);
+          if (res && res.success) {
+            ed.previewUrl = res.url; ed.previewSig = sig;
+            ed.msg = res.warning || 'Preview ready. The game was reverted; nothing is saved until you press Save.';
+            ed.msgKind = res.warning ? 'err' : 'ok';
+          } else {
+            ed.msg = (res && res.error) || 'Preview failed.'; ed.msgKind = 'err';
+          }
+        } catch (err) { ed.msg = 'Preview failed.'; ed.msgKind = 'err'; }
+        ed.previewing = false; render();
+        return;
+      }
+      if (t.hasAttribute('data-miniface')) {
+        if (ed.facing) return;
+        if (!api().generateMinifaceForPlayer) return;
+        ed.facing = true; ed.msg = 'Generating miniface…'; ed.msgKind = ''; render();
+        try {
+          const res = await api().generateMinifaceForPlayer(ed.playerId);
+          ed.msg = res && res.success && res.found ? 'Miniface generated.' : ((res && res.error) || 'The game did not produce a miniface.');
+          ed.msgKind = res && res.success && res.found ? 'ok' : 'err';
+        } catch (err) { ed.msg = 'Miniface generation failed.'; ed.msgKind = 'err'; }
+        ed.facing = false; render();
+        return;
+      }
       if (t.hasAttribute('data-toggle-gk')) { ed.showGk = !ed.showGk; render(); return; }
       if (t.hasAttribute('data-reset')) { ed.cur = Object.assign({}, ed.baseline); ed.orig = Object.assign({}, ed.baseline); ed.overallTouched = false; ed.msg = ''; render(); return; }
       if (t.dataset.tab) { ed.tab = t.dataset.tab; render(); return; }
+      if (t.dataset.looktab) { ed.lookTab = t.dataset.looktab; ed.openDd = null; render(); return; }
       if (t.dataset.set) { const [k, v] = t.dataset.set.split(':'); ed.openDd = null; setValue(k, v); return; }
       if (t.dataset.filter) {
         const [kind, group, val] = t.dataset.filter.split(':');
@@ -893,9 +987,10 @@
         playerId, name: stateRes.state.name || '', source: stateRes.state.source,
         orig: Object.assign({}, s), baseline: Object.assign({}, s), cur: Object.assign({}, s),
         limits: stateRes.limits || {}, usedNumbers: stateRes.usedNumbers || [], edits: stateRes.edits || [], overallTouched: false, msg: '', msgKind: '', saving: false,
-        tab: 'look', showGk: false, stale, linkMode: false, bootLinks: bootLinks || {},
+        tab: 'look', lookTab: 'skin', faceUrl: null, showGk: false, stale, linkMode: false, bootLinks: bootLinks || {},
         filters: { hair: { cat: 'suggested', length: 'all' }, facial: { cat: 'all', length: 'all' }, boots: { brand: 'all', link: 'all', q: '' } }
       };
+      try { ed.faceUrl = api().getMinifaceUrl ? await api().getMinifaceUrl(playerId) : null; } catch (e) { ed.faceUrl = null; }
       const dlg = ensureDialog();
       render();
       if (!dlg.open) dlg.showModal();
@@ -926,6 +1021,15 @@
         if (waiters[i].kind === kind) { waiters[i].resolve(true); waiters.splice(i, 1); }
       }
       if (ed && kind === 'export' && !ed.saving) { await reloadHistory(); render(); }
+    });
+  }
+
+  if (window.api && window.api.onMinifacesUpdated && window.api.getMinifaceUrl) {
+    window.api.onMinifacesUpdated(async () => {
+      if (!ed) return;
+      try { ed.faceUrl = await window.api.getMinifaceUrl(ed.playerId); } catch (e) { return; }
+      const dlg = document.getElementById('pe-dialog');
+      if (dlg && dlg.open && !ed.saving) render();
     });
   }
 

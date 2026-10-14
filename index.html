@@ -3555,6 +3555,15 @@
                   style="font-weight:600;color:var(--text-dim);">…</b></span>
               <button class="refresh-btn" onclick="toggleSettingsPanel(false); DynamicLookUI.open()">Manage</button>
             </div>
+            <div class="settings-row"
+              title="Real faces rendered by Live Editor (v27.1.4+) replace the stand-in photos. Needs the game running with F11 bound to player_editor_sync.lua. Players you edit in the player editor get a fresh face automatically.">
+              <span>Player faces: <b id="settings-minifaces-status"
+                  style="font-weight:600;color:var(--text-dim);">…</b></span>
+              <div style="display: flex; gap: 6px;">
+                <button class="refresh-btn" id="settings-minifaces-generate-btn" onclick="generateSquadMinifaces()">Generate for squad</button>
+                <button class="refresh-btn" onclick="chooseMinifacesFolder()" title="Pick Live Editor's imgAssets\heads folder if it is not in C:\FC 27 Live Editor">Folder</button>
+              </div>
+            </div>
           </div>
           <div class="settings-section">
             <h4>Youth Squad Career Mode</h4>
@@ -4132,27 +4141,6 @@
       <button class="back-btn" style="margin: 0;" onclick="closePlaystyleRulesDialog()">✕</button>
     </div>
     <div id="playstyle-rules-body" class="playstyle-picker-body"></div>
-  </dialog>
-
-  <!-- Manual headshot photo picker (see openHeadshotPicker) — lets the
-       user override the automatic age/nationality/skin-tone photo match
-       for a specific player, browsing any bucket, not just their own. -->
-  <dialog id="headshot-picker-dialog" class="league-history-dialog" style="max-width: 640px;">
-    <div class="league-history-header">
-      <h3>Change Photo</h3>
-      <button class="back-btn" style="margin: 0;" onclick="closeHeadshotPicker()">✕</button>
-    </div>
-    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-      <select id="headshot-picker-age-select" onchange="onHeadshotPickerBucketChange()" style="flex: 1;"></select>
-      <select id="headshot-picker-ethnicity-select" onchange="onHeadshotPickerBucketChange()" style="flex: 1;"></select>
-    </div>
-    <div id="headshot-picker-grid"
-      style="max-height: 50vh; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px;">
-    </div>
-    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 16px;">
-      <button class="back-btn" style="margin: 0;" onclick="resetHeadshotToAutomatic()">Reset to Automatic</button>
-      <button class="back-btn" style="margin: 0;" onclick="closeHeadshotPicker()">Cancel</button>
-    </div>
   </dialog>
 
   <!-- Trophy Cabinet (see openTrophyCabinet) — a fixed background photo
