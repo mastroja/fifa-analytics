@@ -2514,61 +2514,11 @@ let currentCalendar = [];
       }
     }
 
-    // Settings > Player customization > Player faces: Live Editor renders a real face per player (see minifaces.js);
-    // main.js prefers those over the bundled stand-ins, and the folder watcher pushes 'minifaces-updated' whenever a
-    // face is generated here or after a player editor save.
-    async function refreshMinifacesStatus(extra) {
-      const el = document.getElementById('settings-minifaces-status');
-      if (!el || !window.api || !window.api.getMinifacesStatus) return;
-      try {
-        const st = await window.api.getMinifacesStatus();
-        const base = st.faceCount ? `${st.faceCount} generated` : 'none yet';
-        el.textContent = extra || (st.sourceExists ? base : `${base} (Live Editor folder not found)`);
-      } catch (e) { el.textContent = 'unavailable'; }
-    }
-
-    async function generateSquadMinifaces() {
-      const btn = document.getElementById('settings-minifaces-generate-btn');
-      const el = document.getElementById('settings-minifaces-status');
-      if (!window.api || !window.api.generateSquadMinifaces || (btn && btn.disabled)) return;
-      if (btn) btn.disabled = true;
-      if (el) el.textContent = 'generating (about 2 s per player)…';
-      try {
-        const res = await window.api.generateSquadMinifaces();
-        if (!res.success) { await refreshMinifacesStatus(); alert(res.error || 'Face generation failed.'); }
-        else {
-          await refreshSquadAfterHeadshotChange();
-          await refreshMinifacesStatus(`${res.found}/${res.requested} faces generated`);
-        }
-      } catch (e) {
-        console.error('Face generation failed:', e);
-        await refreshMinifacesStatus();
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    async function chooseMinifacesFolder() {
-      if (!window.api || !window.api.chooseMinifacesFolder) return;
-      const res = await window.api.chooseMinifacesFolder();
-      if (res && res.success) { await refreshSquadAfterHeadshotChange(); }
-      else if (res && !res.canceled && res.error) alert(res.error);
-      await refreshMinifacesStatus();
-    }
-
+    // Generated faces (minifaces.js) arrive in the background after a capture: refresh the lists that show them.
+    // Generating them is done from Dynamic look > Overview > Player faces (dynamic_look_ui.js).
     if (window.api && window.api.onMinifacesUpdated) {
-      window.api.onMinifacesUpdated(async () => {
-        await refreshSquadAfterHeadshotChange();
-        refreshMinifacesStatus();
-      });
+      window.api.onMinifacesUpdated(async () => { await refreshSquadAfterHeadshotChange(); });
     }
-    if (window.api && window.api.onMinifacesProgress) {
-      window.api.onMinifacesProgress(p => {
-        const el = document.getElementById('settings-minifaces-status');
-        if (el && p) el.textContent = `generating… ${p.done}/${p.total}`;
-      });
-    }
-    setTimeout(refreshMinifacesStatus, 1500);
 
     async function openPlayerProfile(identifier) {
       lastOpenedProfileIdentifier = identifier;

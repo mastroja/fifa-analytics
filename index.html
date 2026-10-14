@@ -3550,19 +3550,10 @@
           <div class="settings-section">
             <h4>Player customization</h4>
             <div class="settings-row"
-              title="Monthly automatic look changes, heights and growth, and undo, for the whole team.">
+              title="Monthly automatic look changes, heights and growth, player faces, and undo, for the whole team.">
               <span>Dynamic look: <b id="settings-dynamic-look-status"
                   style="font-weight:600;color:var(--text-dim);">…</b></span>
               <button class="refresh-btn" onclick="toggleSettingsPanel(false); DynamicLookUI.open()">Manage</button>
-            </div>
-            <div class="settings-row"
-              title="Real faces rendered by Live Editor (v27.1.4+) replace the stand-in photos. Needs the game running with F11 bound to player_editor_sync.lua. Players you edit in the player editor get a fresh face automatically.">
-              <span>Player faces: <b id="settings-minifaces-status"
-                  style="font-weight:600;color:var(--text-dim);">…</b></span>
-              <div style="display: flex; gap: 6px;">
-                <button class="refresh-btn" id="settings-minifaces-generate-btn" onclick="generateSquadMinifaces()">Generate for squad</button>
-                <button class="refresh-btn" onclick="chooseMinifacesFolder()" title="Pick Live Editor's imgAssets\heads folder if it is not in C:\FC 27 Live Editor">Folder</button>
-              </div>
             </div>
           </div>
           <div class="settings-section">

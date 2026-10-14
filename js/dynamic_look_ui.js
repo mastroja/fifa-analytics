@@ -1,21 +1,19 @@
 // Dynamic look manager: a page of its own (Settings > Player customization > Manage dynamic look) for everything that
 // applies to the whole team: the monthly automatic look changes, which players are included, realistic heights and
-// growth, the activity log and undo. Backend: dynamic_look.js (IPC). The per-player editor (player_editor_ui.js) is separate.
+// growth, player faces, the activity log and undo. Backend: dynamic_look.js (IPC). The per-player editor (player_editor_ui.js) is separate.
 (function () {
   'use strict';
 
   const TABS = [
     ['overview', 'Overview'],
-    ['changes', 'What changes'],
     ['players', 'Players'],
     ['heights', 'Heights & growth'],
-    ['activity', 'Activity'],
-    ['undo', 'Undo']
+    ['activity', 'Activity & undo']
   ];
   const FEATURES = [
     ['hair', 'Haircuts and new styles', 'Younger players change style more often; styles stay within the ones that suit their skin tone, and long hair usually gets cut. Uncategorised styles are never picked, and players wearing one keep it (those are manual choices).'],
     ['beard', 'Beard growth and shaving', 'Adults can grow stubble into a full beard over months, trim it or shave it off. About a third never grow one.'],
-    ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months: dark hair is almost always bleached blonde, and a wild colour is very unlikely. Veterans from 35 slowly go silver.'],
+    ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months: dark hair is almost always bleached blonde. Pink, blue and green are never picked, only by hand. Veterans from 35 slowly go silver.'],
     ['boots', 'Boots', 'Mostly new-season switches, usually staying with the same brand. Only boots linked to a game id are used.'],
     ['accessories', 'Accessories', 'Tape, wristbands and gloves come and go.'],
     ['growth', 'Height, weight and growth', 'Youth players keep growing toward their own adult height each month, and weight and body type follow. A height is only ever raised, and heights you set by hand are left alone.']
@@ -88,6 +86,10 @@
       .dl-st.queued { background: #d4a72c30; color: #d4a72c; } .dl-st.applied { background: #3fb95030; color: #3fb950; }
       .dl-st.failed { background: #f8514930; color: #f85149; } .dl-st.undone { background: #8b949e30; color: var(--text-dim); }
       .dl-hint { color: var(--text-dim); font-size: 12px; }
+      .dl-section { margin: 26px 0 10px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); }
+      .dl-section:first-child { margin-top: 0; }
+      .dl-bar { height: 8px; border-radius: 999px; background: #484f58; overflow: hidden; margin-top: 10px; }
+      .dl-bar i { display: block; height: 100%; background: var(--accent-color); transition: width .3s; }
       .dl-warn { padding: 12px 14px; border-radius: 8px; background: #d4a72c20; border: 1px solid #d4a72c60; font-size: 13px; margin-bottom: 16px; }
     `;
     document.head.appendChild(style);
@@ -103,6 +105,7 @@
         S.data = Object.assign({}, r);
         if (!r.settings) S.data.error = 'No active save yet. Press Refresh in the app once so it knows which career is open.';
         if (api().previewUndo) { try { S.undoPreview = await api().previewUndo(); } catch (e) { /* hint only */ } }
+        if (api().getMinifacesStatus) { try { S.faces = await api().getMinifacesStatus(); } catch (e) { S.faces = null; } }
       } catch (e) {
         S.data = { error: 'Could not load the dynamic look settings: ' + ((e && e.message) || e) };
       }
@@ -131,37 +134,52 @@
   }
   const featureOn = k => S.data.settings.features[k] !== false && (k !== 'growth' || S.data.settings.features.growth === true);
 
+  const faceLine = f => {
+    if (!f) return 'Checking…';
+    if (!f.total) return 'No players to show a face for yet.';
+    return `${f.have} of ${f.total} players have a generated face${f.missing ? `, ${f.missing} still missing` : '. All set.'}`;
+  };
+
+  function facesCard() {
+    const f = S.faces;
+    const pr = S.faceProgress;
+    const busy = S.busy || (f && f.generating) || !!pr;
+    const pct = pr && pr.total ? Math.round(100 * pr.done / pr.total) : 0;
+    const folderWarn = f && !f.sourceExists
+      ? `<div class="dl-warn" style="margin:12px 0 0">Live Editor's heads folder was not found at <code>${esc(f.sourceDir)}</code>. Faces can only be generated once it exists: start the game with Live Editor, or pick the folder.
+          <div class="dl-btns" style="margin-top:8px"><button class="dl-btn" data-faces-folder>Choose folder…</button></div></div>`
+      : '';
+    return `<div class="dl-card"><div class="dl-big"><div><b>Player faces</b>
+        <small>${esc(pr ? `Generating… ${pr.done} of ${pr.total} (about 2 seconds each, keep the game running)` : faceLine(f))}</small></div>
+        <div class="dl-btns"><button class="dl-btn primary" data-faces="missing"${busy || !f || !f.sourceExists || !f.missing ? ' disabled' : ''}>Generate missing faces</button>
+          <button class="dl-btn" data-faces="all"${busy || !f || !f.sourceExists || !f.total ? ' disabled' : ''} title="Re-render every face, even ones that already exist">Regenerate all</button></div></div>
+      ${pr ? `<div class="dl-bar"><i style="width:${pct}%"></i></div>` : ''}${folderWarn}
+      <p class="dl-hint" style="margin:10px 0 0">Faces are real renders from the game, made automatically for new players and for anyone whose look changes. This covers your squad and academy.</p></div>`;
+  }
+
   function viewOverview() {
     const d = S.data, s = d.settings, players = d.players || [], incl = includedPlayers();
-    const on = FEATURES.filter(f => featureOn(f[0])).map(f => f[1]);
-    const recent = (d.log || []).slice(0, 6);
+    const on = FEATURES.filter(f => featureOn(f[0])).length;
+    const recent = (d.log || []).slice(0, 4);
+    const features = FEATURES.map(([k, label, hint]) => `<div class="dl-row"><div><b>${esc(label)}</b><small>${esc(hint)}</small></div>
+      <label class="dl-switch"><input type="checkbox" data-feature="${k}"${featureOn(k) ? ' checked' : ''}><i></i></label></div>`).join('');
     return `
-      <h3>Automatic monthly updates</h3>
-      <p class="dl-lead">Once per in-game month, the players you include may change a little: haircuts, beards, hair colour, boots, accessories, and growth for youngsters. The changes are written to the game for you through the F11 hotkey, so the game window comes forward briefly each month.</p>
+      <div class="dl-section">Automatic monthly updates</div>
       <div class="dl-card"><div class="dl-big"><div><b>${s.enabled ? 'Switched on' : 'Switched off'}</b>
-        <small>${s.enabled ? (s.lastMonth ? `Last month played out: ${esc(s.lastMonth)}. The next update runs when a refresh sees a new in-game month.` : 'Starts counting from the next in-game month.') : 'Nothing changes on its own until you switch this on.'}</small></div>
-        <label class="dl-switch"><input type="checkbox" data-enabled${s.enabled ? ' checked' : ''}><i></i></label></div></div>
-      <div class="dl-stats">
-        <div class="dl-stat"><b>${incl.length}</b><span>players included (of ${players.length})</span></div>
-        <div class="dl-stat"><b>${on.length}</b><span>kinds of change on (of ${FEATURES.length})</span></div>
-        <div class="dl-stat"><b>${(d.log || []).length}</b><span>changes made so far</span></div>
-      </div>
-      <div class="dl-card"><b>Try it now</b>
-        <p class="dl-hint" style="margin:6px 0 12px">Plays the current in-game month straight away for the included players, with fresh randomness, and writes it to the game. Handy for seeing what it does.</p>
-        <div class="dl-btns"><button class="dl-btn primary" data-run${S.busy ? ' disabled' : ''}>Run this month now</button></div></div>
-      <h3 style="margin-top:22px">Recent activity</h3>
+        <small>${s.enabled ? (s.lastMonth ? `Last month played out: ${esc(s.lastMonth)}. The next update runs when a refresh sees a new in-game month.` : 'Starts counting from the next in-game month.') : 'Nothing changes on its own until you switch this on.'} Changes are written to the game through F11, so the game window comes forward briefly.</small></div>
+        <label class="dl-switch"><input type="checkbox" data-enabled${s.enabled ? ' checked' : ''}><i></i></label></div>
+        <div class="dl-btns" style="margin-top:14px"><button class="dl-btn" data-run${S.busy ? ' disabled' : ''} title="Plays the current in-game month straight away for the included players, with fresh randomness">Run this month now</button>
+          <span class="dl-hint">${incl.length} of ${players.length} players included · ${on} of ${FEATURES.length} kinds of change on</span></div></div>
+      <div class="dl-section">Player faces</div>
+      ${facesCard()}
+      <div class="dl-section">What can change</div>
+      <p class="dl-lead" style="margin-bottom:10px">These apply to every included player, while the monthly updates are on or when you press Run this month now.</p>
+      <div class="dl-card" style="padding:4px 18px">${features}</div>
+      <div class="dl-section">Recent activity</div>
       ${recent.length ? `<div class="dl-card" style="padding:4px 18px">${recent.map(logRow).join('')}</div>` : '<p class="dl-hint">Nothing has changed yet.</p>'}`;
   }
 
   const logRow = l => `<div class="dl-row"><div><b>${esc(l.player_name)}</b><small>${esc(l.summary)} · ${esc(l.game_month)}</small></div><span class="dl-st ${esc(l.status || 'queued')}">${esc(l.status || 'queued')}</span></div>`;
-
-  function viewChanges() {
-    const rows = FEATURES.map(([k, label, hint]) => `<div class="dl-row"><div><b>${esc(label)}</b><small>${esc(hint)}</small></div>
-      <label class="dl-switch"><input type="checkbox" data-feature="${k}"${featureOn(k) ? ' checked' : ''}><i></i></label></div>`).join('');
-    return `<h3>What can change</h3>
-      <p class="dl-lead">Choose which kinds of change are allowed. These apply to every included player, and only matter while the automatic monthly updates are switched on (or when you press Run this month now).</p>
-      <div class="dl-card" style="padding:4px 18px">${rows}</div>`;
-  }
 
   function viewPlayers() {
     const d = S.data, s = d.settings, players = d.players || [];
@@ -171,7 +189,7 @@
     const rows = shown.map(p => `<tr class="${picking && !p.selected ? 'off' : ''}"><td style="width:34px"><input type="checkbox" data-player="${p.player_id}"${picking ? (p.selected ? ' checked' : '') : ' checked disabled'}></td>
       <td><b>${esc(p.name)}</b></td><td>${p.source === 'academy' ? 'Academy' : 'Squad'}</td><td>${p.age === null || p.age === undefined ? '—' : p.age}</td>
       <td>${p.height ? esc(fmtHeight(p.height)) : '—'}${p.heightLocked ? ' <span class="dl-hint" title="You set this height by hand, so the height model leaves it alone">(set by you)</span>' : ''}</td></tr>`).join('');
-    return `<h3>Players</h3>
+    return `<div class="dl-section">Players</div>
       <p class="dl-lead">Everyone the editor can change: your squad and academy players made by the game. Real, scanned players are never included.</p>
       <div class="dl-seg"><button data-scope="all" class="${picking ? '' : 'on'}">All players (${players.length})</button><button data-scope="selected" class="${picking ? 'on' : ''}">Only the ones I pick</button></div>
       <div class="dl-btns" style="margin-bottom:12px"><input class="dl-search" type="search" placeholder="Search players…" data-q value="${esc(S.q || '')}">
@@ -193,30 +211,27 @@
         <p class="dl-hint" style="margin:12px 0 6px">${pv.changing === 0 ? `Nothing to change: all ${pv.total} players already match the model, so Apply would do nothing.` : `${pv.changing} of ${pv.total} players would change. Biggest changes first (the number in brackets is the player's expected adult height):`}</p>
         ${pv.sample.map(x => `<div class="dl-row" style="padding:8px 0"><div><b>${esc(x.name)}</b> <span class="dl-hint">age ${x.age}</span></div><span>${esc(fmtHeight(x.before))} to ${esc(fmtHeight(x.after))}, ${x.wBefore} to ${x.wAfter} kg <span class="dl-hint">(adult ${esc(fmtHeight(x.adult))})</span></span></div>`).join('')}</div>`;
     }
-    return `<h3>Heights and growth</h3>
+    return `<div class="dl-section">Heights and growth</div>
       <p class="dl-lead">Every player gets their own adult height, drawn once and fixed: about 5'10.5" on average, around 5% under 5'7", very few over 6'4", with taller keepers and centre-backs and shorter wingers. Players grow toward it with age (early and late bloomers), and weight and body type follow. A height is only ever raised, never lowered, and heights you set by hand are left alone.</p>
       <div class="dl-btns" style="margin-bottom:16px"><button class="dl-btn" data-height-preview${S.busy ? ' disabled' : ''}>Preview</button>
         <button class="dl-btn primary" data-height-apply${S.busy ? ' disabled' : ''}>Apply to included players now</button></div>
       ${preview}
-      <p class="dl-hint">To keep youth players growing month by month, switch on "Height, weight and growth" under What changes.</p>`;
+      <p class="dl-hint">To keep youth players growing month by month, switch on "Height, weight and growth" under What can change on the Overview.</p>`;
   }
 
   function viewActivity() {
     const q = (S.logQ || '').toLowerCase();
     const log = (S.data.log || []).filter(l => !q || String(l.player_name).toLowerCase().includes(q) || String(l.summary).toLowerCase().includes(q));
-    return `<h3>Activity</h3>
-      <p class="dl-lead">Every change the dynamic look has made, newest first. Each one is also an edit in that player's own History, where it can be undone.</p>
-      <input class="dl-search" type="search" placeholder="Search player or change…" data-logq value="${esc(S.logQ || '')}" style="margin-bottom:12px">
-      <div class="dl-scroll"><table class="dl-table"><thead><tr><th>Month</th><th>Player</th><th>Change</th><th>Status</th></tr></thead>
-        <tbody>${log.map(l => `<tr><td>${esc(l.game_month)}</td><td><b>${esc(l.player_name)}</b></td><td>${esc(l.summary)}</td><td><span class="dl-st ${esc(l.status || 'queued')}">${esc(l.status || 'queued')}</span></td></tr>`).join('') || '<tr><td colspan="4" class="dl-hint">Nothing to show.</td></tr>'}</tbody></table></div>`;
-  }
-
-  function viewUndo() {
     const pv = S.undoPreview;
     const hint = pv && !pv.error
       ? `Right now: ${pv.shrunk.players} player${pv.shrunk.players === 1 ? ' is' : 's are'} shorter than they started; undoing everything would restore ${pv.all.columns} value${pv.all.columns === 1 ? '' : 's'} across ${pv.all.players} player${pv.all.players === 1 ? '' : 's'}.`
       : '';
-    return `<h3>Undo</h3>
+    return `<div class="dl-section">Activity</div>
+      <p class="dl-lead">Every change the dynamic look has made, newest first. Each one is also an edit in that player's own History, where it can be undone.</p>
+      <input class="dl-search" type="search" placeholder="Search player or change…" data-logq value="${esc(S.logQ || '')}" style="margin-bottom:12px">
+      <div class="dl-scroll"><table class="dl-table"><thead><tr><th>Month</th><th>Player</th><th>Change</th><th>Status</th></tr></thead>
+        <tbody>${log.map(l => `<tr><td>${esc(l.game_month)}</td><td><b>${esc(l.player_name)}</b></td><td>${esc(l.summary)}</td><td><span class="dl-st ${esc(l.status || 'queued')}">${esc(l.status || 'queued')}</span></td></tr>`).join('') || '<tr><td colspan="4" class="dl-hint">Nothing to show.</td></tr>'}</tbody></table></div>
+      <div class="dl-section">Undo</div>
       <p class="dl-lead">Put players back the way they were before the app first changed them. Both options write through the game (F11), and you are asked to confirm with the numbers first.</p>
       <div class="dl-card"><div class="dl-row"><div><b>Restore players who got shorter</b><small>Puts back height, weight and body type only for players who ended up shorter than they started. Everything else stays.</small></div>
           <button class="dl-btn" data-undo="shrunk"${S.busy ? ' disabled' : ''}>Restore</button></div>
@@ -234,7 +249,7 @@
     let body;
     if (!d) body = '<p class="dl-hint">Loading…</p>';
     else if (d.error) body = `<div class="dl-warn">${esc(d.error)}</div>`;
-    else body = { overview: viewOverview, changes: viewChanges, players: viewPlayers, heights: viewHeights, activity: viewActivity, undo: viewUndo }[S.tab]();
+    else body = ({ overview: viewOverview, players: viewPlayers, heights: viewHeights, activity: viewActivity }[S.tab] || viewOverview)();
     const enabled = d && d.settings && d.settings.enabled;
     const toast = dlg.querySelector('#dl-toast'); // survives re-renders
     dlg.innerHTML = `<div class="dl-shell">
@@ -262,7 +277,7 @@
   function bind(dlg) {
     dlg.addEventListener('click', async (e) => {
       if (!S) return;
-      const t = e.target.closest('[data-close],[data-tab],[data-scope],[data-pick],[data-run],[data-height-preview],[data-height-apply],[data-undo]');
+      const t = e.target.closest('[data-close],[data-tab],[data-scope],[data-pick],[data-run],[data-faces],[data-faces-folder],[data-height-preview],[data-height-apply],[data-undo]');
       if (!t) return;
       if (t.hasAttribute('data-close')) { dlg.close(); return; }
       if (t.dataset.tab) { S.tab = t.dataset.tab; render(); return; }
@@ -278,6 +293,25 @@
         await run('Running… the game window will come forward briefly.', async () => {
           const res = await api().runDynamicLookNow();
           say(res && res.success ? `Done: ${res.changed} player${res.changed === 1 ? '' : 's'} changed.` : ((res && res.error) || 'Failed.'), res && res.success ? 'ok' : 'err');
+        });
+        return;
+      }
+      if (t.hasAttribute('data-faces-folder')) {
+        const res = await api().chooseMinifacesFolder();
+        if (res && !res.success && !res.canceled && res.error) say(res.error, 'err');
+        await load(true); return;
+      }
+      if (t.dataset.faces) {
+        const mode = t.dataset.faces;
+        if (mode === 'all' && !confirm(`Re-render the face of all ${S.faces ? S.faces.total : ''} players? This takes about 2 seconds per player and the game window comes forward briefly.`)) return;
+        S.faceProgress = { done: 0, total: S.faces ? (mode === 'all' ? S.faces.total : S.faces.missing) : 0 };
+        await run('Generating faces… keep the game running.', async () => {
+          try {
+            const res = await api().generateAllMinifaces(mode);
+            if (!res || !res.success) say((res && res.error) || 'Face generation failed.', 'err');
+            else if (res.nothing) say('Every player already has a face.', 'ok');
+            else say(`Done: ${res.found} of ${res.requested} faces generated${res.partial ? '. Stopped early: ' + res.error : ''}.`, res.partial || res.found < res.requested ? 'err' : 'ok');
+          } finally { S.faceProgress = null; }
         });
         return;
       }
@@ -417,11 +451,44 @@
     (dlg && dlg.open ? dlg : document.body).appendChild(el);
   }
 
+  // ---------- banner: stays above the tabs until dismissed, so a monthly update is not missed if the toast was ----------
+  function showBanner(p) {
+    const details = p.details || [];
+    if (!details.length) return;
+    const host = document.getElementById('season-alert-banners');
+    if (!host || !host.parentNode) return;
+    let el = document.getElementById('dl-banner');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'dl-banner';
+      el.style.cssText = 'display:flex;align-items:center;gap:12px;margin:8px 16px;padding:10px 14px;border-radius:10px;background:color-mix(in srgb, var(--accent-color) 14%, var(--card-bg));border:1px solid var(--accent-color);font-size:13px;';
+      host.parentNode.insertBefore(el, host);
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-x]')) el.remove();
+        else if (e.target.closest('[data-more]')) { el.remove(); open('activity'); }
+      });
+    }
+    const months = (p.months || []).map(monthLabel);
+    const when = months.length > 1 ? `${months[0]} to ${months[months.length - 1]}` : (months[0] || 'this month');
+    const names = details.slice(0, 3).map(d => esc(d.name)).join(', ') + (details.length > 3 ? ` and ${details.length - 3} more` : '');
+    el.innerHTML = `<span style="flex:1"><b>Looks updated (${esc(when)}):</b> ${details.length} player${details.length === 1 ? '' : 's'} changed their look: ${names}.
+      Their faces re-render automatically.</span><a data-more style="cursor:pointer;color:var(--accent-color)">See what changed</a><button data-x style="background:none;border:0;color:var(--text-dim);cursor:pointer;font-size:16px">✕</button>`;
+  }
+
+  if (window.api && window.api.onMinifacesProgress) {
+    window.api.onMinifacesProgress((p) => {
+      if (!S || !S.faceProgress || !p) return;
+      S.faceProgress = { done: p.done, total: p.total };
+      if (S.tab === 'overview') render();
+    });
+  }
+
   if (window.api && window.api.onDynamicLookUpdated) {
     window.api.onDynamicLookUpdated((payload) => {
       if (S) load(true);
       updateSettingsStatus();
       if (payload && (payload.error || payload.details)) showToast(payload);
+      if (payload && payload.details) showBanner(payload);
     });
   }
   document.addEventListener('DOMContentLoaded', () => setTimeout(() => { updateSettingsStatus(); }, 1500));

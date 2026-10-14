@@ -22,7 +22,7 @@ const PREVIEW_RESTORE_RESULT = 'C:\\Users\\Public\\ea_fc_face_preview_restore.js
 const PREVIEW_FIELDS = ['skintonecode', 'skincomplexion', 'skintypecode', 'hairtypecode', 'haircolorcode',
   'facialhairtypecode', 'facialhaircolorcode', 'eyecolorcode', 'eyedetail', 'eyebrowcode'];
 
-let ctx = { userDataPath: null, triggerF11: null, getSquadPlayerIds: null, onChanged: null, isPro: null };
+let ctx = { userDataPath: null, triggerF11: null, getSquadPlayerIds: null, onChanged: null, isPro: null, getAllFacePlayerIds: null };
 let faceCache = null; // Map<playerId, mtimeMs> of the imported faces
 let watcher = null;
 let generating = false;
@@ -121,21 +121,14 @@ function startWatching() {
 function status() {
   if (!faceCache) loadCache();
   const srcDir = getSourceDir();
-  return { sourceDir: srcDir, sourceExists: fs.existsSync(srcDir), faceCount: faceCache.size, generating };
+  const ids = ctx.getAllFacePlayerIds ? [...new Set(ctx.getAllFacePlayerIds().map(Number).filter(n => n > 0))] : [];
+  const have = ids.filter(id => faceCache.has(id)).length;
+  return { sourceDir: srcDir, sourceExists: fs.existsSync(srcDir), faceCount: faceCache.size, generating, total: ids.length, have, missing: ids.length - have };
 }
 
-// Captures faces for these players through Live Editor. Resolves { success, requested, found, error? }.
-async function generate(playerIds, onProgress, opts) {
-  const manual = !opts || opts.manual !== false; // false = background run that must not pull the game window forward
-  if (generating) return { success: false, error: 'A face capture is already running.' };
-  const ids = [...new Set((playerIds || []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
-  if (ids.length === 0) return { success: false, error: 'No players to capture.' };
-  const srcDir = getSourceDir();
-  if (!fs.existsSync(srcDir)) {
-    return { success: false, error: `Live Editor's heads folder was not found (${srcDir}). Use "Choose folder" to point at it.` };
-  }
-  generating = true;
-  try {
+// One batch (the Lua side takes at most 60 players per run): write the request, press F11, wait for the renders.
+async function captureBatch(ids, srcDir, manual, onProgress) {
+  {
     try { fs.unlinkSync(RESULT_PATH); } catch (e) { /* none yet */ }
     fs.writeFileSync(PENDING_PATH, JSON.stringify({ written_at: new Date().toISOString(), player_ids: ids }));
     const startedAt = Date.now() - 1000;
@@ -173,6 +166,36 @@ async function generate(playerIds, onProgress, opts) {
     importAll();
     queued.forEach(id => autoAttempts.set(id, (autoAttempts.get(id) || 0) + 1));
     return { success: true, requested: queued.length, found, skipped: (result.skipped || []).length };
+  }
+}
+
+
+const BATCH_SIZE = 50;
+
+// Captures faces for these players through Live Editor, in batches. Resolves { success, requested, found, error? }.
+async function generate(playerIds, onProgress, opts) {
+  const manual = !opts || opts.manual !== false; // false = background run that must not pull the game window forward
+  if (generating) return { success: false, error: 'A face capture is already running.' };
+  const ids = [...new Set((playerIds || []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  if (ids.length === 0) return { success: false, error: 'No players to capture.' };
+  const srcDir = getSourceDir();
+  if (!fs.existsSync(srcDir)) {
+    return { success: false, error: `Live Editor's heads folder was not found (${srcDir}). Pick it with "Choose folder" in Dynamic look > Overview > Player faces.` };
+  }
+  generating = true;
+  try {
+    let requested = 0, found = 0, skipped = 0;
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const batch = ids.slice(i, i + BATCH_SIZE);
+      const base = found;
+      const res = await captureBatch(batch, srcDir, manual, onProgress ? (p => onProgress({ done: base + p.done, total: ids.length })) : null);
+      if (!res.success) {
+        if (requested === 0) return res;
+        return { success: true, requested: ids.length, found, skipped, partial: true, error: res.error };
+      }
+      requested += res.requested; found += res.found; skipped += res.skipped;
+    }
+    return { success: true, requested, found, skipped };
   } finally {
     generating = false;
   }
@@ -190,10 +213,10 @@ const AUTO_BATCH = 60;
 let autoTimer = null;
 const autoWanted = new Set();
 
-function missingFaceIds(ids) {
+function missingFaceIds(ids, ignoreAttempts) {
   if (!faceCache) loadCache();
   return [...new Set((ids || []).map(Number).filter(n => Number.isInteger(n) && n > 0))]
-    .filter(id => !faceCache.has(id) && (autoAttempts.get(id) || 0) < MAX_AUTO_ATTEMPTS);
+    .filter(id => !faceCache.has(id) && (ignoreAttempts || (autoAttempts.get(id) || 0) < MAX_AUTO_ATTEMPTS));
 }
 
 function autoCapture(ids) {
@@ -331,6 +354,15 @@ function register(ipcMain, { dialog, getWindow }) {
   ipcMain.handle('minifaces-generate-player', (_e, playerId) => {
     // the player editor's "Generate miniface" button: always re-renders, even if a face exists
     return generate([playerId], null, { manual: true });
+  });
+  ipcMain.handle('minifaces-generate-all', async (_e, mode) => {
+    const all = ctx.getAllFacePlayerIds ? ctx.getAllFacePlayerIds() : [];
+    const ids = mode === 'all' ? all : missingFaceIds(all.map(Number).filter(n => n > 0), true);
+    if (ids.length === 0) return { success: true, requested: 0, found: 0, skipped: 0, nothing: true };
+    return generate(ids, p => {
+      const w = getWindow();
+      if (w && !w.isDestroyed()) w.webContents.send('minifaces-progress', p);
+    });
   });
   ipcMain.handle('minifaces-generate-squad', async () => {
     const ids = ctx.getSquadPlayerIds ? ctx.getSquadPlayerIds() : [];

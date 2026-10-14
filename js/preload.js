@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('api', {
   getMinifaceUrl: (playerId) => ipcRenderer.invoke('minifaces-url', playerId),
   getMinifacesStatus: () => ipcRenderer.invoke('minifaces-status'),
   generateMinifaceForPlayer: (playerId) => ipcRenderer.invoke('minifaces-generate-player', playerId),
+  generateAllMinifaces: (mode) => ipcRenderer.invoke('minifaces-generate-all', mode),
   generateSquadMinifaces: () => ipcRenderer.invoke('minifaces-generate-squad'),
   chooseMinifacesFolder: () => ipcRenderer.invoke('minifaces-choose-folder'),
   onMinifacesUpdated: (cb) => ipcRenderer.on('minifaces-updated', (_e, payload) => cb(payload)),
