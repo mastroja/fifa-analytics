@@ -155,7 +155,9 @@ async function initDatabase() {
     ['season_start_overall', 'INTEGER'],
     ['season_start_attributes_json', 'TEXT'],
     ['jersey_number', 'INTEGER'],
-    ['injury', 'INTEGER DEFAULT 0']
+    ['injury', 'INTEGER DEFAULT 0'],
+    // minutes played this season; NULL (deliberately no default) = this export had no minutes, which is not the same as 0
+    ['minutes_played', 'INTEGER']
   ];
   seasonStatsMigrations.forEach(([column, type]) => {
     try {
@@ -4611,10 +4613,10 @@ function importFifaData(jsonPayload) {
          club_id, club_name, contract_expiry, contract_date, duration_months, player_role_, last_status_change_date,
          on_loan, loan_team_from, loan_club_name, loan_date_end, is_loan_to_buy, wage,
          jersey_number, injury,
-         goals, assists, appearances, clean_sheets, saves, yellow_cards, red_cards, avg_rating,
+         goals, assists, appearances, minutes_played, clean_sheets, saves, yellow_cards, red_cards, avg_rating,
          attributes_json, competitions_json, traits_json, play_styles_json,
          overall_delta, attribute_deltas_json, season_start_overall, season_start_attributes_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       -- season_start_overall/season_start_attributes_json are deliberately
       -- NOT in this SET list — see the column comment in schema.sql. The
       -- values bound for them below only ever take effect on a fresh
@@ -4644,6 +4646,8 @@ function importFifaData(jsonPayload) {
         goals=excluded.goals,
         assists=excluded.assists,
         appearances=excluded.appearances,
+        -- a sync from an exporter that has no minutes (NULL) must not erase minutes an earlier sync stored
+        minutes_played=COALESCE(excluded.minutes_played, player_season_stats.minutes_played),
         clean_sheets=excluded.clean_sheets,
         saves=excluded.saves,
         yellow_cards=excluded.yellow_cards,
@@ -4793,6 +4797,7 @@ function importFifaData(jsonPayload) {
         p.goals || 0,
         p.assists || 0,
         p.appearances || 0,
+        Number.isFinite(Number(p.minutes)) && p.minutes !== null ? Math.max(0, Math.round(Number(p.minutes))) : null, // null = not exported
         p.clean_sheets || 0,
         p.saves || 0,
         p.yellow_cards || 0,
@@ -5055,7 +5060,7 @@ function getSquadFromDB(seasonId = currentSeasonId) {
            s.goals, s.assists, s.appearances, s.clean_sheets, s.saves,
            s.yellow_cards, s.red_cards, s.avg_rating, s.attributes_json, s.competitions_json,
            s.traits_json, s.play_styles_json, s.updated_at, s.overall_delta, s.attribute_deltas_json,
-           p.youth_reveal_tier, p.skintone_code
+           p.youth_reveal_tier, p.skintone_code, s.minutes_played
     FROM players p
     JOIN player_season_stats s ON s.player_id = p.player_id
     WHERE s.season_id = ${seasonId}
@@ -5111,6 +5116,7 @@ function getSquadFromDB(seasonId = currentSeasonId) {
     overall_delta: row[42] || 0,
     attribute_deltas: JSON.parse(row[43] || '{}'),
     youth_reveal_tier: row[44],
+    minutes: row[46], // null until an export carries minutes; js/roster_advice.js then falls back to appearances
     headshot_path: resolveHeadshotPath(row[0])
   }));
 }

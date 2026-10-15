@@ -148,6 +148,9 @@ CREATE TABLE IF NOT EXISTS player_season_stats (
     goals INTEGER DEFAULT 0,
     assists INTEGER DEFAULT 0,
     appearances INTEGER DEFAULT 0,
+    -- minutes played this season. NULL (no default, on purpose) means the export carried no minutes; 0 means a real zero.
+    -- Never default this to 0: js/roster_advice.js would read every such player as having played none of the games.
+    minutes_played INTEGER,
     clean_sheets INTEGER DEFAULT 0,
     saves INTEGER DEFAULT 0,
     yellow_cards INTEGER DEFAULT 0,
