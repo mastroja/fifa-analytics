@@ -9264,6 +9264,7 @@ Live Editor will end each loan and then release the player from your club to fre
       renderSquadAgeProfile();
       renderInjuryReport();
       if (window.Insights) window.Insights.renderHomeWidget();
+      if (window.InsightsPlanning) window.InsightsPlanning.renderHomeWidget();
       renderUpcomingMatchWidget();
       refreshNewsUnreadIndicator();
       renderLeagueTableWidget();

@@ -209,6 +209,41 @@
   }
 
   // ---------------------------------------------------------------------------------------------------------
+  // Home: "Roster Moves" card and the action pills on the Contracts card
+  // ---------------------------------------------------------------------------------------------------------
+
+  const HOME_MOVES = 5;
+
+  // The most actionable moves (sells first, then loans, then the watch list), counts, and the first reason for each.
+  function homeMovesHtml(env) {
+    if (!env.players.length) return '<div style="color: var(--text-dim); font-size: 13px;">No squad loaded.</div>';
+    const rows = computeAdvice(env);
+    const moves = rows.filter(r => r.verdict === 'sell' || r.verdict === 'loan');
+    const watch = rows.filter(r => r.verdict === 'monitor').length;
+    const n = v => rows.filter(r => r.verdict === v).length;
+    const plan = computePlan(env);
+    const ending = plan ? plan.renewals.filter(r => r.yearsLeft <= 0).length : 0;
+    const summary = `<div style="font-size: 13px; margin-bottom: 8px;"><strong>${n('sell')}</strong> to sell · <strong>${n('loan')}</strong> to loan out${watch ? ` · <span style="color: var(--text-dim);">${watch} to watch</span>` : ''}</div>`;
+    if (!moves.length) {
+      return `${summary}<div style="color: var(--text-dim); font-size: 13px;">No sales or loans recommended right now.</div>${ending ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${ending} contract${ending === 1 ? '' : 's'} end this summer: see Wages &amp; Contracts.</div>` : ''}`;
+    }
+    const sorted = moves.slice().sort((a, b) => (a.verdict === b.verdict ? 0 : a.verdict === 'sell' ? -1 : 1) || b.weight - a.weight);
+    const shown = sorted.slice(0, HOME_MOVES);
+    return `${env.transferBan ? '<div style="font-size: 12px; color: #d29922; margin-bottom: 6px;">Transfer ban active: these are on hold.</div>' : ''}${summary}
+      <ul class="injury-report-list home-list-full">${shown.map(r => `<li class="clickable-name" onclick="openPlayerProfile('${esc(r.player.player_id)}')"><span>${esc(r.player.name)}</span>
+        <span class="injury-report-meta">${esc(env.posLabel(r.player))} · ${esc(r.player.overall || '?')} OVR · ${badge(VERDICTS[r.verdict])}</span>
+        <span class="injury-report-meta" style="color: var(--text-dim);">${esc(r.reasons[0])}</span></li>`).join('')}</ul>
+      ${sorted.length > shown.length ? `<div style="font-size: 12px; color: var(--text-dim);">+${sorted.length - shown.length} more</div>` : ''}
+      ${ending ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${ending} contract${ending === 1 ? '' : 's'} end this summer: see Wages &amp; Contracts.</div>` : ''}`;
+  }
+
+  // player_id (string) -> pill HTML for each player with a contract decision; Map() when there is no plan.
+  function homeActionsFor(env) {
+    const plan = computePlan(env);
+    return new Map(plan ? plan.renewals.map(r => [String(r.player.player_id), badge(ACTIONS[r.action] || ACTIONS.review)]) : []);
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
   // Live wiring (the only part that reads app.js globals)
   // ---------------------------------------------------------------------------------------------------------
 
@@ -282,6 +317,14 @@
     root.Insights.addWagesSection('table', () => planTableHtml(liveEnv()));
   }
 
+  function renderHomeWidget() {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('home-roster-moves-body');
+    if (!el) return;
+    try { el.innerHTML = homeMovesHtml(liveEnv()); }
+    catch (e) { console.error('Home roster moves:', e); el.innerHTML = '<div style="color: var(--text-dim); font-size: 13px;">Could not draw this card.</div>'; }
+  }
+
   // The live card for app.js's player profile. Never throws: a profile must open even if this card cannot be drawn.
   function profileHtml(player, seasons) {
     try { return player && player.__clubStatus === 'normal' ? profileCardHtml(liveEnv(), player, seasons) : ''; }
@@ -289,11 +332,14 @@
   }
 
   const api = {
+    homeMovesHtml, homeActionsFor, homeActions: () => homeActionsFor(liveEnv()), renderHomeWidget,
     profileCardHtml, profileHtml,
     adviceHtml, progressHtml, planCardHtml, planTableHtml, computePlan, computeAdvice, seasonEndYearNow,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }
   };
   root.InsightsPlanning = api;
+  // app.js and squad_analytics.js draw the Home cards before this file loads, so fill them (and the Contracts pills) once here.
+  if (typeof document !== 'undefined') { renderHomeWidget(); if (root.Insights && root.Insights.renderHomeWidget) root.Insights.renderHomeWidget(); }
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

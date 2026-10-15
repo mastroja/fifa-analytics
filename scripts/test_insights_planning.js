@@ -4,6 +4,7 @@ const assert = require('assert');
 
 require('../js/charts.js');
 require('../js/squad_analytics.js');                 // defines the real Insights + SquadAnalytics; replaced by a fake below
+const realInsights = globalThis.Insights;            // kept to draw the real Home Contracts card in the live section
 const registered = {}, wageSections = {}; let refreshes = 0, renders = 0;
 globalThis.Insights = { addView(k, fn) { registered[k] = fn; }, addWagesSection(slot, fn) { (wageSections[slot] = wageSections[slot] || []).push(fn); }, refresh() { refreshes++; }, render() { renders++; } };
 require('../js/roster_advice.js');
@@ -161,6 +162,35 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(/blocked/.test(ban), 'blocked marker under a transfer ban');
 }
 
+// --- Home: Roster Moves card and Contracts pills ------------------------------------------------------------------
+{
+  const h = V.homeMovesHtml(env());
+  assert(/<strong>1<\/strong> to sell/.test(h) && /<strong>1<\/strong> to loan out/.test(h), 'counts');
+  assert(h.indexOf('Old Timer') < h.indexOf('Young'), 'sells come before loans');
+  assert(h.includes('home-list-full'), 'uses the full-height list, not the 160px scroll box');
+  assert(/Age 32 and no longer a regular/.test(h), 'first reason shown under each move');
+  assert(/2 contracts end this summer/.test(h), 'summer expiries are mentioned');
+  assert(!h.includes('Star Mid'), 'keep/develop players are not listed');
+  assert(/&lt;b&gt;Kid&lt;\/b&gt;/.test(h) && !h.includes('<b>Kid'), 'names escaped');
+  assert(V.homeMovesHtml(env({ transferBan: true })).includes('Transfer ban active'));
+  assert(!h.includes('Transfer ban active'));
+
+  // more than five moves: list is capped with a "+n more"
+  const many = Array.from({ length: 8 }, (_, i) => P(200 + i, 'Vet' + i, 'MID', 33, 68, 68, 90000 + i, 2029, 2, 100)).concat(squad().slice(0, 3));
+  const mh = V.homeMovesHtml(env({ players: many }));
+  assert((mh.match(/<li /g) || []).length === 5 && /\+3 more/.test(mh), 'capped at five with +n more');
+
+  const calm = V.homeMovesHtml(env({ players: squad().slice(0, 3).map(p => ({ ...p, contract_expiry: 2031 })) }));
+  assert(/No sales or loans recommended/.test(calm) && !/contracts? end this summer/.test(calm), 'quiet squad: friendly message');
+  assert(V.homeMovesHtml(env({ players: [] })).includes('No squad loaded'));
+
+  const acts = V.homeActionsFor(env());
+  assert(acts instanceof Map && acts.size === 2, 'one pill per contract decision (here: the two deals ending by 2028)');
+  assert(/Sell now/.test(acts.get('5')) && /Renew/.test(acts.get('6')), 'keyed by string player id');
+  assert(!acts.has('1'), 'players with years left have no pill');
+  assert.strictEqual(V.homeActionsFor(env({ seasonEndYear: NaN })).size, 0, 'no plan: no pills');
+}
+
 // --- live wiring: fake app.js globals, async Progression load, error guard, invalidation ---------------------------
 (async () => {
   const live = squad();
@@ -182,6 +212,26 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   globalThis.currentIngameDate = '2026-09-01'; assert.strictEqual(V.seasonEndYearNow(), 2027, 'September 2026 too');
   globalThis.currentIngameDate = '2027-07-01'; assert.strictEqual(V.seasonEndYearNow(), 2028, 'July starts the next season');
   globalThis.currentIngameDate = '2027-01-10';
+
+  // the real Home Contracts card (squad_analytics) picks the planner's pills up through InsightsPlanning.homeActions
+  const els = { 'home-contracts-body': { innerHTML: '' }, 'home-roster-moves-body': { innerHTML: '' } };
+  globalThis.document = { getElementById: id => els[id] || null };
+  globalThis.computeMonthsUntilExpiry = y => (parseInt(y, 10) - 2027) * 12 + 5;
+  realInsights.renderHomeWidget();
+  assert(/Sell now/.test(els['home-contracts-body'].innerHTML) && /Renew/.test(els['home-contracts-body'].innerHTML), 'Contracts card shows the action pills');
+  assert(els['home-contracts-body'].innerHTML.includes('home-list-full'));
+  V.renderHomeWidget();
+  assert(/to sell/.test(els['home-roster-moves-body'].innerHTML), 'live Roster Moves card');
+  const keep = globalThis.InsightsPlanning.homeActions; globalThis.InsightsPlanning.homeActions = () => { throw new Error('nope'); };
+  const mute0 = console.error; console.error = () => {};
+  realInsights.renderHomeWidget();
+  console.error = mute0; globalThis.InsightsPlanning.homeActions = keep;
+  assert(!/Sell now/.test(els['home-contracts-body'].innerHTML) && /expiring within 12 months/.test(els['home-contracts-body'].innerHTML), 'a failing pill lookup still draws the card, without pills');
+  els['home-roster-moves-body'] = null; assert.doesNotThrow(() => V.renderHomeWidget(), 'no Home card in the page: nothing to do');
+  els['home-roster-moves-body'] = { innerHTML: '' };
+  const mute1 = console.error; console.error = () => {}; const kp = globalThis.getPositionInfo; globalThis.getPositionInfo = () => { throw new Error('boom'); };
+  V.renderHomeWidget(); console.error = mute1; globalThis.getPositionInfo = kp;
+  assert(/Could not draw this card/.test(els['home-roster-moves-body'].innerHTML), 'a failure shows a message instead of throwing');
 
   const liveKid = globalThis.currentPlayers[3];
   assert(V.profileHtml(liveKid, [{ year_label: '2026/27', overall: 64, potential: 82 }]).includes('Planning'), 'live profile card');

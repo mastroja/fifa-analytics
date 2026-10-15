@@ -265,9 +265,12 @@
     }
     const wage = soon.reduce((s, p) => s + (Number(p.wage) || 0), 0);
     const shown = soon.slice(0, 5);
+    // recommended action per player from js/insights_planning.js (a Map of player_id -> pill HTML); absent until it loads
+    let actions = null;
+    try { actions = root.InsightsPlanning && root.InsightsPlanning.homeActions ? root.InsightsPlanning.homeActions() : null; } catch (e) { console.error('Home contracts actions:', e); }
     return `<div style="font-size: 13px; margin-bottom: 8px;"><strong>${soon.length}</strong> expiring within 12 months${wage ? ` · <span style="color: var(--text-dim);">${wk(wage)}/wk</span>` : ''}</div>
-      <ul class="injury-report-list">${shown.map(p => `<li class="clickable-name" onclick="openPlayerProfile('${esc(p.player_id)}')"><span>${esc(p.name)}</span>
-        <span class="injury-report-meta">${root.getPositionInfo(p.position_id).label} · ${p.overall || '?'} OVR · ends ${esc(p.contract_expiry)}</span></li>`).join('')}</ul>
+      <ul class="injury-report-list home-list-full">${shown.map(p => `<li class="clickable-name" onclick="openPlayerProfile('${esc(p.player_id)}')"><span>${esc(p.name)}</span>
+        <span class="injury-report-meta">${root.getPositionInfo(p.position_id).label} · ${p.overall || '?'} OVR · ends ${esc(p.contract_expiry)}${actions && actions.get(String(p.player_id)) ? ' ' + actions.get(String(p.player_id)) : ''}</span></li>`).join('')}</ul>
       ${soon.length > shown.length ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 6px;">+${soon.length - shown.length} more</div>` : ''}`;
   }
 
