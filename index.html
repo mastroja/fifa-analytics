@@ -311,7 +311,7 @@
 
     /* News tab flash — an unread edition (see setNewsTabUnread) pulses
        the button until the user actually opens News and views it. */
-    /* Insights > Roster Moves / Progression / Contract Plan (js/insights_planning.js): wide tables with a free-text
+    /* Insights > Roster Moves / Progression and the Wages & Contracts decisions table (js/insights_planning.js): wide tables with a free-text
        "Why" column. Tighter than the generic .sub-table so they fit the 900px minimum window; the wrapper scrolls
        sideways inside the card instead of widening the page. */
     .planning-wrap { overflow-x: auto; }
@@ -3903,7 +3903,6 @@
         <button class="home-toggle-btn" id="insights-view-injuries" onclick="Insights.setView('injuries')">Injuries</button>
         <button class="home-toggle-btn" id="insights-view-advice" onclick="Insights.setView('advice')">Roster Moves</button>
         <button class="home-toggle-btn" id="insights-view-progress" onclick="Insights.setView('progress')">Progression</button>
-        <button class="home-toggle-btn" id="insights-view-contracts" onclick="Insights.setView('contracts')">Contract Plan</button>
       </div>
     </div>
     <div id="insights-view"></div>

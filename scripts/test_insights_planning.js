@@ -4,17 +4,20 @@ const assert = require('assert');
 
 require('../js/charts.js');
 require('../js/squad_analytics.js');                 // defines the real Insights + SquadAnalytics; replaced by a fake below
-const registered = {}; let refreshes = 0, renders = 0;
-globalThis.Insights = { addView(k, fn) { registered[k] = fn; }, refresh() { refreshes++; }, render() { renders++; } };
+const registered = {}, wageSections = {}; let refreshes = 0, renders = 0;
+globalThis.Insights = { addView(k, fn) { registered[k] = fn; }, addWagesSection(slot, fn) { (wageSections[slot] = wageSections[slot] || []).push(fn); }, refresh() { refreshes++; }, render() { renders++; } };
 require('../js/roster_advice.js');
 require('../js/progression.js');
 require('../js/contract_planner.js');
 const V = require('../js/insights_planning.js');
 
 assert(/\.planning-wrap\s*\{\s*overflow-x:\s*auto/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'index.html styles the scrolling table wrapper');
-assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'contracts', 'progress'], 'registers the three views');
+assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'progress'], 'registers the two views');
+assert.deepStrictEqual(Object.keys(wageSections).sort(), ['cards', 'table'], 'fills both Wages & Contracts slots');
 const ids = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
-['advice', 'progress', 'contracts'].forEach(k => assert(ids.includes(`id="insights-view-${k}"`) && ids.includes(`Insights.setView('${k}')`), `index.html has the ${k} button`));
+['advice', 'progress'].forEach(k => assert(ids.includes(`id="insights-view-${k}"`) && ids.includes(`Insights.setView('${k}')`), `index.html has the ${k} button`));
+assert(!ids.includes('insights-view-contracts') && !ids.includes('Contract Plan</button>'), 'there is no separate Contract Plan tab: wages and contracts are one view');
+assert.strictEqual((ids.match(/id="insights-view-wages"/g) || []).length, 1);
 const tag = f => `<script src="js/${f}.js"></script>`;
 ['roster_advice', 'progression', 'contract_planner', 'insights_planning'].forEach(f => assert(ids.includes(tag(f)), `index.html loads ${f}.js`));
 ['roster_advice', 'progression', 'contract_planner', 'squad_analytics', 'charts'].forEach(f => assert(ids.indexOf(tag(f)) < ids.indexOf(tag('insights_planning')), `${f}.js loads before insights_planning.js`));
@@ -96,32 +99,33 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(V.progressHtml(env({ players, histories })).includes('Whole squad'));
 }
 
-// --- Contract Plan --------------------------------------------------------------------------------------------
+// --- Wages & Contracts sections (projection card + decisions table) ------------------------------------------------
 {
-  const h = V.contractsHtml(env());
-  assert(h.includes('planning-wrap') && h.includes('planning-table'), 'wide table sits in a scrolling wrapper');
-  assert(h.includes('Projected weekly wage bill') && h.includes('Expiring contracts') && h.includes('What rolls off'));
-  assert(h.includes('2026/27') && h.includes('2027/28'), 'season labels in the projection');
-  assert(h.includes('Old Timer') && h.includes('Key Expiring'), 'expiring players are listed');
-  assert(!h.includes('Star Mid'), 'players with years left are not');
-  assert(h.includes('this summer'));
-  assert(/>Sell now</.test(h), 'the advised sale on an expiring deal is "Sell now"');
-  assert(/>Renew</.test(h), 'the expiring regular is a renewal, not "Review"');
-  assert(!/>Review</.test(h), 'no key player is left undecided');
-  const oldRow = h.slice(h.indexOf('Old Timer'), h.indexOf('</tr>', h.indexOf('Old Timer')));
+  const card = V.planCardHtml(env()), table = V.planTableHtml(env());
+  assert(card.includes('Projected wage bill') && card.includes('2026/27') && card.includes('2027/28'), 'projection card with season labels');
+  assert(!card.includes('Wage bill now') && !table.includes('Wage bill now'), 'no duplicate tiles: the wage view already has them');
+  assert(table.includes('Contract decisions') && table.includes('Old Timer') && table.includes('Key Expiring'), 'expiring players are listed');
+  assert(table.includes('planning-wrap') && table.includes('planning-table'), 'wide table sits in a scrolling wrapper');
+  assert(!table.includes('Star Mid'), 'players with years left are not');
+  assert(table.includes('this summer'));
+  assert(/>Sell now</.test(table), 'the advised sale on an expiring deal is "Sell now"');
+  assert(/>Renew</.test(table), 'the expiring regular is a renewal, not "Review"');
+  assert(!/>Review</.test(table), 'no key player is left undecided');
+  const oldRow = table.slice(table.indexOf('Old Timer'), table.indexOf('</tr>', table.indexOf('Old Timer')));
   assert(!/€99,000/.test(oldRow), 'no renewal wage is quoted for a player being sold');
-  const keyRow = h.slice(h.indexOf('Key Expiring'), h.indexOf('</tr>', h.indexOf('Key Expiring')));
+  const keyRow = table.slice(table.indexOf('Key Expiring'), table.indexOf('</tr>', table.indexOf('Key Expiring')));
   assert(keyRow.includes('€49,500') && keyRow.includes('+€4,500'), 'renewal is priced at the curve and the rise shown');
-  assert(h.includes('estimates'), 'footnote says renewal wages are estimates');
+  assert(table.includes('estimates'), 'footnote says renewal wages are estimates');
 
-  assert(V.contractsHtml(env({ seasonEndYear: NaN })).includes('needs the in-game date'));
-  assert(V.contractsHtml(env({ players: squad().map(p => ({ ...p, wage: 0 })) })).includes('No wage data'));
-  assert(V.contractsHtml(env({ players: [] })).includes('No squad loaded'));
-  const quiet = V.contractsHtml(env({ players: squad().map(p => ({ ...p, contract_expiry: 2031 })) }));
-  assert(quiet.includes('runs out in the planning window') && quiet.includes('Nothing rolls off'), 'nothing expiring: friendly empty states');
-  const unk = V.contractsHtml(env({ players: squad().concat([P(9, 'No Date', 'MID', 25, 70, 70, 1000, null, 5, 400)]) }));
-  assert(unk.includes('Unknown contract') && unk.includes('not in the projection'));
-  noRawTags(V.contractsHtml(env({ players: [P(4, 'Young <b>Kid</b>', 'MID', 19, 64, 82, 5000, 2027, 1, 90)].concat(squad().slice(0, 3)) })));
+  // nothing to plan with: sections vanish quietly (the wage view itself shows its own empty states)
+  assert.strictEqual(V.planCardHtml(env({ seasonEndYear: NaN })), '');
+  assert.strictEqual(V.planTableHtml(env({ players: [] })), '');
+  assert.strictEqual(V.planCardHtml(env({ players: squad().map(p => ({ ...p, contract_expiry: null })) })), '', 'no contract dates at all: no projection');
+  const quiet = V.planTableHtml(env({ players: squad().map(p => ({ ...p, contract_expiry: 2031 })) }));
+  assert(quiet.includes('runs out in the planning window'), 'nothing expiring: friendly empty state');
+  const unk = V.planCardHtml(env({ players: squad().concat([P(9, 'No Date', 'MID', 25, 70, 70, 1000, null, 5, 400)]) }));
+  assert(unk.includes('no contract date') && unk.includes('left out'), 'players without a date are called out');
+  noRawTags(V.planTableHtml(env({ players: [P(4, 'Young <b>Kid</b>', 'MID', 19, 64, 82, 5000, 2027, 1, 90)].concat(squad().slice(0, 3)) })));
 }
 
 // --- live wiring: fake app.js globals, async Progression load, error guard, invalidation ---------------------------
@@ -139,8 +143,8 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   const advice = registered.advice();
   assert(advice.includes('Old Timer') && !advice.includes('Loaned Out'), 'live advice view uses the senior squad only');
   assert(advice.includes('transfer ban is active'), 'reads the live transfer-ban state');
-  const contracts = registered.contracts();
-  assert(contracts.includes('Expiring contracts') && contracts.includes('Old Timer'), 'live contract view');
+  const secCard = wageSections.cards[0](), secTable = wageSections.table[0]();
+  assert(secCard.includes('Projected wage bill') && secTable.includes('Old Timer'), 'live wages sections');
   assert.strictEqual(V.seasonEndYearNow(), 2027, 'January 2027 is the 2026/27 season');
   globalThis.currentIngameDate = '2026-09-01'; assert.strictEqual(V.seasonEndYearNow(), 2027, 'September 2026 too');
   globalThis.currentIngameDate = '2027-07-01'; assert.strictEqual(V.seasonEndYearNow(), 2028, 'July starts the next season');

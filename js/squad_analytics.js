@@ -101,6 +101,12 @@
       .sort((a, b) => a.months - b.months || (Number(b.p.wage) || 0) - (Number(a.p.wage) || 0)).map(x => x.p);
   }
 
+  // Other files add sections to this view (js/insights_planning.js: the wage-bill projection and the expiring-contract
+  // actions). 'cards' sit in the chart grid, 'table' is a full-width card above "Pay vs level". A section that throws
+  // is skipped so one bad section never blanks the whole view.
+  const WAGE_SLOTS = { cards: [], table: [] };
+  const wageSlot = name => WAGE_SLOTS[name].map(fn => { try { return fn() || ''; } catch (e) { console.error('Insights wages section:', e); return ''; } }).join('');
+
   function wagesHtml() {
     const players = squad();
     const priced = players.filter(p => Number(p.wage) > 0);
@@ -156,7 +162,9 @@
           <div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">Red = within 12 months.</div></div>
         <div class="profile-card"><h3>Wage vs overall</h3>${scatter || '<div class="empty-state" style="padding: 12px;">Not enough players to plot.</div>'}
           ${scatter ? `<div style="display: flex; gap: 12px; font-size: 12px; color: var(--text-dim); flex-wrap: wrap;">${legend}<span>╌ typical for this squad</span></div>` : ''}</div>
+        ${wageSlot('cards')}
       </div>
+      ${wageSlot('table')}
       <div class="profile-card" style="margin-top: 16px;"><h3>Pay vs level</h3>${lists}</div>
       ${loanedOut() ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${loanedOut()} loaned-out player${loanedOut() === 1 ? '' : 's'} not counted.</div>` : ''}`;
   }
@@ -282,6 +290,8 @@
     // fn() returns the view's HTML; a view that loads data async shows a placeholder and calls Insights.refresh()
     // once it has it.
     addView(key, fn) { VIEWS[key] = fn; },
+    // slot: 'cards' | 'table' (see WAGE_SLOTS); fn() returns HTML or ''.
+    addWagesSection(slot, fn) { if (WAGE_SLOTS[slot]) WAGE_SLOTS[slot].push(fn); },
     current: () => view,
     setView(v) { if (!VIEWS[v]) return; view = v; Insights.render(); },
     // Jump here from elsewhere; with a player id, Compare opens on that player and a like-for-like rival.

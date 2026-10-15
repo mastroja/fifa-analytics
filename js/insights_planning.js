@@ -1,8 +1,9 @@
-// Insights > Roster Moves / Progression / Contract Plan: the three planning views.
+// Insights > Roster Moves / Progression, plus the contract planning sections of Wages & Contracts.
 //
 //  - Roster Moves: one sell / keep / loan verdict per senior player with the reasons (js/roster_advice.js).
 //  - Progression:  who is rising, stalling or declining for their age, from every stored season (js/progression.js).
-//  - Contract Plan: the wage bill season by season and what to do with each expiring deal (js/contract_planner.js).
+//  - Wages & Contracts gains the wage bill projected season by season and what to do with each expiring deal
+//    (js/contract_planner.js), added through Insights.addWagesSection so the wage view stays one tab.
 //
 // The *Html builders take an explicit `env` and read no globals, so scripts/test_insights_planning.js can render them
 // in node. liveEnv() is the only place that reads app.js globals at render time (currentPlayers, currentSaveId,
@@ -54,7 +55,7 @@
   // Shared computation
   // ---------------------------------------------------------------------------------------------------------
 
-  // Roster advice rows for the squad (also feeds the Contract Plan's per-player actions).
+  // Roster advice rows for the squad (also feeds the contract actions in Wages & Contracts).
   function computeAdvice(env) {
     if (!root.RosterAdvice) return [];
     return root.RosterAdvice.advise(env.players, {
@@ -129,44 +130,47 @@
   }
 
   // ---------------------------------------------------------------------------------------------------------
-  // Contract Plan
+  // Contract planning: two sections of the Wages & Contracts view (the projection card and the actions table)
   // ---------------------------------------------------------------------------------------------------------
 
-  function contractsHtml(env) {
-    if (!env.players.length) return empty('No squad loaded.');
-    if (!root.ContractPlanner || !Number.isFinite(env.seasonEndYear)) return empty('Contract planning needs the in-game date. Sync from the game (F10) to load it.');
-    if (!env.players.some(p => Number(p.wage) > 0)) return empty('No wage data for this squad yet. Sync from the game (F10) to load it.');
+  // The plan for the squad, or null when it cannot be made (no in-game date, no contract dates, no squad).
+  function computePlan(env) {
+    if (!env.players.length || !root.ContractPlanner || !Number.isFinite(env.seasonEndYear)) return null;
     const adviceByPlayer = new Map(computeAdvice(env).map(r => [r.player, r]));
     const plan = root.ContractPlanner.plan(env.players, {
       seasonEndYear: env.seasonEndYear, ageOf: env.ageOf, expectedWageOf: env.expectedWageOf, adviceOf: p => adviceByPlayer.get(p) || null
     });
-    if (!plan.seasons.length) return empty('No contract dates to plan from.');
-    const [now, next] = plan.seasons;
-    const decisions = plan.renewals.filter(r => r.yearsLeft <= 0).length;
+    // nobody under contract this season (no contract dates at all, or all long expired): bars of zero would look like data
+    return plan.seasons.length && plan.seasons[0].committedCount > 0 ? plan : null;
+  }
+  const noMoney = a => a === 'sell' || a === 'sell-now' || a === 'let-go'; // no renewal wage is quoted for a player who leaves
+
+  // Card for the chart grid: the weekly wage bill over the coming seasons, with planned renewals included.
+  function planCardHtml(env) {
+    const plan = computePlan(env);
+    if (!plan) return '';
     const bars = env.barsHtml(plan.seasons.map(s => ({
       label: s.label, value: s.withRenewals, text: `${env.wageShort(s.withRenewals)}/wk`,
       sub: s.endYear === plan.seasonEndYear ? 'current' : `${env.wageShort(s.committedWage)} + ${env.wageShort(s.renewedWage)}`,
       color: s.endYear === plan.seasonEndYear ? 'var(--accent-color)' : '#58a6ff'
     })));
-    const rolling = plan.seasons.filter(s => s.rollingOffCount > 0).slice(0, 3).map(s => `<tr><td>${esc(s.label)}</td><td>${s.rollingOffCount} player${s.rollingOffCount === 1 ? '' : 's'}</td><td>${esc(env.wageShort(s.rollingOffWage))}/wk comes off</td></tr>`).join('');
+    return `<div class="profile-card"><h3>Projected wage bill</h3>${bars}
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">The two figures after each bar are wages already signed + planned renewals (the players marked Renew / Renew (1 yr) below). Players marked Sell, Let go or Review are assumed to leave. No signings are included.${plan.unknown.length ? ` ${plan.unknown.length} player${plan.unknown.length === 1 ? ' has' : 's have'} no contract date and ${plan.unknown.length === 1 ? 'is' : 'are'} left out.` : ''}</div></div>`;
+  }
+
+  // Full-width card: one recommended action per expiring contract (this season and next).
+  function planTableHtml(env) {
+    const plan = computePlan(env);
+    if (!plan) return '';
     const table = plan.renewals.length ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Ends</th><th>Wage now</th><th>Est. renewal</th><th>Change</th><th>Action</th><th>Why</th></tr></thead><tbody>
       ${plan.renewals.map(r => `<tr><td>${nameLink(r.player)}</td><td>${esc(env.posLabel(r.player))}</td><td>${r.age == null ? '–' : esc(r.age)}</td><td>${esc(r.player.overall || '?')}</td>
         <td>${esc(r.expiry)}${r.yearsLeft <= 0 ? ' <span style="color: #f85149; font-size: 11px;">this summer</span>' : ''}</td><td>${esc(env.wageFmt(r.wage))}</td>
-        <td>${r.action === 'sell' || r.action === 'sell-now' || r.action === 'let-go' ? '–' : esc(env.wageFmt(r.renewalWage))}</td>
-        <td style="color: ${r.raise > 0 ? '#d29922' : 'var(--text-dim)'};">${r.action === 'sell' || r.action === 'sell-now' || r.action === 'let-go' ? '–' : (r.raise > 0 ? '+' + esc(env.wageFmt(r.raise)) : 'same')}</td>
+        <td>${noMoney(r.action) ? '–' : esc(env.wageFmt(r.renewalWage))}</td>
+        <td style="color: ${r.raise > 0 ? '#d29922' : 'var(--text-dim)'};">${noMoney(r.action) ? '–' : (r.raise > 0 ? '+' + esc(env.wageFmt(r.raise)) : 'same')}</td>
         <td>${badge(ACTIONS[r.action] || ACTIONS.review)}</td><td>${reasonsHtml(r.reasons)}</td></tr>`).join('')}</tbody></table></div>`
       : empty('Nobody\'s contract runs out in the planning window (this season and next).');
-    return `${tiles(tile('Wage bill now', esc(env.wageShort(now.withRenewals)), 'per week')
-        + tile('Next season', esc(next ? env.wageShort(next.withRenewals) : '–'), next ? `${next.rollingOffCount} roll off, ${next.renewedCount} renewed` : '')
-        + tile('Decisions this summer', decisions, decisions ? 'contracts ending' : 'nobody expiring')
-        + tile('Unknown contract', plan.unknown.length, plan.unknown.length ? 'not in the projection' : '&nbsp;'))}
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 16px;">
-        <div class="profile-card"><h3>Projected weekly wage bill</h3>${bars}
-          <div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">The two figures after each bar are wages already signed + planned renewals (the players marked Renew / Renew (1 yr) below). Players marked Sell, Let go or Review are assumed to leave. No signings are included.</div></div>
-        <div class="profile-card"><h3>What rolls off</h3>${rolling ? `<table class="sub-table"><tbody>${rolling}</tbody></table>` : '<div style="color: var(--text-dim); font-size: 13px;">Nothing rolls off in the next few seasons.</div>'}</div>
-      </div>
-      <div class="profile-card"><h3>Expiring contracts</h3>${table}</div>
-      ${note('Renewal wages are estimates: the pay this squad\'s own wage curve gives that overall, never below his current wage. Only the contract end year is stored (no start date or length), so a deal listed as ending in 2028 runs through the 2027/28 season. Players on loan elsewhere are not counted.')}`;
+    return `<div class="profile-card" style="margin-top: 16px;"><h3>Contract decisions</h3>${table}
+      ${note('Renewal wages are estimates: the pay this squad\'s own wage curve gives that overall, never below his current wage. Only the contract end year is stored (no start date or length), so a deal listed as ending in 2028 runs through the 2027/28 season. Players on loan elsewhere are not counted.')}</div>`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -235,13 +239,16 @@
       if (!root.api || !root.api.getPlayerHistory) return progressHtml(liveEnv()); // no stored history to load: in-season changes only
       if (!cache || cache.saveId !== saveIdNow()) { load(); return empty('Loading season history…'); }
       return progressHtml(liveEnv());
-    }),
-    contracts: safe('Contract Plan', () => contractsHtml(liveEnv()))
+    })
   };
-  if (root.Insights) Object.keys(views).forEach(k => root.Insights.addView(k, views[k]));
+  if (root.Insights) {
+    Object.keys(views).forEach(k => root.Insights.addView(k, views[k]));
+    root.Insights.addWagesSection('cards', () => planCardHtml(liveEnv()));
+    root.Insights.addWagesSection('table', () => planTableHtml(liveEnv()));
+  }
 
   const api = {
-    adviceHtml, progressHtml, contractsHtml, computeAdvice, seasonEndYearNow,
+    adviceHtml, progressHtml, planCardHtml, planTableHtml, computePlan, computeAdvice, seasonEndYearNow,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }
   };
