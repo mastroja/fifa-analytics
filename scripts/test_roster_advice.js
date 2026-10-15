@@ -58,6 +58,8 @@ const base = () => [
   const r = verdictOf(R.advise(squad, opts()), 40);
   assert.strictEqual(r.verdict, 'monitor');
   assert(/renew or cash in/.test(r.reasons[0]));
+  assert.strictEqual(r.keyExpiring, true, 'flagged so the contract planner can treat him as a renewal');
+  assert.strictEqual(verdictOf(R.advise(squad, opts()), 2).keyExpiring, false);
 }
 
 // --- play-time sources ----------------------------------------------------------------------------------------

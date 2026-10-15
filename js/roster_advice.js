@@ -112,7 +112,7 @@
       const notPlaying = pt.share < T.lowPlayShare;
       const regular = pt.share >= T.rotationShare;
       const reasons = [];
-      let verdict = 'keep', weight = 0;
+      let verdict = 'keep', weight = 0, keyExpiring = false;
 
       const playText = pt.source === 'minutes' ? `${Math.round(pt.share * 100)}% of available minutes`
         : pt.source === 'apps' ? `${Math.round(pt.share * 100)}% of games played`
@@ -149,7 +149,7 @@
         verdict = 'loan'; weight = 0.45;
         reasons.push(`Age ${age}, still room to grow (POT ${pot}) but only ${playText}${suffix}`);
       } else if (expiring && regular) {
-        verdict = 'monitor'; weight = 0.4;
+        verdict = 'monitor'; weight = 0.4; keyExpiring = true; // js/contract_planner.js reads this as "renew", not "undecided"
         reasons.push(`Key player (${playText}${suffix}) with his contract expiring: renew or cash in`);
       } else if (notPlaying) {
         verdict = 'monitor'; weight = 0.3;
@@ -163,7 +163,7 @@
       if (blocked) reasons.push('Transfer ban is active: no incoming or outgoing deals until it ends');
       if (num(p.injury) > 0 && (verdict === 'sell' || verdict === 'loan')) reasons.push('Currently injured, so his value or appeal may be lower');
 
-      return { player: p, verdict, weight, blocked, reasons, age, playTime: pt, wageRatio, yearsLeft, rank, group };
+      return { player: p, verdict, weight, blocked, keyExpiring, reasons, age, playTime: pt, wageRatio, yearsLeft, rank, group };
     });
 
     return rows.sort((a, b) => b.weight - a.weight || (num(b.player.overall) || 0) - (num(a.player.overall) || 0));
