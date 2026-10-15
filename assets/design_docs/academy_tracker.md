@@ -1,11 +1,21 @@
-# Academy tracker + regen watchlist
+# Academy page
 
-Squad tab toggle: List / Depth / **Academy**. Code: `js/academy_tracker.js` (UI), `getAcademyTracker` / `getAcademyWatchlist` / `toggleAcademyWatch` / `setAcademyWatchNote` in `main.js`, table `academy_watchlist` in `schema.sql`.
+Squad tab toggle: List / Depth / **Academy** / All-Time. Code: `js/academy_tracker.js` (logic and page), `getAcademyTracker` in `main.js`, markup in `index.html` (`#squad-academy-view`, static so the shared filter control survives re-renders, the same pattern as the All-Time view). Tests: `scripts/test_academy_tracker.js`.
 
-- Tracker: every prospect ever in `youth_academy_snapshot` for the save, one history point per season. Status: In academy (in the current roster), Promoted (has a senior row in any season), Left (neither).
-- Row: age, months in academy, OVR with change since first seen, potential (same display rules as the Home academy list), readiness = OVR vs the weakest senior player at the same natural position. Click a row for season history.
-- Watchlist: star a prospect. Their OVR and potential range at that moment are frozen, so alerts can say: OVR +/-3 since added, potential range narrowed, ceiling +/-3, promoted, left the academy. Optional note per player.
-- Range-based history and alerts only show while `SHOW_TRUE_POTENTIAL` is on, so they never leak a range the app is hiding.
-- Limits: history is per season (the importer upserts one row per player and season), and only the user's own academy is visible; there is no data on other clubs' regens.
+## The page
+- Laid out like the Squad list: status tabs (In academy / Promoted / Left / All, each with a count), a search box, the shared **filter panel** (`js/player_filters.js`: position, promotion verdict, age, overall, potential as shown, months in academy) with presets, then a sortable table. Click a header to sort (a second click reverses it); a missing value always sorts last. Default sort: ready-for-promotion first, then by potential.
+- Click a prospect's name to expand their season history (one row per season in `youth_academy_snapshot`); click anywhere else on the row to open the profile. The Status column only shows on the All tab.
+- Status comes from `getAcademyTracker`: In academy (in the current roster), Promoted (has a senior row in any season), Left (neither). History is one point per season because the importer upserts one row per player and season. Only your own academy is visible; there is no data on other clubs' regens.
+- **Potential is shown, sorted and filtered only as the app displays it** (`formatAcademyPotentialDisplay`, which can be a range or hidden in Youth Mode). A prospect with no displayed potential has no sortable number, so the page can never reveal a ceiling the rest of the app is hiding.
 
-Squad readiness column: a verdict badge plus the one comparison behind it. Ready = OVR level with or above your weakest senior player at the same natural position; Close = within 3 below; Developing = further below; Open spot = no senior player at that position. A legend sits above the tables.
+## Promotion readiness ("Ready for promotion")
+Each prospect still in the academy is compared with the **weakest senior player at the same natural position** (loaned-out players are not counted):
+- **Ready for promotion**: OVR level with or above that player.
+- **Close**: up to 3 below. **Developing**: further below.
+- **Position open**: no senior player at that position at all.
+The detail line names the player compared with and where the prospect would rank among that position's senior players ("would be 2nd of 3 GKs"). A green chip above the table counts the ready prospects and filters to them. The ready prospects also show up in three other places: the Home **Roster Moves** card ("Ready for promotion", with the same reason; `AcademyTracker.liveReady()`), a small **Ready** badge in the Home Youth Pipeline academy list, and a **Promotion** card on each academy prospect's profile (`AcademyTracker.readinessFor`). All of them follow the same Pro gate as the Academy page.
+
+This is a rule of thumb about current ability, not about fit, wage or Youth Mode transfer rules.
+
+## History
+The regen watchlist (starring a prospect, frozen baselines, alerts and notes) was removed. Its table, `academy_watchlist`, is kept in `schema.sql` so existing databases lose no data and the cleanup deletes in `main.js` keep working; nothing writes to it any more. (The unrelated "watchlist" that tracks *former* players after they leave, `readWatchlistStatus` in `main.js`, is a different feature and is untouched.)

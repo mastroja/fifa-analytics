@@ -155,7 +155,9 @@ async function initDatabase() {
     ['season_start_overall', 'INTEGER'],
     ['season_start_attributes_json', 'TEXT'],
     ['jersey_number', 'INTEGER'],
-    ['injury', 'INTEGER DEFAULT 0']
+    ['injury', 'INTEGER DEFAULT 0'],
+    // minutes played this season; NULL (deliberately no default) = this export had no minutes, which is not the same as 0
+    ['minutes_played', 'INTEGER']
   ];
   seasonStatsMigrations.forEach(([column, type]) => {
     try {
@@ -2087,42 +2089,6 @@ function getAcademyTracker(saveId = activeSaveId) {
     ...t,
     status: inAcademy.has(t.player_id) ? 'academy' : promoted.has(t.player_id) ? 'promoted' : 'left'
   }));
-}
-
-function getAcademyWatchlist(saveId = activeSaveId) {
-  if (!db || !saveId) return [];
-  const res = db.exec(`SELECT player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at FROM academy_watchlist WHERE save_id = ${Number(saveId)} ORDER BY added_at DESC;`);
-  if (res.length === 0) return [];
-  return res[0].values.map(([player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at]) =>
-    ({ player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at }));
-}
-
-// Adds the prospect (freezing their current numbers as the baseline) or removes them if already watched.
-function toggleAcademyWatch(playerId, saveId = activeSaveId) {
-  if (!db || !saveId || !playerId) return { success: false };
-  const existing = db.exec(`SELECT 1 FROM academy_watchlist WHERE save_id = ${Number(saveId)} AND player_id = ${Number(playerId)};`);
-  if (existing.length > 0) {
-    db.run('DELETE FROM academy_watchlist WHERE save_id = ? AND player_id = ?;', [saveId, playerId]);
-    saveDatabaseToDisk();
-    return { success: true, watched: false };
-  }
-  const latest = db.exec(`
-    SELECT y.season_id, y.overall, y.potential_low, y.potential_high
-    FROM youth_academy_snapshot y JOIN seasons se ON se.id = y.season_id
-    WHERE se.save_id = ${Number(saveId)} AND y.player_id = ${Number(playerId)}
-    ORDER BY se.id DESC LIMIT 1;`);
-  const [seasonId, ovr, low, high] = latest.length > 0 ? latest[0].values[0] : [null, null, null, null];
-  db.run('INSERT INTO academy_watchlist (save_id, player_id, base_overall, base_pot_low, base_pot_high, base_season_id) VALUES (?, ?, ?, ?, ?, ?);',
-    [saveId, playerId, ovr, low, high, seasonId]);
-  saveDatabaseToDisk();
-  return { success: true, watched: true };
-}
-
-function setAcademyWatchNote(playerId, note, saveId = activeSaveId) {
-  if (!db || !saveId || !playerId) return { success: false };
-  db.run('UPDATE academy_watchlist SET note = ? WHERE save_id = ? AND player_id = ?;', [String(note || '').slice(0, 500) || null, saveId, playerId]);
-  saveDatabaseToDisk();
-  return { success: true };
 }
 
 // Trophies actually won during this save — a competition result of
@@ -4611,10 +4577,10 @@ function importFifaData(jsonPayload) {
          club_id, club_name, contract_expiry, contract_date, duration_months, player_role_, last_status_change_date,
          on_loan, loan_team_from, loan_club_name, loan_date_end, is_loan_to_buy, wage,
          jersey_number, injury,
-         goals, assists, appearances, clean_sheets, saves, yellow_cards, red_cards, avg_rating,
+         goals, assists, appearances, minutes_played, clean_sheets, saves, yellow_cards, red_cards, avg_rating,
          attributes_json, competitions_json, traits_json, play_styles_json,
          overall_delta, attribute_deltas_json, season_start_overall, season_start_attributes_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       -- season_start_overall/season_start_attributes_json are deliberately
       -- NOT in this SET list — see the column comment in schema.sql. The
       -- values bound for them below only ever take effect on a fresh
@@ -4644,6 +4610,8 @@ function importFifaData(jsonPayload) {
         goals=excluded.goals,
         assists=excluded.assists,
         appearances=excluded.appearances,
+        -- a sync from an exporter that has no minutes (NULL) must not erase minutes an earlier sync stored
+        minutes_played=COALESCE(excluded.minutes_played, player_season_stats.minutes_played),
         clean_sheets=excluded.clean_sheets,
         saves=excluded.saves,
         yellow_cards=excluded.yellow_cards,
@@ -4793,6 +4761,7 @@ function importFifaData(jsonPayload) {
         p.goals || 0,
         p.assists || 0,
         p.appearances || 0,
+        Number.isFinite(Number(p.minutes)) && p.minutes !== null ? Math.max(0, Math.round(Number(p.minutes))) : null, // null = not exported
         p.clean_sheets || 0,
         p.saves || 0,
         p.yellow_cards || 0,
@@ -5055,7 +5024,7 @@ function getSquadFromDB(seasonId = currentSeasonId) {
            s.goals, s.assists, s.appearances, s.clean_sheets, s.saves,
            s.yellow_cards, s.red_cards, s.avg_rating, s.attributes_json, s.competitions_json,
            s.traits_json, s.play_styles_json, s.updated_at, s.overall_delta, s.attribute_deltas_json,
-           p.youth_reveal_tier, p.skintone_code
+           p.youth_reveal_tier, p.skintone_code, s.minutes_played
     FROM players p
     JOIN player_season_stats s ON s.player_id = p.player_id
     WHERE s.season_id = ${seasonId}
@@ -5111,6 +5080,7 @@ function getSquadFromDB(seasonId = currentSeasonId) {
     overall_delta: row[42] || 0,
     attribute_deltas: JSON.parse(row[43] || '{}'),
     youth_reveal_tier: row[44],
+    minutes: row[46], // null until an export carries minutes; js/roster_advice.js then falls back to appearances
     headshot_path: resolveHeadshotPath(row[0])
   }));
 }
@@ -6205,9 +6175,6 @@ ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
 ipcMain.handle('get-all-time-xi', (_event, saveId) => getAllTimeXI(saveId));
 ipcMain.handle('get-academy-tracker', (_event, saveId) => getAcademyTracker(saveId));
-ipcMain.handle('get-academy-watchlist', (_event, saveId) => getAcademyWatchlist(saveId));
-ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => license.isPro('academy-tracker') ? toggleAcademyWatch(playerId, saveId) : { success: false, error: 'Pro feature' });
-ipcMain.handle('set-academy-watch-note', (_event, playerId, note, saveId) => license.isPro('academy-tracker') ? setAcademyWatchNote(playerId, note, saveId) : { success: false, error: 'Pro feature' });
 ipcMain.handle('license-info', () => license.info());
 ipcMain.handle('license-activate', (_event, token) => license.activate(token));
 ipcMain.handle('license-clear', () => license.clear());

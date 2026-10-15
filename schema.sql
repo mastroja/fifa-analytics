@@ -148,6 +148,9 @@ CREATE TABLE IF NOT EXISTS player_season_stats (
     goals INTEGER DEFAULT 0,
     assists INTEGER DEFAULT 0,
     appearances INTEGER DEFAULT 0,
+    -- minutes played this season. NULL (no default, on purpose) means the export carried no minutes; 0 means a real zero.
+    -- Never default this to 0: js/roster_advice.js would read every such player as having played none of the games.
+    minutes_played INTEGER,
     clean_sheets INTEGER DEFAULT 0,
     saves INTEGER DEFAULT 0,
     yellow_cards INTEGER DEFAULT 0,
@@ -931,6 +934,8 @@ CREATE TABLE IF NOT EXISTS challenge_transfer_bans (
     FOREIGN KEY(save_id) REFERENCES saves(id)
 );
 
+-- RETIRED: the regen watchlist was removed from the app and nothing writes to this table any more. It is kept (not
+-- dropped) so existing databases lose no data and the cleanup DELETEs in main.js keep working.
 -- Regen watchlist: academy prospects the user is following. base_* freeze the prospect's overall / potential range
 -- (and season) at the moment they were added, so the tracker can show "since added" movement and alerts.
 CREATE TABLE IF NOT EXISTS academy_watchlist (

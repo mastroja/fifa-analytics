@@ -458,14 +458,19 @@ do
                     local rating = rating_table:GetRecordFieldValue(rec, "rating")
                     if pid and result[pid] ~= nil and date and date >= season_start and mins and mins > 0 then
                         local t = tally[pid]
-                        if not t then t = { apps = 0, rating_sum = 0 }; tally[pid] = t end
+                        if not t then t = { apps = 0, rating_sum = 0, mins = 0 }; tally[pid] = t end
                         t.apps = t.apps + 1
+                        t.mins = t.mins + mins
                         t.rating_sum = t.rating_sum + (rating or 0)
                     end
                     rec = rating_table:GetNextValidRecord()
                 end
+                -- minutes played: every squad player gets a number once the table was readable (0 = on the books but has
+                -- not played), so the app can tell "played 0 minutes" from "this export has no minutes at all" (nil -> null)
+                for _, player in pairs(result) do player.minutes = 0 end
                 for pid, t in pairs(tally) do
                     local player = result[pid]
+                    player.minutes = t.mins
                     player.appearances = player.appearances + t.apps
                     table.insert(player.competitions, {
                         comp_name = "All competitions (from match ratings)",
@@ -508,13 +513,13 @@ do
         for i, p in ipairs(tbl) do
             local attr = p.attributes or {}
             json = json .. string.format(
-                '{"player_id":%d,"name":"%s","overall":%d,"potential":%d,"position_id":%d,"alt_positions":"%s","nationality":%d,"skintone_code":%d,"club_id":%d,"club_name":"%s","photo_id":%d,"dob":"%s","height":"%s","weight":"%s","preferred_foot":"%s","skill_moves":%d,"weak_foot":%d,"contract_expiry":"%s","playerjointeamdate":"%s","wage":%d,"duration_months":%d,"contract_date":"%s","player_role_":%d,"last_status_change_date":"%s","is_among_top_scorers":%s,"jersey_number":%d,"injury":%s,"league_goals_prev_three_matches":%d,"is_among_top_scorers_in_team":%s,"form":%d,"on_loan":%s,"loan_team_from":%d,"loan_club_name":"%s","loan_date_end":"%s","is_loan_to_buy":%s,"goals":%d,"assists":%d,"appearances":%d,"clean_sheets":%d,"saves":%d,"yellow_cards":%d,"red_cards":%d,"avg_rating":%.2f,"competitions":[',
+                '{"player_id":%d,"name":"%s","overall":%d,"potential":%d,"position_id":%d,"alt_positions":"%s","nationality":%d,"skintone_code":%d,"club_id":%d,"club_name":"%s","photo_id":%d,"dob":"%s","height":"%s","weight":"%s","preferred_foot":"%s","skill_moves":%d,"weak_foot":%d,"contract_expiry":"%s","playerjointeamdate":"%s","wage":%d,"duration_months":%d,"contract_date":"%s","player_role_":%d,"last_status_change_date":"%s","is_among_top_scorers":%s,"jersey_number":%d,"injury":%s,"league_goals_prev_three_matches":%d,"is_among_top_scorers_in_team":%s,"form":%d,"on_loan":%s,"loan_team_from":%d,"loan_club_name":"%s","loan_date_end":"%s","is_loan_to_buy":%s,"goals":%d,"assists":%d,"appearances":%d,"minutes":%s,"clean_sheets":%d,"saves":%d,"yellow_cards":%d,"red_cards":%d,"avg_rating":%.2f,"competitions":[',
                 p.player_id, p.name:gsub('"', '\\"'), p.overall, p.potential, p.position_id, p.alt_positions, p.nationality, p.skintone_code, p.club_id, p.club_name:gsub('"', '\\"'), p.photo_id,
                 p.dob, p.height, p.weight, p.preferred_foot, p.skill_moves, p.weak_foot, p.contract_expiry, p.playerjointeamdate,
                 p.wage, p.duration_months, p.contract_date, p.player_role_, p.last_status_change_date,
                 tostring(p.is_among_top_scorers), p.jersey_number, tostring(p.injury), p.league_goals_prev_three_matches, tostring(p.is_among_top_scorers_in_team), p.form,
                 tostring(p.on_loan), p.loan_team_from, p.loan_club_name:gsub('"', '\\"'), p.loan_date_end, tostring(p.is_loan_to_buy),
-                p.goals, p.assists, p.appearances, p.clean_sheets, p.saves, p.yellow_cards, p.red_cards, p.avg_rating
+                p.goals, p.assists, p.appearances, (p.minutes ~= nil) and string.format("%d", math.floor(p.minutes)) or "null", p.clean_sheets, p.saves, p.yellow_cards, p.red_cards, p.avg_rating
             )
 
             for j, c in ipairs(p.competitions) do

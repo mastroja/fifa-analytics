@@ -157,6 +157,7 @@
       matches: row => matchesAll(fields, state, row),
       activeCount: () => countActive(fields, state),
       reset: () => { state = {}; changed(); },
+      set: next => { state = { ...(next || {}) }; open = true; changed(); }, // apply a ready-made combination from code, as a preset click does
       refresh: render,       // re-render the control (e.g. after the rows behind a 'select' changed)
       setSummary
     };

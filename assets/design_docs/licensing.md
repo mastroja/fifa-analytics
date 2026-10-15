@@ -20,5 +20,5 @@ Server setup: register a client at Patreon (redirect URI = `BASE_URL/callback`, 
 2. Paste the public key into `PUBLIC_KEY_PEM`; set `SERVER_URL` and `MEMBERSHIP_URL`.
 3. Hand out manual keys with `node scripts/license/issue-key.js --sub someone --max-build 2027-12-31`.
 
-## What is gated (checked in the UI and, for the editor and watchlist, in the main-process handlers)
-youth-mode (Youth Mode enable, Challenge dashboard) · academy-tracker (Academy view, watchlist writes) · depth-extras (Reserves, custom lineups, All-Time XI, what-if) · player-editor (the Edit player button and `queue-player-edit`). If the license lapses while a Pro lineup or the Academy view is open, the app falls back to Starting XI / List.
+## What is gated (checked in the UI and, for the editor, in the main-process handlers)
+youth-mode (Youth Mode enable, Challenge dashboard) · academy-tracker (Academy view) · depth-extras (Reserves, custom lineups, All-Time XI, what-if) · player-editor (the Edit player button and `queue-player-edit`). If the license lapses while a Pro lineup or the Academy view is open, the app falls back to Starting XI / List.
