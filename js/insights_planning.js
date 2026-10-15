@@ -48,6 +48,9 @@
     <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">${sub || '&nbsp;'}</div></div>`;
   const tiles = html => `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;">${html}</div>`;
   const nameLink = p => `<span class="clickable-name" style="color: #58a6ff;" onclick="openPlayerProfile('${esc(p.player_id)}')">${esc(p.name)}</span>`;
+  // Name with a small "position · age · rating" line under it: keeps the wide tables to the columns that need room.
+  const subLine = parts => `<div style="font-size: 11px; color: var(--text-dim); margin-top: 2px; white-space: nowrap;">${parts.filter(x => x != null && x !== '').map(esc).join(' · ')}</div>`;
+  const ageText = a => (a == null || !Number.isFinite(a) ? null : Math.round(a));
   const note = html => `<div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">${html}</div>`;
   const reasonsHtml = r => `<ul style="margin: 0; padding-left: 16px; font-size: 12px; color: var(--text-dim);">${r.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
 
@@ -84,16 +87,16 @@
     const banner = env.transferBan ? `<div class="profile-card" style="margin-bottom: 16px; border-left: 4px solid #d29922;">A transfer ban is active: sells and loans below are marked <strong>blocked</strong> until it ends.</div>` : '';
     const usesMinutes = rows.some(r => r.playTime.source === 'minutes');
     const usesDepth = rows.some(r => r.playTime.source === 'depth');
-    const table = shown.length ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR / POT</th><th>Play time</th><th>Wage</th><th>Contract</th><th>Verdict</th><th>Why</th></tr></thead><tbody>
+    const table = shown.length ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Play time</th><th>Deal</th><th>Verdict</th><th>Why</th></tr></thead><tbody>
       ${shown.map(r => { const p = r.player; return `<tr>
-        <td>${nameLink(p)}</td><td>${esc(env.posLabel(p))}</td><td>${r.age == null ? '–' : esc(r.age)}</td><td>${esc(p.overall || '?')} / ${esc(p.potential || '?')}</td>
-        <td>${playTimeText(r.playTime)}</td><td>${Number(p.wage) > 0 ? esc(env.wageFmt(p.wage)) : '–'}</td><td>${esc(p.contract_expiry || '–')}</td>
-        <td>${badge(VERDICTS[r.verdict])}${r.blocked ? '<div style="font-size: 11px; color: #d29922;">blocked</div>' : ''}</td><td>${reasonsHtml(r.reasons)}</td></tr>`; }).join('')}
+        <td>${nameLink(p)}${subLine([env.posLabel(p), ageText(r.age), `${p.overall || '?'}/${p.potential || '?'}`])}</td>
+        <td>${playTimeText(r.playTime)}</td><td>${Number(p.wage) > 0 ? esc(env.wageFmt(p.wage)) : '–'}${subLine([p.contract_expiry ? `to ${p.contract_expiry}` : null])}</td>
+        <td>${r.keyExpiring ? badge(VERDICTS.monitor, 'Renew?') : badge(VERDICTS[r.verdict])}${r.blocked ? '<div style="font-size: 11px; color: #d29922;">blocked</div>' : ''}</td><td>${reasonsHtml(r.reasons)}</td></tr>`; }).join('')}
       </tbody></table></div>` : empty(`Nobody is currently a "${esc(VERDICTS[filter].label)}".`);
     return `${banner}${tiles(t('sell', 'worth moving on') + t('loan', 'need minutes') + t('develop', 'growing, playing') + t('keep', 'part of the plan') + t('monitor', 'watch'))}
       <div class="profile-card"><h3>Sell / keep / loan${filter === 'all' ? '' : ` · ${esc(VERDICTS[filter].label)} <a href="#" style="font-size: 12px;" onclick="InsightsPlanning.setAdviceFilter('all'); return false;">show all</a>`}</h3>${table}</div>
       ${note(`Advice is a rule of thumb, not a fact: it weighs age, OVR vs POT, play time, wage vs the squad median and contract length. Play time uses
-        ${usesMinutes ? 'minutes played' : 'appearances'} when the game provides them${usesDepth ? ' and falls back to depth rank (marked "estimated") for players with no games yet' : ''}. Click a tile to filter. Loaned-out players are not included.`)}`;
+        ${usesMinutes ? 'minutes played' : 'appearances'} when the game provides them${usesDepth ? ' and falls back to depth rank (marked "estimated") for players with no games yet' : ''}. Under each name: position · age · OVR/POT. Click a tile to filter. Loaned-out players are not included.`)}`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -114,10 +117,10 @@
       : `<div style="color: var(--text-dim); font-size: 13px;">${none}</div>`}</div>`;
     const all = b.rows.slice().sort((x, y) => (y.vsExpected == null ? -99 : y.vsExpected) - (x.vsExpected == null ? -99 : x.vsExpected));
     const countOf = s => b.rows.filter(r => r.status === s).length;
-    const table = `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR / POT</th><th>Last change</th><th>Total</th><th>Age norm</th><th>vs norm</th><th>Status</th><th>Outlook</th></tr></thead><tbody>
-      ${all.map(r => `<tr><td>${nameLink(r.player)}</td><td>${esc(env.posLabel(r.player))}</td><td>${r.age == null ? '–' : esc(Math.round(r.age))}</td><td>${esc(r.overall)} / ${esc(r.potential || '?')}</td>
-        <td>${r.change == null ? '–' : sign(r.change)}${r.source === 'in-season' ? ' <span style="color: var(--text-dim); font-size: 11px;">this season</span>' : ''}</td>
-        <td>${r.total == null ? '–' : sign(r.total)}</td><td>${r.expected == null ? '–' : sign(r.expected)}</td><td>${r.vsExpected == null ? '–' : sign(Math.round(r.vsExpected * 10) / 10)}</td>
+    const table = `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Change</th><th>vs age norm</th><th>Status</th><th>Outlook</th></tr></thead><tbody>
+      ${all.map(r => `<tr><td>${nameLink(r.player)}${subLine([env.posLabel(r.player), ageText(r.age), `${r.overall}/${r.potential || '?'}`])}</td>
+        <td>${r.change == null ? '–' : sign(r.change)}${subLine([r.source === 'in-season' ? 'this season' : 'last season', r.total != null && r.series.length >= 3 ? `${sign(r.total)} in total` : null])}</td>
+        <td>${r.vsExpected == null ? '–' : sign(Math.round(r.vsExpected * 10) / 10)}${subLine([r.expected == null ? null : `norm ${sign(r.expected)}`])}</td>
         <td>${badge(STATUSES[r.status])}</td><td>${reasonsHtml(r.reasons.slice(0, 2))}</td></tr>`).join('')}</tbody></table></div>`;
     return `${tiles(['rising', 'stalling', 'declining', 'maxed'].map(s => tile(STATUSES[s].label, countOf(s), s === 'rising' ? 'ahead of the age norm' : s === 'stalling' ? 'young, not growing' : s === 'declining' ? 'falling faster than age' : 'young, at the ceiling')).join(''))}
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
@@ -126,7 +129,7 @@
         ${list('Biggest fallers', b.fallers, 'Nobody is falling faster than their age explains.')}
       </div>
       <div class="profile-card"><h3>Whole squad</h3>${table}</div>
-      ${note('"Age norm" is a rule-of-thumb yearly change for that age (about +4 at 18, 0 at 26-27, -2.5 from 33), not EA\'s real curve. A player is rising or declining relative to it, not in absolute terms. With one season of history the figure is the change so far this season, which a first sync reports as 0, so those players show as unknown.')}`;
+      ${note('"Age norm" is a rule-of-thumb yearly change for that age (about +4 at 18, 0 at 26-27, -2.5 from 33), not EA\'s real curve. A player is rising or declining relative to it, not in absolute terms. With one season of history the figure is the change so far this season, which a first sync reports as 0, so those players show as unknown. Under each name: position · age · OVR/POT.')}`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -162,15 +165,14 @@
   function planTableHtml(env) {
     const plan = computePlan(env);
     if (!plan) return '';
-    const table = plan.renewals.length ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Ends</th><th>Wage now</th><th>Est. renewal</th><th>Change</th><th>Action</th><th>Why</th></tr></thead><tbody>
-      ${plan.renewals.map(r => `<tr><td>${nameLink(r.player)}</td><td>${esc(env.posLabel(r.player))}</td><td>${r.age == null ? '–' : esc(r.age)}</td><td>${esc(r.player.overall || '?')}</td>
-        <td>${esc(r.expiry)}${r.yearsLeft <= 0 ? ' <span style="color: #f85149; font-size: 11px;">this summer</span>' : ''}</td><td>${esc(env.wageFmt(r.wage))}</td>
-        <td>${noMoney(r.action) ? '–' : esc(env.wageFmt(r.renewalWage))}</td>
-        <td style="color: ${r.raise > 0 ? '#d29922' : 'var(--text-dim)'};">${noMoney(r.action) ? '–' : (r.raise > 0 ? '+' + esc(env.wageFmt(r.raise)) : 'same')}</td>
+    const table = plan.renewals.length ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Ends</th><th>Wage</th><th>Action</th><th>Why</th></tr></thead><tbody>
+      ${plan.renewals.map(r => `<tr><td>${nameLink(r.player)}${subLine([env.posLabel(r.player), ageText(r.age), `OVR ${r.player.overall || '?'}`])}</td>
+        <td>${esc(r.expiry)}${r.yearsLeft <= 0 ? '<div style="font-size: 11px; color: #f85149; white-space: nowrap;">this summer</div>' : ''}</td>
+        <td>${esc(env.wageFmt(r.wage))}${noMoney(r.action) ? subLine(['no renewal']) : `<div style="font-size: 11px; white-space: nowrap; color: ${r.raise > 0 ? '#d29922' : 'var(--text-dim)'};">${r.raise > 0 ? `→ ${esc(env.wageFmt(r.renewalWage))} (+${esc(env.wageFmt(r.raise))})` : 'renews at the same wage'}</div>`}</td>
         <td>${badge(ACTIONS[r.action] || ACTIONS.review)}</td><td>${reasonsHtml(r.reasons)}</td></tr>`).join('')}</tbody></table></div>`
       : empty('Nobody\'s contract runs out in the planning window (this season and next).');
     return `<div class="profile-card" style="margin-top: 16px;"><h3>Contract decisions</h3>${table}
-      ${note('Renewal wages are estimates: the pay this squad\'s own wage curve gives that overall, never below his current wage. Only the contract end year is stored (no start date or length), so a deal listed as ending in 2028 runs through the 2027/28 season. Players on loan elsewhere are not counted.')}</div>`;
+      ${note('Renewal wages are estimates: the pay this squad\'s own wage curve gives that overall, never below his current wage. Only the contract end year is stored (no start date or length), so a deal listed as ending in 2028 runs through the 2027/28 season. Players on loan elsewhere are not counted. Under each name: position · age · OVR.')}</div>`;
   }
 
   // ---------------------------------------------------------------------------------------------------------

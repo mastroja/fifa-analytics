@@ -13,6 +13,7 @@ require('../js/contract_planner.js');
 const V = require('../js/insights_planning.js');
 
 assert(/\.planning-wrap\s*\{\s*overflow-x:\s*auto/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'index.html styles the scrolling table wrapper');
+assert(/\.planning-table td\s*\{[^}]*white-space:\s*normal/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'cells must wrap: the app inherits nowrap, which made the Why column 500px wide');
 assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'progress'], 'registers the two views');
 assert.deepStrictEqual(Object.keys(wageSections).sort(), ['cards', 'table'], 'fills both Wages & Contracts slots');
 const ids = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
@@ -48,6 +49,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(h.includes('Sell / keep / loan') && h.includes('Old Timer') && h.includes('Star Mid'));
   assert(h.includes('planning-wrap') && h.includes('planning-table'), 'wide table sits in a scrolling wrapper');
   assert(/>Sell</.test(h) && />Loan</.test(h) && />Keep</.test(h), 'verdict badges are drawn');
+  assert(/>Renew\?</.test(h), 'an expiring key player reads "Renew?" on the row');
   noRawTags(h);
   assert(h.includes('% <span') && h.includes('of minutes'), 'minutes-based play time is labelled');
   assert(h.includes('uses') || h.includes('Play time uses'), 'footnote present');
