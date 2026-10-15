@@ -1,8 +1,18 @@
 # FIFA Analytics v27 — first release for EA SPORTS FC 27
 
-The companion app for Career Mode, rebuilt for FC 27. It reads your save through Live Editor and turns it into a Home dashboard, squad tools, a depth chart, an academy tracker and an in-app player editor. Everything stays on your PC.
+The companion app for Career Mode, rebuilt for FC 27. It reads your save through Live Editor and turns it into a Home dashboard, squad tools, a depth chart, an academy tracker and an in-app player editor. Your save data stays on your PC.
 
 **Works with:** EA SPORTS FC 27 build `1.0.141.12554` and FC 27 Live Editor `v27.1.4`. Live Editor reads game memory, so a different game build can break it. Pin your game version first (see the README).
+
+## New in 27.1.0: planning tools
+- **Roster Moves** (Insights): a sell / keep / loan call for every player with the reasons behind it (age, overall vs potential, play time, wage against your squad, contract length). Click a tile to filter. Respects a Youth Mode transfer ban.
+- **Contract planning** (Insights > Wages & Contracts): the weekly wage bill projected season by season, an estimated renewal wage for each expiring contract, and one recommended action per player (renew, short extension, let go, sell now).
+- **Progression** (Insights): a chart of who is ahead of or behind what is typical for their age, with a **Season** picker to look at earlier years. Click a row for the reasoning.
+- **Academy:** now laid out like the Squad list (sortable columns, the shared filter panel, search), with a **Ready for promotion** verdict for each prospect compared with your weakest senior player at that position. The regen watchlist was removed.
+- **Home and profiles:** a Roster Moves card next to Squad Gaps, contract actions on the Contracts card, a Ready badge in the Youth Pipeline list, and Planning / Promotion cards on player profiles.
+- **Minutes played** is carried from the game export (when the match-rating table is readable) and used as the best play-time signal; otherwise appearances are used.
+- **No automatic updates for now.** The app no longer checks for updates; download new installers by hand. Your save data is never uploaded; the app only loads club badges (TheSportsDB, which receives the club name), country flags (flagcdn.com) and fonts (Google Fonts) from the internet.
+- All of the above are rules of thumb built from your own squad's numbers, not predictions.
 
 ## Read this first
 - **This release is for FC 27 only.** If you are still playing FC 26, stay on your current version; this update is not for you.
@@ -61,7 +71,8 @@ What does work: squad, attributes, PlayStyles, loans, wage and contract end, inj
 
 ## Known issues
 - The installer is unsigned (SmartScreen warning).
-- The Live Editor download link in the README still points to an FC 26 post.
+- No automatic updates: download new versions by hand.
+- Several stats are missing until Live Editor exposes them for FC 27 (see the limitations above).
 - No FC 26 support in this version.
 
 ## Credits

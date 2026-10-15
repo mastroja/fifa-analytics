@@ -1,8 +1,9 @@
 # Releasing the app
 
-The app is **FIFA Analytics** (package `fifa-analytics`), published to GitHub releases of `mastroja/fifa-companion-app`. Installed copies update themselves from the latest published release, so shipping 27.x there moves everyone, including people still on the FC 26 (1.x) versions, onto the FC 27 build. That is the intended plan ("roll over FC 26"): the FC 26 line stays available on the `fc26-stable` branch and the old v1.x releases, but it gets no further updates.
+The app is **FIFA Analytics** (package `fifa-analytics`), published to GitHub releases of `mastroja/fifa-companion-app`. Auto-update is currently **switched off** (`AUTO_UPDATE_ENABLED = false` in `main.js`): users download each new installer by hand (Patreon), and installing over the old one keeps their data. The rest of this document describes the GitHub-release path for when it is turned back on. Installed copies would update themselves from the latest published release, so shipping 27.x there moves everyone, including people still on the FC 26 (1.x) versions, onto the FC 27 build. That is the intended plan ("roll over FC 26"): the FC 26 line stays available on the `fc26-stable` branch and the old v1.x releases, but it gets no further updates.
 
-## Every release
+## Every release (manual downloads while auto-update is off)
+0. Build with `npm run dist` and upload the installer from `dist/` to the download page. Only the steps below that mention `GH_TOKEN` / `npm run release` apply to the GitHub path.
 1. `npm test` and `npm run check`.
 2. Version: `npm run bump -- minor` (large change) or `patch`; update `BUILD_DATE` in `js/license_config.js`.
 3. Set `GH_TOKEN` (a token with `repo` access) and run `npm run release`. electron-builder uploads the NSIS installer and `latest.yml` as a **draft** release: add notes on GitHub and click **Publish**. The updater only sees published, non-pre-release releases.

@@ -10,7 +10,7 @@ module.exports = {
   PUBLIC_KEY_PEM: '',
   SERVER_URL: '',        // e.g. https://license.example.com  — no trailing slash
   MEMBERSHIP_URL: '',    // e.g. https://www.patreon.com/yourname
-  BUILD_DATE: '2026-10-14',
+  BUILD_DATE: '2026-10-08',
 
   // Everything not listed here is free. Add a feature here to make it Pro; remove it to make it free again.
   PRO_FEATURES: {
