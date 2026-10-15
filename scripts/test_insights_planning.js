@@ -15,10 +15,11 @@ const V = require('../js/insights_planning.js');
 
 assert(/\.planning-wrap\s*\{\s*overflow-x:\s*auto/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'index.html styles the scrolling table wrapper');
 assert(/\.planning-table td\s*\{[^}]*white-space:\s*normal/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'cells must wrap: the app inherits nowrap, which made the Why column 500px wide');
-assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'growth', 'progress'], 'registers the three views');
+assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'progress'], 'registers the two views');
 assert.deepStrictEqual(Object.keys(wageSections).sort(), ['cards', 'table'], 'fills both Wages & Contracts slots');
 const ids = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
-['advice', 'progress', 'growth'].forEach(k => assert(ids.includes(`id="insights-view-${k}"`) && ids.includes(`Insights.setView('${k}')`), `index.html has the ${k} button`));
+['advice', 'progress'].forEach(k => assert(ids.includes(`id="insights-view-${k}"`) && ids.includes(`Insights.setView('${k}')`), `index.html has the ${k} button`));
+assert(!ids.includes('insights-view-growth') && !ids.includes('Growth Graph'), 'there is no Growth Graph tab');
 assert(!ids.includes('insights-view-contracts') && !ids.includes('Contract Plan</button>'), 'there is no separate Contract Plan tab: wages and contracts are one view');
 assert.strictEqual((ids.match(/id="insights-view-wages"/g) || []).length, 1);
 const tag = f => `<script src="js/${f}.js"></script>`;
@@ -106,14 +107,14 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(!/<svg/.test(h), 'no trend lines');
   assert(!/Biggest risers|Whole squad|Outlook/.test(h), 'the old duplicate lists and the Outlook column are gone');
   assert(/home-toggle-btn active"[^>]*>Chart/.test(V.progressHtml(env({ ...base, progressMode: undefined }))) && /home-toggle-btn active"[^>]*>List/.test(h), 'the chart is the default view; the list is the alternative');
-  assert(!/OVR since last season/.test(h), 'the reasoning stays hidden until a row is opened');
+  assert(!/OVR so far this season[^(<]*\(typical for/.test(h), 'the reasoning stays hidden until a row is opened');
   assert(/InsightsPlanning\.toggleProgress\('1'\)/.test(h), 'each row has an expand control');
   assert(/setProgressFilter\('rising'\)/.test(h) && /setProgressFilter\('declining'\)/.test(h), 'the tiles are filters');
   assert(h.length < 14000, 'the default view stays small');
 
   // opening a row shows the reasons for that player only
   const opened = V.progressHtml(env({ ...base, progressOpen: new Set(['1']) }));
-  assert(/OVR since last season/.test(opened) && /class="detail-row open"/.test(opened) && /player-row expanded/.test(opened), 'reasons appear for the opened row');
+  assert(/OVR so far this season[^(<]*\(typical for/.test(opened) && /class="detail-row open"/.test(opened) && /player-row expanded/.test(opened), 'reasons appear for the opened row');
   assert((opened.match(/class="detail-row open"/g) || []).length === 1, 'and only for it');
 
   // everyone / one status
@@ -168,11 +169,11 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(!/Needs attention/.test(c) && /home-toggle-btn active"[^>]*>Chart/.test(c), 'the attention toggle belongs to the list view');
   assert(/border-left: 3px solid #3fb950/.test(c) && /border-left: 3px solid #f85149/.test(c), 'the status tiles are tinted so they double as the colour key');
   assert(/behind for their age/.test(c) && /ahead for their age/.test(c) && /as expected/.test(c), 'the axis says what left and right mean');
-  assert(!/OVR since last season/.test(c) && !/<svg/.test(c), 'reasoning and trend line stay hidden until a row is opened');
+  assert(!/OVR so far this season[^(<]*\(typical for/.test(c) && !/<svg/.test(c), 'reasoning and trend line stay hidden until a row is opened');
   assert(/!?[^"]*toggleProgress\('1'\)/.test(c), 'rows expand on click');
   assert(/event\.stopPropagation\(\); openPlayerProfile\('1'\)/.test(c), 'the name opens the profile without toggling the row');
   assert(!c.includes('Fading <i>') && /Fading &lt;i&gt;Star&lt;\/i&gt;/.test(c), 'names escaped');
-  assert(/title="\+7 OVR last season, typical \+4\./.test(c), 'hovering a row gives the raw numbers');
+  assert(/title="\+7 OVR so far this season, typical \+4\./.test(c), 'hovering a row gives the raw numbers');
 
   // one extreme outlier must not flatten everyone else: the scale is capped at 8 and the long bar stops at the edge
   const withOutlier = V.progressHtml(env({ ...base, histories: new Map([...hs, [1, [row('2025/26', 40, 84), row('2026/27', 70, 85)]]]) }));
@@ -186,50 +187,46 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(/Nobody is "At potential"/.test(V.progressHtml(env({ ...base, progressFilter: 'maxed' }))), 'an empty group says so');
   assert(V.progressHtml(env({ ...base, progressFilter: 'attention' })).includes('Steady') && V.progressHtml(env({ ...base, progressFilter: 'all' })).includes('Steady'), 'Needs attention / Everyone mean the whole squad here');
   const open1 = V.progressHtml(env({ ...base, progressOpen: new Set(['1']) }));
-  assert(/64 → 71 OVR/.test(open1) && />↑</.test(open1) && /OVR since last season/.test(open1), 'opening a row shows the arrow, the seasons it went through and the reasoning');
-  assert((open1.match(/OVR since last season/g) || []).length === 1, 'for that player only');
+  assert(/64 → 71 OVR/.test(open1) && />↑</.test(open1) && /OVR so far this season[^(<]*\(typical for/.test(open1), 'opening a row shows the arrow, the seasons it went through and the reasoning');
+  assert((open1.match(/OVR so far this season[^(<]*\(typical for/g) || []).length === 1, 'for that player only');
   assert(/Not enough history/.test(V.progressHtml(env({ players: [ps[4]], histories: new Map() }))), 'nobody with history: the existing message');
 }
 
-// --- Growth graph --------------------------------------------------------------------------------------------
+// --- Progression: the season picker ----------------------------------------------------------------------------
 {
   const row = (season, overall, potential) => ({ season, overall, potential });
-  const ps = [
-    P(1, 'Rocket', 'MID', 19, 71, 85, 1, 2029, 10, 800), P(2, 'Slowpoke', 'MID', 19, 64, 76, 1, 2029, 10, 800),
-    P(3, 'Fading <i>Star</i>', 'MID', 31, 76, 76, 1, 2029, 10, 800), P(4, 'Steady', 'MID', 27, 80, 80, 1, 2029, 10, 800),
-    P(5, 'No History', 'MID', 25, 70, 75, 1, 2029, 10, 800),
-    P(6, 'Inseason', 'MID', 27, 80, 80, 1, 2029, 10, 800, { overall_delta: 3 })      // no season history: his +3 is this season's, judged at 27
-  ];
+  const ps = [P(1, 'Rocket', 'MID', 19, 71, 85, 1, 2029, 10, 800), P(2, 'Slowpoke', 'MID', 19, 64, 76, 1, 2029, 10, 800), P(4, 'Steady', 'MID', 27, 80, 80, 1, 2029, 10, 800)];
   const hs = new Map([
-    [1, [row('2025/26', 64, 84), row('2026/27', 70, 85)]], [2, [row('2025/26', 64, 76), row('2026/27', 64, 76)]],
-    [3, [row('2025/26', 80, 80), row('2026/27', 76, 76)]], [4, [row('2025/26', 80, 80), row('2026/27', 80, 80)]]
+    [1, [row('2024/25', 58, 84), row('2025/26', 64, 84), row('2026/27', 70, 85)]],
+    [2, [row('2024/25', 64, 76), row('2025/26', 64, 76), row('2026/27', 64, 76)]],
+    [4, [row('2024/25', 80, 80), row('2025/26', 80, 80), row('2026/27', 80, 80)]]
   ]);
-  const g = V.growthGraphHtml(env({ players: ps, histories: hs, seasonLabel: '2026/27' }));
-  assert.strictEqual((g.match(/<circle/g) || []).length, 5, 'one dot per player with a history or an in-season change');
-  assert(/<title>Rocket · 19 · \+7 OVR \(typical \+4\) · Rising<\/title>/.test(g), 'hovering a dot gives name, age, change, typical change and status');
-  assert(/fill="#3fb950"/.test(g) && /fill="#d29922"/.test(g) && /fill="#f85149"/.test(g) && /fill="#8b949e"/.test(g), 'dots are coloured by status (rising, stalling, declining, on track)');
-  assert(/>Rocket<\/text>/.test(g) && />Slowpoke<\/text>/.test(g) && !/>Steady<\/text>/.test(g), 'the big outliers are named, the ordinary players are not');
-  assert(/Star&lt;\/i&gt;<\/text>/.test(g) && !g.includes('Star</i>'), 'labels and titles are escaped');
-  assert(/<polyline[^>]*points="[\d.,\s-]+"/.test(g), 'the typical-change-by-age line is drawn');
-  assert(/stroke-dasharray: 3 4/.test(g), 'and a zero line, since the axis spans it');
-  assert(/>-\d+</.test(g), 'the axis goes below zero for players who lost rating');
-  assert(/onclick="openPlayerProfile\('1'\)"/.test(g), 'a dot opens the player');
-  assert(/Rising 2/.test(g) && /Stalling 1/.test(g) && /Declining 1/.test(g) && /On track 1/.test(g) && !/At potential/.test(g), 'a legend with counts, only for groups that exist');
-  assert(/typical for that age/.test(g) && /1 player has no history yet and is not shown/.test(g), 'and the line is explained; the missing player is mentioned');
-  const ys = [...(g.match(/<polyline[^>]*points="([^"]+)"/)[1]).matchAll(/[\d.]+,([\d.]+)/g)].map(m => Number(m[1]));
-  assert(ys.length >= 10 && ys[0] < ys[ys.length - 1] && new Set(ys).size > 5, 'the typical line slopes down with age (young players are expected to grow most)');
-  assert(/growing faster than is typical/.test(g), 'one sentence tells you how to read it');
-  assert(/Age \(when the change happened\)/.test(g), 'the x axis says what age means here');
-  // x position is the age the change happened at: Rocket (19 now) at 18, Fading Star (31 now) at 30
-  const cx = [...g.matchAll(/<circle cx="([\d.]+)"/g)].map(m => Number(m[1]));    // players in order: Rocket, Slowpoke, Fading Star, Steady, Inseason
-  assert(cx[0] === cx[1] && cx[3] > cx[0] && cx[2] > cx[3], 'dots sit at the age the change happened: both 19-year-olds at 18, Steady (27 now) at 26, Fading Star (31 now) at 30');
-  assert(cx[4] > cx[3], 'an in-season change is judged at his current age: Inseason (27, this season) sits a year to the right of Steady (27, last season)');
-  assert(/No squad loaded/.test(V.growthGraphHtml(env({ players: [] }))));
-  assert(/Not enough history/.test(V.growthGraphHtml(env({ players: ps.slice(0, 5), histories: new Map() }))), 'no history anywhere: the existing message');
-  assert(/Not enough history/.test(V.growthGraphHtml(env({ players: [ps[4]], histories: new Map(), seasonLabel: '2026/27' }))));
-  // a lone outlier is the only one named when nobody else is far from typical
-  const calm = V.growthGraphHtml(env({ players: [ps[3]], histories: hs, seasonLabel: '2026/27' }));
-  assert((calm.match(/<text[^>]*paint-order/g) || []).length === 0, 'no outliers: no labels');
+  const seasons = [{ back: 0, label: '2026/27', current: true }, { back: 1, label: '2025/26', current: false }];
+  const base = { players: ps, histories: hs, seasonLabel: '2026/27', progressSeasons: seasons };
+  const now = V.progressHtml(env({ ...base, progressBack: 0 }));
+  const prev = V.progressHtml(env({ ...base, progressBack: 1 }));
+  assert(/<select[^>]*setProgressSeason\(this\.value\)/.test(now), 'a Season picker');
+  assert(/<option value="0" selected>2026\/27 \(so far\)<\/option>/.test(now) && /<option value="1">2025\/26<\/option>/.test(now), 'the current season is marked "so far" and selected by default');
+  assert(/<option value="1" selected>2025\/26<\/option>/.test(prev) && /<option value="0">2026\/27 \(so far\)<\/option>/.test(prev), 'the chosen season is the selected one');
+  // Rocket: now +7 vs +4 typical (+3), in 2025/26 +6 vs +4.5 typical (+1.5); Slowpoke: now 0 vs +4 (-4), in 2025/26 0 vs +4.5 (-4.5)
+  assert(/title="\+7 OVR so far this season, typical \+4\./.test(now) && />\+3<\/div>/.test(now), 'current season: the live numbers');
+  assert(/title="\+6 OVR in 2025\/26, typical \+4\.5\./.test(prev) && />\+1\.5<\/div>/.test(prev) && />-4\.5<\/div>/.test(prev), 'an earlier season: that season\'s change, against the norm for the age then');
+  assert(/the change so far this season compared/.test(now) && /the change in 2025\/26 compared/.test(prev), 'the note says which season the bars are for');
+  assert(/Use Season to look at an earlier year/.test(now));
+  // no choice to make: no picker
+  const one = V.progressHtml(env({ ...base, progressSeasons: [seasons[0]] }));
+  assert(!/<select/.test(one) && !/Use Season/.test(one), 'with one season there is nothing to pick');
+  assert(!/<select/.test(V.progressHtml(env({ players: ps, histories: hs, seasonLabel: '2026/27' }))), 'and none without the options');
+  // an unknown choice falls back to the current season instead of failing
+  const bad = V.progressHtml(env({ ...base, progressBack: 7 }));
+  assert(/<option value="0" selected>/.test(bad) && />\+3<\/div>/.test(bad), 'an unknown season is treated as the current one');
+  // list view: the sub-line names the season
+  const list = V.progressHtml(env({ ...base, progressBack: 1, progressMode: 'list', progressFilter: 'all' }));
+  assert(/2025\/26<\/div>/.test(list.replace(/&nbsp;/g, '')) || /white-space: nowrap;">2025\/26/.test(list), 'list rows say 2025/26 under the number');
+  assert(/white-space: nowrap;">this season/.test(V.progressHtml(env({ ...base, progressMode: 'list', progressFilter: 'all' }))), 'and "this season" for the current one');
+  // a player with no history for the chosen season is left out of the chart with the usual note
+  const short = V.progressHtml(env({ ...base, players: ps.concat([P(9, 'Newcomer', 'MID', 22, 60, 70, 1, 2029, 1, 50)]), progressBack: 1 }));
+  assert(!/Newcomer/.test(short.replace(/has no history yet.*/, '')) || /1 player has no history yet/.test(short), 'a newcomer is not drawn for a season he was not here');
 }
 
 // --- Wages & Contracts sections (projection card + decisions table) ------------------------------------------------
@@ -269,13 +266,13 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   const card = V.profileCardHtml(e, kid, seasons);
   assert(card.includes('<h3') && card.includes('Planning') && /Roster Moves/.test(card), 'card with a link to Roster Moves');
   assert(/>Loan</.test(card) && /prospect who needs minutes/.test(card), 'the prospect is a loan with the reason');
-  assert(/Progression:/.test(card) && /OVR since last season/.test(card), 'progression line from the season rows');
+  assert(/Progression:/.test(card) && /OVR so far this season[^(<]*\(typical for/.test(card), 'progression line from the season rows');
   assert(!/Contract:/.test(card), 'no contract action for a deal with years left');
   assert(/Rule-of-thumb/.test(card));
   assert(!/<b>/.test(card) && !card.includes('Kid</b>'), 'nothing unescaped leaks into the card');
 
   // the live current-season row must not be double counted: 61 -> 64 is +3, not 0
-  assert(/\+3 OVR since last season/.test(card), 'current season row is refreshed, not duplicated');
+  assert(/\+3 OVR so far this season[^(<]*\(typical for/.test(card), 'current season row is refreshed, not duplicated');
   const noLabel = V.profileCardHtml(e, kid, [{ overall: 61 }, { overall: 64 }]);
   assert(noLabel.includes('Planning'), 'season rows without labels still render the card');
 
@@ -462,7 +459,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   globalThis.currentSaveId = 10;
   globalThis.api = {
     getSeasonsList: async () => [{ id: 2, year_label: '2026/27', is_current: true }],
-    getPlayerHistory: async id => [{ season: '2025/26', overall: WAS[id] || NOW[id], potential: 85 }, { season: '2026/27', overall: NOW[id], potential: 85 }]
+    getPlayerHistory: async id => [{ season: '2024/25', overall: (WAS[id] || NOW[id]) - 2, potential: 85 }, { season: '2025/26', overall: WAS[id] || NOW[id], potential: 85 }, { season: '2026/27', overall: NOW[id], potential: 85 }]
   };
   V.setProgressMode('list');
   registered.progress(); await new Promise(r => setTimeout(r, 20));
@@ -477,12 +474,22 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
     assert((registered.progress().match(/class="detail-row open"/g) || []).length === 1, 'exactly that row\'s reasons are open');
     V.toggleProgress(globalThis.currentPlayers[3].player_id); assert(!/class="detail-row open"/.test(registered.progress()), 'and they close again');
     V.setProgressFilter('attention');
+    // the season picker, live
+    assert(/<select/.test(registered.progress()) && /2026\/27 \(so far\)/.test(registered.progress()), 'the live view offers the stored seasons');
+    const rs = renders; V.setProgressSeason(1); assert.strictEqual(renders, rs + 1, 'choosing a season redraws');
+    assert(/<option value="1" selected>2025\/26/.test(registered.progress()) && /2025\/26 · typical/.test(registered.progress()), 'and shows that season (the list names it under each number)');
+    V.toggleProgress(globalThis.currentPlayers[3].player_id);
+    V.setProgressSeason(0); assert(!/class="detail-row open"/.test(registered.progress()), 'changing season closes any opened row (it described another season)');
+    V.setProgressSeason('abc'); assert(/<option value="0" selected>/.test(registered.progress()), 'junk means the current season');
+    V.setProgressSeason(-3); assert(/<option value="0" selected>/.test(registered.progress()));
+    V.setProgressSeason(1); V.invalidate();
+    registered.progress(); await new Promise(r => setTimeout(r, 20));            // reload the history after the "sync"
+    assert(/<option value="0" selected>/.test(registered.progress()) && !/<option value="1" selected>/.test(registered.progress()), 'a new sync goes back to the current season');
     const r3 = renders; V.setProgressMode('chart'); assert.strictEqual(renders, r3 + 1, 'switching view redraws');
     assert(/pl-chart-row/.test(registered.progress()) && !/Needs attention/.test(registered.progress()), 'chart view');
     V.setProgressMode('nonsense'); assert(/pl-chart-row/.test(registered.progress()), 'an unknown mode falls back to the chart');
     V.setProgressMode('list'); assert(/Needs attention/.test(registered.progress()), 'list view');
     V.setProgressMode('chart');
-    assert(/<circle/.test(registered.growth()) && /Age \(when the change happened\)/.test(registered.growth()), 'the live graph view draws from the same loaded history');
   }
 
   // filter setter re-renders the Insights view

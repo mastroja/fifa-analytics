@@ -97,6 +97,52 @@ assert.strictEqual(G.expectedGrowth(19.4), 3.5, 'rounds');
   assert(/only one season/.test(flat0.reasons[0]));
 }
 
+// --- judging an earlier season (opts.back) ----------------------------------------------------------------------
+{
+  const row = (season, overall, potential) => ({ season, overall, potential });
+  // a 19-year-old now: 50 -> 58 -> 64 in the stored seasons, 70 live this season
+  const hist = [row('2023/24', 50, 80), row('2024/25', 58, 81), row('2025/26', 64, 82)];
+  const now = Object.assign(P(1, 70, 83), { __seasonLabel: '2026/27' });
+  const t0 = G.trajectory(now, hist, 19);
+  assert.deepStrictEqual([t0.change, t0.back, t0.basis, t0.series.length, t0.ageThen, t0.overall], [6, 0, 'this season', 4, 18, 70], 'default: the current season so far');
+  assert(/so far this season/.test(t0.reasons[0]) && !/since last season/.test(t0.reasons.join(' ')), 'and it says so');
+
+  const t1 = G.trajectory(now, hist, 19, { back: 1 });                   // 2025/26: 58 -> 64, when he was 18
+  assert.deepStrictEqual([t1.change, t1.back, t1.basis, t1.series.map(p => p.overall), t1.age, t1.ageThen, t1.overall, t1.potential], [6, 1, '2025/26', [50, 58, 64], 18, 17, 64, 82], 'a past season is judged on what he was then: his overall, potential and age at the time');
+  assert.strictEqual(t1.expected, G.expectedGrowth(17), 'against the norm for the age the change happened at');
+  assert(Math.abs(t1.vsExpected - (6 - G.expectedGrowth(17))) < 1e-9 && t1.status === 'rising');
+  assert(/in 2025\/26/.test(t1.reasons[0]) && !/so far this season/.test(t1.reasons.join(' ')), 'the reason names the season');
+  assert.strictEqual(t1.yearsToPotential, null, 'the pace-to-potential outlook is only for the current season');
+  assert(!t1.reasons.some(r => /reaches POT|to reach POT|out of reach/.test(r)));
+  assert.deepStrictEqual([G.trajectory(now, hist, 19, { back: 2 }).change, G.trajectory(now, hist, 19, { back: 2 }).basis], [8, '2024/25'], 'two seasons back: 50 -> 58');
+  const t3 = G.trajectory(now, hist, 19, { back: 3 });
+  assert.deepStrictEqual([t3.status, t3.change], ['unknown', null], 'the oldest stored season has nothing to compare with');
+  assert(/Not enough history/.test(t3.reasons[0]));
+  assert.strictEqual(G.trajectory(now, hist, 19, { back: 9 }).status, 'unknown', 'going further back than the history is just unknown');
+  assert.strictEqual(G.trajectory(now, hist, 19, { back: -2 }).back, 0, 'a negative choice means the current season');
+  assert.strictEqual(G.trajectory(now, hist, 19, { back: 'x' }).back, 0);
+  assert.strictEqual(G.trajectory(now, hist, null, { back: 1 }).status, 'unknown', 'no date of birth: still no age norm');
+  // the in-season fallback is about the current season only
+  const fresh = P(2, 70, 83, 5);
+  assert.strictEqual(G.trajectory(fresh, [], 20).source, 'in-season');
+  assert.strictEqual(G.trajectory(fresh, [], 20, { back: 1 }).status, 'unknown', 'a first-season delta says nothing about an earlier season');
+  // a young player at his ceiling then is "maxed" in that season, judged at the age he was then
+  const ceiling = G.trajectory(Object.assign(P(3, 80, 80), { __seasonLabel: '2026/27' }), [row('2024/25', 70, 78), row('2025/26', 78, 78), row('2026/27', 80, 80)], 23, { back: 1 });
+  assert.deepStrictEqual([ceiling.status, ceiling.age, ceiling.overall], ['maxed', 22, 78], 'at his 78 ceiling in 2025/26, aged 22 then');
+
+  // board and seasonOptions
+  const opt = G.seasonOptions([now], new Map([[1, hist]]), { seasonLabel: '2026/27' });
+  assert.deepStrictEqual(opt, [{ back: 0, current: true, label: '2026/27' }, { back: 1, current: false, label: '2025/26' }, { back: 2, current: false, label: '2024/25' }], 'newest first; the oldest stored season is never offered; the live season is named by the current label');
+  assert.strictEqual(G.seasonOptions([now], new Map([[1, hist]]), {})[0].label, 'This season', 'no label known: "This season"');
+  assert.deepStrictEqual(G.seasonOptions([P(5, 70, 80)], new Map(), {}), [], 'no history: nothing to pick');
+  assert.deepStrictEqual(G.seasonOptions([], undefined, {}), []);
+  assert.deepStrictEqual(G.seasonOptions([now, Object.assign(P(6, 60, 70), { __seasonLabel: '2026/27' })], new Map([[1, hist], [6, [row('2025/26', 58, 70)]]]), { seasonLabel: '2026/27' }).length, 3, 'the longest history in the squad decides');
+  assert.deepStrictEqual(G.seasonOptions([now], { 1: hist }, { seasonLabel: '2026/27' }).length, 3, 'plain-object histories work too');
+  const squad = [now, P(7, 60, 70)];
+  const bd = G.board(squad, new Map([[1, hist], [7, [row('2025/26', 55, 70)]]]), { ageOf: p => 19, seasonLabel: '2026/27', back: 1 });
+  assert.deepStrictEqual(bd.rows.map(r => [r.player.player_id, r.status === 'unknown', r.back]), [[1, false, 1], [7, true, 1]], 'board judges the chosen season; a player without that season is unknown');
+}
+
 // --- unusable data never throws or produces NaN ---------------------------------------------------------------
 {
   const noAge = G.trajectory(P(20, 70, 80), [H(1, 65, 80)], null);

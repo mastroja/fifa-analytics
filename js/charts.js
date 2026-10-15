@@ -168,8 +168,7 @@
     if (x1 === x0) { x0 -= 1; x1 += 1; }
     if (y1 === y0) { y0 -= 1; y1 += 1; }
     const px = (x1 - x0) * 0.06, py = (y1 - y0) * 0.08;
-    // the value axis starts at 0 (wages, overalls) unless the caller plots values that can be negative (opts.yNegative)
-    x0 -= px; x1 += px; y0 = opts.yNegative ? y0 - py : Math.max(0, y0 - py); y1 += py;
+    x0 -= px; x1 += px; y0 = Math.max(0, y0 - py); y1 += py;
     const X = v => L + ((v - x0) / (x1 - x0)) * (Rr - L);
     const Y = v => B - ((v - y0) / (y1 - y0)) * (B - T);
     const ticks = (a, b) => [0, 1, 2, 3, 4].map(i => a + ((b - a) * i) / 4);
@@ -192,15 +191,10 @@
       const click = opts.onClick && p.id != null ? ` onclick="${esc(opts.onClick)}('${esc(p.id)}')" style="cursor: pointer;"` : '';
       return `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="${p.r || 5.5}" fill="${p.color || 'var(--accent-color)'}" fill-opacity="0.85" stroke="var(--card-bg)" stroke-width="1.5"${click}><title>${esc(p.title || '')}</title></circle>`;
     }).join('');
-    // optional text beside a dot (point.label); dots in the right quarter put it on their left so it stays inside the chart
-    const labels = pts.filter(p => p.label).map(p => {
-      const right = X(p.x) > L + (Rr - L) * 0.75;
-      return `<text x="${X(p.x) + (right ? -9 : 9)}" y="${Y(p.y) + 4}" text-anchor="${right ? 'end' : 'start'}" font-size="10" style="fill: var(--text-color); stroke: var(--card-bg); stroke-width: 3; paint-order: stroke; pointer-events: none;">${esc(p.label)}</text>`;
-    }).join('');
     return `<svg viewBox="0 0 ${W} ${H}" style="width: 100%; height: auto;" role="img" aria-label="${esc(opts.yLabel || '')} by ${esc(opts.xLabel || '')}">
       ${bands}${grid}${yRef}<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" style="stroke: var(--text-dim); stroke-width: 1.5;" />
       ${xl}<text x="${(L + Rr) / 2}" y="${H - 6}" text-anchor="middle" font-size="11" style="fill: var(--text-dim);">${esc(opts.xLabel || '')}</text>
-      ${trend}${dots}${labels}</svg>`;
+      ${trend}${dots}</svg>`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
