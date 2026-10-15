@@ -1,0 +1,148 @@
+// Progression tracker: who is growing, stalling or declining compared with what their age normally allows.
+//
+// Pure logic, no DOM and no app.js globals, so scripts/test_progression.js can run it on plain arrays. It takes the
+// per-player season history the app already stores (getPlayerHistory in main.js: { seasonOrder, season, overall,
+// potential } per synced season) plus the live squad rows (overall, potential, overall_delta = change so far this
+// season), and answers three questions per player:
+//   - how much have they changed (since last season, and in total since we first saw them)?
+//   - is that more or less than a typical player of that age gains or loses (EXPECTED_GROWTH below)?
+//   - if they are young with room to grow, when might they reach their potential?
+// EXPECTED_GROWTH is a rule of thumb for the typical yearly overall change by age, not EA's real curve; every row
+// reports `vsExpected` so the UI can show the raw numbers and not only the label.
+(function (root) {
+  'use strict';
+
+  // typical yearly overall change by age (ages below the first / above the last use the nearest entry)
+  const EXPECTED_GROWTH = { 16: 5, 17: 4.5, 18: 4, 19: 3.5, 20: 3, 21: 2.5, 22: 2, 23: 1.5, 24: 1, 25: 0.5, 26: 0, 27: 0, 28: -0.3, 29: -0.7, 30: -1, 31: -1.5, 32: -2, 33: -2.5 };
+  const MIN_AGE = 16, MAX_AGE = 33;
+  const expectedGrowth = age => EXPECTED_GROWTH[Math.max(MIN_AGE, Math.min(MAX_AGE, Math.round(age)))];
+
+  const T = {
+    risingBy: 1.5,        // this far above the age norm = rising
+    decliningBy: 2,       // this far below the age norm = declining
+    stallingBy: 1.5,      // a young player this far below the norm (with room to grow) = stalling
+    stallingMaxAge: 23,
+    minGrowthGap: 5,      // potential - overall that counts as "room to grow"
+    maxedMaxAge: 25       // reached potential at or under this age is worth a note (older players are simply at their level)
+  };
+
+  const num = v => (v == null || v === '' ? NaN : Number(v));
+
+  // One point per season in order, ending with the live row. Duplicate season orders keep the last one.
+  function series(history, player) {
+    const byOrder = new Map();
+    (history || []).forEach(h => {
+      const o = num(h.overall);
+      if (Number.isFinite(o) && o > 0) byOrder.set(h.seasonOrder, { order: h.seasonOrder, label: h.season, overall: o, potential: num(h.potential) || null });
+    });
+    const pts = [...byOrder.values()].sort((a, b) => a.order - b.order);
+    const live = num(player.overall);
+    if (Number.isFinite(live) && live > 0) {
+      const last = pts[pts.length - 1];
+      // the current season's row is usually already in `history`; refresh it with the live value rather than add a twin
+      if (last && last.order === player.__seasonOrder) { last.overall = live; last.potential = num(player.potential) || last.potential; }
+      else pts.push({ order: player.__seasonOrder != null ? player.__seasonOrder : (last ? last.order + 1 : 0), label: 'Now', overall: live, potential: num(player.potential) || null });
+    }
+    return pts;
+  }
+
+  // Years until a young player reaches their potential if they follow the age curve (null if they never would).
+  function curveYearsToPotential(age, overall, potential, maxYears) {
+    let o = overall;
+    for (let y = 1; y <= (maxYears || 8); y++) {
+      o += Math.max(0, expectedGrowth(age + y - 1));
+      if (o >= potential) return y;
+    }
+    return null;
+  }
+
+  // trajectory(player, history, age) -> one row. `age` may be null: the row is then 'unknown' and says why.
+  function trajectory(player, history, age) {
+    const pts = series(history, player);
+    const overall = num(player.overall) || 0, potential = num(player.potential) || 0;
+    const gap = potential > 0 ? Math.max(0, potential - overall) : 0;
+    const inSeason = num(player.overall_delta);
+    const row = { player, age, series: pts, overall, potential, gap, inSeason: Number.isFinite(inSeason) ? inSeason : 0,
+      sinceLast: null, total: null, change: null, source: null, expected: null, vsExpected: null,
+      status: 'unknown', yearsToPotential: null, curveYears: null, reasons: [] };
+
+    if (pts.length >= 2) {
+      row.sinceLast = pts[pts.length - 1].overall - pts[pts.length - 2].overall;
+      row.total = pts[pts.length - 1].overall - pts[0].overall;
+      row.change = row.sinceLast; row.source = 'seasons';
+    } else if (Number.isFinite(inSeason)) {
+      row.change = inSeason; row.source = 'in-season';   // first season we have: all we know is the change since the first sync
+    }
+
+    if (age == null || !Number.isFinite(age)) { row.reasons.push('No date of birth, so there is no age norm to compare with'); return row; }
+    if (row.change == null) { row.reasons.push('Not enough history yet'); return row; }
+    // a first sync reports 0 for everyone, which says nothing about whether he is flat
+    if (row.source === 'in-season' && row.change === 0) { row.reasons.push('No movement recorded yet (only one season synced)'); return row; }
+
+    // compare like with like: the change over the last season is judged against the norm for the age they were then
+    const ageThen = row.source === 'seasons' ? age - 1 : age;
+    row.expected = expectedGrowth(ageThen);
+    row.vsExpected = row.change - row.expected;
+    // The in-season fallback is part of a season and is 0 for everyone right after a first sync, so it may flag a real
+    // rise or drop but never 'stalling', and a flat reading never counts as rising.
+    const sign = n => (n > 0 ? '+' : '') + n;
+    const basis = row.source === 'seasons' ? 'since last season' : 'so far this season';
+    const norm = `typical for ${Math.round(ageThen)} is ${sign(row.expected)}`;
+
+    if (row.vsExpected <= -T.decliningBy && row.change < 0) { // flat is not a decline: a stalled teenager is judged below
+      row.status = 'declining';
+      row.reasons.push(`${sign(row.change)} OVR ${basis} (${norm})`);
+    } else if (row.source === 'seasons' && age <= T.stallingMaxAge && gap >= T.minGrowthGap && row.vsExpected <= -T.stallingBy) {
+      row.status = 'stalling';
+      row.reasons.push(`${sign(row.change)} OVR ${basis} (${norm}) with ${gap} points of potential left`);
+    } else if (gap === 0 && age <= T.maxedMaxAge && potential > 0) {
+      row.status = 'maxed';
+      row.reasons.push(`Already at his potential (${potential}) at ${Math.round(age)}`);
+    } else if (row.vsExpected >= T.risingBy && row.change > 0) {
+      row.status = 'rising';
+      row.reasons.push(`${sign(row.change)} OVR ${basis} (${norm})`);
+    } else {
+      row.status = 'on-track';
+      row.reasons.push(`${sign(row.change)} OVR ${basis}, about what is expected (${norm})`);
+    }
+
+    if (gap > 0 && age <= T.stallingMaxAge + 2) {
+      row.curveYears = curveYearsToPotential(age, overall, potential);
+      if (row.change > 0) row.yearsToPotential = Math.ceil(gap / row.change);
+      if (row.yearsToPotential != null) row.reasons.push(`At this pace he reaches POT ${potential} in about ${row.yearsToPotential} season${row.yearsToPotential > 1 ? 's' : ''}`);
+      else if (row.curveYears != null) row.reasons.push(`A typical player his age would take about ${row.curveYears} season${row.curveYears > 1 ? 's' : ''} to reach POT ${potential}`);
+      else row.reasons.push(`POT ${potential} is out of reach on a typical curve`);
+    }
+    if (row.total != null && pts.length >= 3) row.reasons.push(`${sign(row.total)} OVR over ${pts.length} seasons`);
+    return row;
+  }
+
+  // board(players, histories, opts) -> { rows, risers, fallers, stalling, maxed }
+  //   players    live squad rows (player_id, name, overall, potential, overall_delta)
+  //   histories  Map or object: player_id -> getPlayerHistory rows
+  //   opts.ageOf(p) -> number | null (required for any label), opts.isAway(p), opts.limit (per list, default 5),
+  //   opts.seasonOrder  id of the current season, so the live row replaces its own history entry instead of doubling it
+  function board(players, histories, opts) {
+    opts = opts || {};
+    const get = id => (histories instanceof Map ? histories.get(id) : histories && histories[id]) || [];
+    const limit = opts.limit || 5;
+    const rows = (players || []).filter(p => !(opts.isAway && opts.isAway(p))).map(p => {
+      const cur = opts.seasonOrder != null ? Object.assign({}, p, { __seasonOrder: opts.seasonOrder }) : p;
+      const r = trajectory(cur, get(p.player_id), opts.ageOf ? opts.ageOf(p) : null);
+      r.player = p;
+      return r;
+    });
+    const by = (status, cmp) => rows.filter(r => r.status === status).sort(cmp).slice(0, limit);
+    return {
+      rows,
+      risers: by('rising', (a, b) => b.vsExpected - a.vsExpected || b.overall - a.overall),
+      fallers: by('declining', (a, b) => a.vsExpected - b.vsExpected || b.overall - a.overall),
+      stalling: by('stalling', (a, b) => b.gap - a.gap || a.vsExpected - b.vsExpected),
+      maxed: by('maxed', (a, b) => b.overall - a.overall)
+    };
+  }
+
+  const api = { trajectory, board, series, expectedGrowth, curveYearsToPotential, EXPECTED_GROWTH, THRESHOLDS: T };
+  root.Progression = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof window !== 'undefined' ? window : globalThis);
