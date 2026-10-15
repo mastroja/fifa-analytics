@@ -8969,11 +8969,14 @@ Live Editor will end each loan and then release the player from your club to fre
     // (potentialvariance), deliberately shown instead of a single exact
     // number so scouting a prospect isn't a sure thing.
     function renderYouthAcademyTable() {
+      // prospects ready for the first team get a small badge (see js/academy_tracker.js readinessOf)
+      let readyIds = new Set();
+      try { readyIds = new Set((window.AcademyTracker ? window.AcademyTracker.liveReady() : []).filter(x => x.ready.key === 'ready').map(x => String(x.player.player_id))); } catch (e) { /* no badges */ }
       const rows = (currentYouthAcademy || []).map(p => {
         const age = computeAge(p.dob);
         const posInfo = getPositionInfo(p.position_id);
         const value = estimateMarketValue(p.overall, p.potential_high, age, 0);
-        return { ...p, __age: age, __posInfo: posInfo, __value: value };
+        return { ...p, __age: age, __posInfo: posInfo, __value: value, __ready: readyIds.has(String(p.player_id)) };
       });
 
       renderExpandableList('home-youth-academy-body', rows, (visible) => `
@@ -8982,7 +8985,7 @@ Live Editor will end each loan and then release the player from your club to fre
           <tbody>
             ${visible.map(p => `
               <tr class="clickable-name" onclick="openPlayerProfile('${p.player_id ?? p.name}')">
-                <td>${p.name}</td>
+                <td>${p.name}${p.__ready ? ' <span class="at-ready rd-ready" title="Ready for the first team: see the Academy page">Ready</span>' : ''}</td>
                 <td>${p.__age ?? '—'}</td>
                 <td><span class="pos-badge pos-${p.__posInfo.group}">${p.__posInfo.label}</span></td>
                 <td>${p.overall || 0}</td>

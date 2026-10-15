@@ -214,29 +214,39 @@
   // Home: "Roster Moves" card and the action pills on the Contracts card
   // ---------------------------------------------------------------------------------------------------------
 
-  const HOME_MOVES = 5;
+  const HOME_MOVES = 5, HOME_PROMOS = 3;
 
-  // The most actionable moves (sells first, then loans, then the watch list), counts, and the first reason for each.
+  // The most actionable moves (sells first, then loans), counts, and the first reason for each, then the academy
+  // prospects who are ready for the first team (env.promotions: [{ player, ready }], optional).
   function homeMovesHtml(env) {
     if (!env.players.length) return '<div style="color: var(--text-dim); font-size: 13px;">No squad loaded.</div>';
     const rows = computeAdvice(env);
     const moves = rows.filter(r => r.verdict === 'sell' || r.verdict === 'loan');
+    const promos = env.promotions || [];
     const watch = rows.filter(r => r.verdict === 'monitor').length;
     const n = v => rows.filter(r => r.verdict === v).length;
     const plan = computePlan(env);
     const ending = plan ? plan.renewals.filter(r => r.yearsLeft <= 0).length : 0;
-    const summary = `<div style="font-size: 13px; margin-bottom: 8px;"><strong>${n('sell')}</strong> to sell · <strong>${n('loan')}</strong> to loan out${watch ? ` · <span style="color: var(--text-dim);">${watch} to watch</span>` : ''}</div>`;
-    if (!moves.length) {
-      return `${summary}<div style="color: var(--text-dim); font-size: 13px;">No sales or loans recommended right now.</div>${ending ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${ending} contract${ending === 1 ? '' : 's'} end this summer: see Wages &amp; Contracts.</div>` : ''}`;
+    const endingLine = ending ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${ending} contract${ending === 1 ? '' : 's'} end this summer: see Wages &amp; Contracts.</div>` : '';
+    const summary = `<div style="font-size: 13px; margin-bottom: 8px;"><strong>${n('sell')}</strong> to sell · <strong>${n('loan')}</strong> to loan out${watch ? ` · <span style="color: var(--text-dim);">${watch} to watch</span>` : ''}${promos.length ? ` · <strong style="color: #3fb950;">${promos.length}</strong> <span style="color: #3fb950;">ready for promotion</span>` : ''}</div>`;
+    if (!moves.length && !promos.length) {
+      return `${summary}<div style="color: var(--text-dim); font-size: 13px;">No sales or loans recommended right now.</div>${endingLine}`;
     }
     const sorted = moves.slice().sort((a, b) => (a.verdict === b.verdict ? 0 : a.verdict === 'sell' ? -1 : 1) || b.weight - a.weight);
     const shown = sorted.slice(0, HOME_MOVES);
-    return `${env.transferBan ? '<div style="font-size: 12px; color: #d29922; margin-bottom: 6px;">Transfer ban active: these are on hold.</div>' : ''}${summary}
-      <ul class="injury-report-list home-list-full">${shown.map(r => `<li class="clickable-name" onclick="openPlayerProfile('${esc(r.player.player_id)}')"><span>${esc(r.player.name)}</span>
+    const movesHtml = moves.length ? `<ul class="injury-report-list home-list-full">${shown.map(r => `<li class="clickable-name" onclick="openPlayerProfile('${esc(r.player.player_id)}')"><span>${esc(r.player.name)}</span>
         <span class="injury-report-meta">${esc(env.posLabel(r.player))} · ${esc(r.player.overall || '?')} OVR · ${badge(VERDICTS[r.verdict])}</span>
         <span class="injury-report-meta" style="color: var(--text-dim);">${esc(r.reasons[0])}</span></li>`).join('')}</ul>
-      ${sorted.length > shown.length ? `<div style="font-size: 12px; color: var(--text-dim);">+${sorted.length - shown.length} more</div>` : ''}
-      ${ending ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${ending} contract${ending === 1 ? '' : 's'} end this summer: see Wages &amp; Contracts.</div>` : ''}`;
+      ${sorted.length > shown.length ? `<div style="font-size: 12px; color: var(--text-dim);">+${sorted.length - shown.length} more</div>` : ''}`
+      : '<div style="color: var(--text-dim); font-size: 13px;">No sales or loans recommended right now.</div>';
+    const promoShown = promos.slice(0, HOME_PROMOS);
+    const promoHtml = promos.length ? `<div style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); margin: 14px 0 6px; display: flex; justify-content: space-between; align-items: center;">
+        <span>Ready for promotion</span><button class="home-toggle-btn" style="font-size: 12px; padding: 2px 10px; text-transform: none;" onclick="switchTab('squad'); SquadViews.setView('academy')">Academy →</button></div>
+      <ul class="injury-report-list home-list-full">${promoShown.map(x => `<li class="clickable-name" onclick="openPlayerProfile('${esc(x.player.player_id)}')"><span>${esc(x.player.name)}</span>
+        <span class="injury-report-meta">${esc(env.posLabel(x.player))} · ${esc(x.player.overall || '?')} OVR · <span class="at-ready rd-ready">${esc(x.ready.verdict)}</span></span>
+        <span class="injury-report-meta" style="color: var(--text-dim);">${esc(x.ready.detail)}</span></li>`).join('')}</ul>
+      ${promos.length > promoShown.length ? `<div style="font-size: 12px; color: var(--text-dim);">+${promos.length - promoShown.length} more</div>` : ''}` : '';
+    return `${env.transferBan && moves.length ? '<div style="font-size: 12px; color: #d29922; margin-bottom: 6px;">Transfer ban active: sales and loans are on hold.</div>' : ''}${summary}${movesHtml}${promoHtml}${endingLine}`;
   }
 
   // player_id (string) -> pill HTML for each player with a contract decision; Map() when there is no plan.
@@ -262,6 +272,10 @@
     return d.getMonth() >= 6 ? d.getFullYear() + 1 : d.getFullYear(); // July-June seasons, as computeMonthsUntilExpiry assumes
   }
 
+  const academyIds = () => new Set((typeof currentYouthAcademy !== 'undefined' ? currentYouthAcademy || [] : []).map(a => String(a.player_id)));
+  // the academy features follow the same Pro gate as the Academy page
+  const isAcademyLocked = () => { try { return !!(root.License && root.License.isPro && !root.License.isPro('academy-tracker')); } catch (e) { return false; } };
+
   function liveEnv() {
     const players = squad();
     const ban = typeof challengeStatus !== 'undefined' && challengeStatus && challengeStatus.ban && challengeStatus.ban.active;
@@ -276,6 +290,7 @@
       wageShort: v => `${root.currencySymbol()}${Math.round(root.convertFromEur(v) / 1000).toLocaleString()}K`,
       expectedWageOf: curve ? p => SA.expectedWage(curve, p.overall) : null,
       barsHtml: rows => (root.Charts ? root.Charts.barsHtml(rows) : ''),
+      promotions: !isAcademyLocked() && root.AcademyTracker ? root.AcademyTracker.liveReady().filter(x => x.ready.key === 'ready').map(x => x) : [],
       histories: cache && cache.saveId === saveIdNow() ? cache.byId : null,
       seasonLabel: cache && cache.saveId === saveIdNow() ? cache.seasonLabel : null
     };
@@ -327,15 +342,31 @@
     catch (e) { console.error('Home roster moves:', e); el.innerHTML = '<div style="color: var(--text-dim); font-size: 13px;">Could not draw this card.</div>'; }
   }
 
+  // Profile card for an academy prospect: just the promotion verdict and its reason. '' when there is none.
+  function promotionCardHtml(ready) {
+    if (!ready) return '';
+    return `<div class="profile-card">
+      <h3 style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><span>Promotion</span>
+        <button class="home-toggle-btn" onclick="switchTab('squad'); SquadViews.setView('academy')">Academy →</button></h3>
+      <div class="attr-list"><div class="attr-item"><span>Verdict:</span> <strong><span class="at-ready rd-${esc(ready.key)}">${esc(ready.verdict)}</span></strong></div></div>
+      <div style="margin-top: 10px;">${reasonsHtml([ready.detail])}</div>
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 8px;">Compared with your weakest senior player at the same position (current ability only).</div></div>`;
+  }
+
   // The live card for app.js's player profile. Never throws: a profile must open even if this card cannot be drawn.
   function profileHtml(player, seasons) {
-    try { return player && player.__clubStatus === 'normal' ? profileCardHtml(liveEnv(), player, seasons) : ''; }
+    try {
+      if (player && player.__clubStatus === 'normal') return profileCardHtml(liveEnv(), player, seasons);
+      // an academy prospect (the profile is built from the live academy row, with no club status)
+      if (player && root.AcademyTracker && isAcademyLocked() === false && academyIds().has(String(player.player_id))) return promotionCardHtml(root.AcademyTracker.readinessFor(player));
+      return '';
+    }
     catch (e) { console.error('Insights profile card:', e); return ''; }
   }
 
   const api = {
     homeMovesHtml, homeActionsFor, homeActions: () => homeActionsFor(liveEnv()), renderHomeWidget,
-    profileCardHtml, profileHtml,
+    profileCardHtml, profileHtml, promotionCardHtml,
     adviceHtml, progressHtml, planCardHtml, planTableHtml, computePlan, computeAdvice, seasonEndYearNow,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }

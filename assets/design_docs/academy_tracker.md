@@ -13,7 +13,7 @@ Each prospect still in the academy is compared with the **weakest senior player 
 - **Ready for promotion**: OVR level with or above that player.
 - **Close**: up to 3 below. **Developing**: further below.
 - **Position open**: no senior player at that position at all.
-The detail line names the player compared with and where the prospect would rank among that position's senior players ("would be 2nd of 3 GKs"). A green chip above the table counts the ready prospects and filters to them. The Home **Roster Moves** card lists the ready ones (`AcademyTracker.liveReady()`).
+The detail line names the player compared with and where the prospect would rank among that position's senior players ("would be 2nd of 3 GKs"). A green chip above the table counts the ready prospects and filters to them. The ready prospects also show up in three other places: the Home **Roster Moves** card ("Ready for promotion", with the same reason; `AcademyTracker.liveReady()`), a small **Ready** badge in the Home Youth Pipeline academy list, and a **Promotion** card on each academy prospect's profile (`AcademyTracker.readinessFor`). All of them follow the same Pro gate as the Academy page.
 
 This is a rule of thumb about current ability, not about fit, wage or Youth Mode transfer rules.
 

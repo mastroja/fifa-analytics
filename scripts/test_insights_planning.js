@@ -10,6 +10,7 @@ globalThis.Insights = { addView(k, fn) { registered[k] = fn; }, addWagesSection(
 require('../js/roster_advice.js');
 require('../js/progression.js');
 require('../js/contract_planner.js');
+require('../js/academy_tracker.js');                 // AcademyTracker: readiness for the Home card and prospect profiles
 const V = require('../js/insights_planning.js');
 
 assert(/\.planning-wrap\s*\{\s*overflow-x:\s*auto/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'index.html styles the scrolling table wrapper');
@@ -186,6 +187,28 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(/No sales or loans recommended/.test(calm) && !/contracts? end this summer/.test(calm), 'quiet squad: friendly message');
   assert(V.homeMovesHtml(env({ players: [] })).includes('No squad loaded'));
 
+  // ready-for-promotion section (env.promotions comes from AcademyTracker.liveReady in the app)
+  const promo = (id, name, detail) => ({ player: { player_id: id, name, overall: 66 }, ready: { key: 'ready', verdict: 'Ready for promotion', detail } });
+  assert(!/Ready for promotion/.test(h), 'no section without ready prospects');
+  const withPromo = V.homeMovesHtml(env({ promotions: [promo(901, 'Kid <b>One</b>', '5 above Jamie Cole (61) · would be 2nd of 3 GKs'), promo(902, 'Kid Two', '1 above X (66)')] }));
+  assert(/Ready for promotion<\/span>/.test(withPromo) && /Academy →/.test(withPromo), 'the section and its link to the Academy page');
+  assert(/<strong style="color: #3fb950;">2<\/strong>[^<]*<span[^>]*>ready for promotion/.test(withPromo), 'the summary line counts them');
+  assert(/5 above Jamie Cole \(61\) · would be 2nd of 3 GKs/.test(withPromo), 'each shows the comparison behind the verdict');
+  assert(/openPlayerProfile\('901'\)/.test(withPromo) && /class="at-ready rd-ready"/.test(withPromo), 'clickable, with the green pill');
+  assert(/&lt;b&gt;One&lt;\/b&gt;/.test(withPromo) && !withPromo.includes('Kid <b>'), 'names escaped');
+  assert(withPromo.indexOf('Old Timer') < withPromo.indexOf('Ready for promotion</span>'), 'sales and loans come first, promotions after');
+  const five = V.homeMovesHtml(env({ promotions: [1, 2, 3, 4, 5].map(i => promo(900 + i, 'Kid' + i, 'd')) }));
+  assert((five.match(/class="at-ready rd-ready"/g) || []).length === 3 && /\+2 more/.test(five), 'capped at three with +n more');
+  const onlyPromo = V.homeMovesHtml(env({ players: squad().slice(0, 3), promotions: [promo(903, 'Solo', 'd')] }));
+  assert(/No sales or loans recommended right now/.test(onlyPromo) && /Solo/.test(onlyPromo), 'promotions still show when there is nothing to sell or loan');
+  assert(!/Transfer ban active/.test(V.homeMovesHtml(env({ transferBan: true, players: squad().slice(0, 3), promotions: [promo(904, 'P', 'd')] }))), 'the ban note is only for sales and loans');
+
+  // the academy prospect's profile card
+  const card = V.promotionCardHtml({ key: 'close', verdict: 'Close', detail: '2 below Kai Okoro (64) · would be 4th of 4 CBs' });
+  assert(/<h3[^>]*>[\s\S]*Promotion/.test(card) && /rd-close/.test(card) && />Close</.test(card) && /2 below Kai Okoro/.test(card) && /Academy →/.test(card));
+  assert.strictEqual(V.promotionCardHtml(null), '');
+  assert(!/<b>/.test(V.promotionCardHtml({ key: 'dev', verdict: 'Developing', detail: '<b>x</b>' })), 'escaped');
+
   const acts = V.homeActionsFor(env());
   assert(acts instanceof Map && acts.size === 2, 'one pill per contract decision (here: the two deals ending by 2028)');
   assert(/Sell now/.test(acts.get('5')) && /Renew/.test(acts.get('6')), 'keyed by string player id');
@@ -234,6 +257,27 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   const mute1 = console.error; console.error = () => {}; const kp = globalThis.getPositionInfo; globalThis.getPositionInfo = () => { throw new Error('boom'); };
   V.renderHomeWidget(); console.error = mute1; globalThis.getPositionInfo = kp;
   assert(/Could not draw this card/.test(els['home-roster-moves-body'].innerHTML), 'a failure shows a message instead of throwing');
+
+  // academy prospects: Home card section and profile card, from the live academy rows
+  globalThis.currentYouthAcademy = [
+    { player_id: 7001, name: 'Ready Prospect', position_id: 14, overall: 66, dob: '2010-01-01' }, // weakest senior CM is the 64 kid: ready
+    { player_id: 7002, name: 'Far Off Prospect', position_id: 14, overall: 50, dob: '2010-01-01' }
+  ];
+  V.renderHomeWidget();
+  assert(/Ready Prospect/.test(els['home-roster-moves-body'].innerHTML) && !/Far Off Prospect/.test(els['home-roster-moves-body'].innerHTML), 'only the ready prospect is listed on Home');
+  const prospectCard = V.profileHtml({ player_id: 7001, name: 'Ready Prospect', position_id: 14, overall: 66 }, []);
+  assert(/Ready for promotion/.test(prospectCard) && /2 above/.test(prospectCard), 'an academy prospect\'s profile gets the Promotion card');
+  assert(/Developing/.test(V.profileHtml({ player_id: 7002, name: 'Far', position_id: 14, overall: 50 }, [])));
+  assert.strictEqual(V.profileHtml({ player_id: 9999, name: 'Not Anywhere', position_id: 14, overall: 66 }, []), '', 'not a senior and not in the academy: nothing');
+  globalThis.License = { isPro: f => f !== 'academy-tracker' };
+  V.renderHomeWidget();
+  assert(!/Ready Prospect/.test(els['home-roster-moves-body'].innerHTML), 'locked Academy feature: no promotions on Home');
+  assert.strictEqual(V.profileHtml({ player_id: 7001, name: 'Ready Prospect', position_id: 14, overall: 66 }, []), '', 'and no Promotion card on the profile');
+  assert(/Planning/.test(V.profileHtml(globalThis.currentPlayers[3], [{ year_label: '2026/27', overall: 64, potential: 82 }])), 'the senior Planning card is not affected by the Academy lock');
+  delete globalThis.License;
+  globalThis.currentYouthAcademy = undefined;
+  V.renderHomeWidget();
+  assert(!/Ready for promotion/.test(els['home-roster-moves-body'].innerHTML), 'no academy data: no section');
 
   const liveKid = globalThis.currentPlayers[3];
   assert(V.profileHtml(liveKid, [{ year_label: '2026/27', overall: 64, potential: 82 }]).includes('Planning'), 'live profile card');

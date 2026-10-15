@@ -316,6 +316,14 @@
     COLUMNS, visibleColumns, FILTER_PRESETS, STATUS_LABEL, VERDICT, defaultAsc,
     // page
     show, render, reload, invalidate, setData, sort, setStatus, toggleOpen, rowClick, showReady, clearFilters,
+    // Readiness for one live academy row (the profile page); null when it cannot be worked out.
+    readinessFor: row => {
+      try {
+        if (!row) return null;
+        const env = liveEnv(), label = env.labelOf(row.position_id);
+        return readinessOf(Number(row.overall) || 0, label, seniors().filter(p => env.labelOf(p.position_id) === label));
+      } catch (e) { console.error('Academy: readiness failed', e); return null; }
+    },
     liveReady: () => { try { return readyProspects(typeof currentYouthAcademy !== 'undefined' ? currentYouthAcademy || [] : [], seniors(), liveEnv()); } catch (e) { console.error('Academy: ready list failed', e); return []; } }
   };
   root.AcademyTracker = api;
