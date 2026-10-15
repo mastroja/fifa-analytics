@@ -1,8 +1,10 @@
 # FIFA Analytics
 
-A companion app for EA Sports FC 27 Career Mode. It reads data out of your save via a Live Editor Lua script bound to a hotkey, and turns it into a Home dashboard, season history, transfer tracking, league stats, and an end-of-season summary — all local, all offline, nothing sent anywhere.
+A companion app for EA Sports FC 27 Career Mode. It reads data out of your save via a Live Editor Lua script bound to a hotkey, and turns it into a Home dashboard, season history, transfer tracking, league stats, and an end-of-season summary. **Your save data stays on your PC and is never uploaded.** To draw club badges, country flags and fonts the app loads them from third-party sites: TheSportsDB (badges; it receives the club name), flagcdn.com (flags; it receives country codes) and Google Fonts. There is no account, no analytics and no automatic update check.
 
-**What you get:** a Home dashboard, squad list with filters, player profiles, a depth chart (Starting XI, Reserves, custom lineups, All-Time XI), an academy page (sortable and filterable, with a "ready for promotion" verdict for each prospect), Youth Squad Career Mode tools (rules, transfer ban, challenge dashboard), contract and injury tracking, and an in-app player editor.
+> **Beta.** With the current Live Editor for FC 27 some data is not available yet (goals, assists, clean sheets, cards, standings, fixtures, transfers, trophies and the in-game dynamic overall). Those widgets say "Not available in FC 27 yet" and fill in as Live Editor exposes the data. See *Known limitations* below.
+
+**What you get:** a Home dashboard, squad list with filters, player profiles, **Roster Moves** (a sell / keep / loan suggestion for every player, with the reasons), a **contract planner** (projected wage bill and what to do with each expiring deal), **Progression** (who is ahead of or behind what is typical for their age, by season), a depth chart (Starting XI, Reserves, custom lineups, All-Time XI), an academy page (sortable and filterable, with a "ready for promotion" verdict for each prospect), Youth Squad Career Mode tools (rules, transfer ban, challenge dashboard), contract and injury tracking, and an in-app player editor.
 
 This app depends on a specific combination of game version + Live Editor version, because Live Editor works by reading the game's memory at fixed offsets that change with every game patch. **If the versions below don't match, none of this will work**, so read the version-pinning section before installing anything.
 
@@ -12,7 +14,7 @@ This app depends on a specific combination of game version + Live Editor version
 |---|---|
 | EA Sports FC 27 (Steam) | Build `1.0.141.12554` |
 | FC 27 Live Editor | `v27.1.4` |
-| FIFA Analytics | `27.0.7` |
+| FIFA Analytics | `27.1.0` |
 
 
 ## 1. Pin your game version (do this FIRST)
@@ -32,12 +34,12 @@ If your game has *already* auto-updated past the pinned build, Steam's client do
 
 ## 2. Install Live Editor
 
-1. Download **FC 27 Live Editor v27.1.4** from [(Patreon/official site — not linked here since it changes over time; get it from the current official source)](https://www.patreon.com/xAranaktu/posts/fc-27-live-v27-1-172353618).
+1. Download **FC 27 Live Editor v27.1.4** from xAranaktu's Patreon ([the v27.1.4 post](https://www.patreon.com/xAranaktu/posts/fc-27-live-v27-1-172353618), or the [main page](https://www.patreon.com/xAranaktu) if that post has moved). Check that the post is for FC 27 and the version above.
 2. Extract it to a folder (e.g. `D:\Mods\fc27\FC 27 LE v27.1.4\`)
 3. Confirm the extracted folder's `le_offsets.json` has a `GAME_VER` matching your actual installed game build — if it says a different build number, this Live Editor version doesn't match your game and you need a different LE build (or a different game build — see section 1).
 
 ## 3. Install FIFA Analytics
-1. Go to the releases page and download the `.exe` from the latest release. You only do this once; later updates install automatically from inside the app.
+1. Download the installer (`FIFA Analytics Setup <version>.exe`) from the Patreon download page. **The app does not update itself yet**: to update, download the new installer and run it over the old one (your saves are kept).
 2. During installation, select "for me (user)" when prompted.
 
 ### Where things live
