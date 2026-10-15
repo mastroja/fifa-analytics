@@ -303,5 +303,6 @@
   // app.js runs its first renderHomeDashboard before this file loads, so fill the Home card once here too.
   if (typeof document !== 'undefined') Insights.renderHomeWidget();
   const api = { fitWageCurve, expectedWage, wageRatings, contractBuckets, compareAxes, companionFor, MIN_WAGE_SAMPLE, OVERPAID_RATIO, GOOD_VALUE_RATIO };
+  root.SquadAnalytics = api; // js/insights_planning.js reuses the wage curve
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

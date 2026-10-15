@@ -35,9 +35,9 @@
   function actionFor(p, age, yearsLeft, advice, T) {
     const verdict = advice && advice.verdict;
     const reasons = [];
-    const when = yearsLeft <= 0 ? 'his contract ends this summer' : `${yearsLeft} year${yearsLeft > 1 ? 's' : ''} left`;
+    const when = yearsLeft <= 0 ? 'contract ends this summer' : `${yearsLeft} year${yearsLeft > 1 ? 's' : ''} left on his deal`;
     if (verdict === 'sell') {
-      reasons.push(yearsLeft <= 0 ? 'Recommended sale and the contract ends this summer: sell now or lose him for nothing' : `Recommended sale (${when}): sell before the value drops`);
+      reasons.push(yearsLeft <= 0 ? 'Recommended sale and the contract ends this summer: sell now or lose him for nothing' : `Recommended sale, ${when}: sell before the value drops`);
       return { action: yearsLeft <= 0 ? 'sell-now' : 'sell', reasons };
     }
     if (verdict === 'loan' || verdict === 'develop' || (age != null && age <= T.youngAge && !verdict)) {
@@ -47,19 +47,19 @@
     if (advice && advice.keyExpiring) {
       // RosterAdvice's 'monitor' for a regular on an expiring deal means "renew or cash in", not "undecided"
       const old = age != null && age >= T.shortDealAge;
-      reasons.push(`Key player with ${when}: ${old ? 'a one-year extension' : 'renew him'}`);
+      reasons.push(`Key player, ${when}: ${old ? 'a one-year extension' : 'renew him'}`);
       return { action: old ? 'renew-short' : 'renew', reasons };
     }
     if (age != null && age >= T.shortDealAge) {
-      if (verdict === 'monitor') { reasons.push(`Age ${age}, no longer clearly needed, ${when}: let the deal run out`); return { action: 'let-go', reasons }; }
-      reasons.push(verdict === 'keep' ? `Still a regular at ${age} (${when}): a one-year extension` : `Age ${age} with ${when}: a one-year extension at most`);
+      if (verdict === 'monitor') { reasons.push(`Age ${age}, no longer clearly needed, ${when}: let it run out`); return { action: 'let-go', reasons }; }
+      reasons.push(verdict === 'keep' ? `Still a regular at ${age}, ${when}: a one-year extension` : `Age ${age}, ${when}: a one-year extension at most`);
       return { action: 'renew-short', reasons };
     }
     if (verdict === 'monitor') {
-      reasons.push(`Undecided (${when}): review before the window closes`);
+      reasons.push(`Undecided, ${when}: review before the window closes`);
       return { action: 'review', reasons };
     }
-    reasons.push(`${verdict === 'keep' ? 'A player you are keeping' : 'No red flags'} and ${when}: renew`);
+    reasons.push(`${verdict === 'keep' ? 'Part of the plan' : 'No red flags'}, ${when}: renew`);
     return { action: 'renew', reasons };
   }
 

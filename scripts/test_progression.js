@@ -21,6 +21,30 @@ assert.strictEqual(G.expectedGrowth(19.4), 3.5, 'rounds');
   assert.deepStrictEqual(G.series([H(1, 0), H(2, null)], { overall: 70 }).map(x => x.overall), [70], 'zero / missing overalls dropped');
 }
 
+// --- the real getPlayerHistory shape: labels only, no season id (main.js strips seasonOrder) ----------------------
+{
+  const row = (season, overall, potential) => ({ season, league_name: 'League', overall, potential, goals: 0, appearances: 10 });
+  const hist = [row('2024/25', 60, 80), row('2025/26', 66, 80), row('2026/27', 69, 80)];
+  const live = P(1, 71, 80, 2);
+  // current season is already the last history row: the live value replaces it, never a twin point
+  const s = G.series(hist, Object.assign({}, live, { __seasonLabel: '2026/27' }));
+  assert.deepStrictEqual(s.map(x => x.overall), [60, 66, 71], 'three seasons stay three points, live value refreshes the current one');
+  assert.deepStrictEqual(s.map(x => x.label), ['2024/25', '2025/26', '2026/27']);
+  // without knowing the current label, the live value is appended as "Now" (history order is kept as given)
+  assert.deepStrictEqual(G.series(hist, live).map(x => x.overall), [60, 66, 69, 71]);
+  // duplicate labels keep one point, in place
+  assert.deepStrictEqual(G.series([row('2024/25', 60), row('2025/26', 64), row('2025/26', 66)], { overall: 66 }).map(x => x.overall), [60, 66, 66]);
+
+  const r = G.trajectory(Object.assign({}, live, { __seasonLabel: '2026/27' }), hist, 20);
+  assert.strictEqual(r.sinceLast, 5, '66 -> 71 since last season');
+  assert.strictEqual(r.total, 11, '60 -> 71 over three seasons');
+  assert.strictEqual(r.source, 'seasons');
+
+  const b = G.board([P(1, 71, 80, 2)], new Map([[1, hist]]), { ageOf: () => 20, seasonLabel: '2026/27' });
+  assert.strictEqual(b.rows[0].series.length, 3, 'board passes the current label through');
+  assert.notStrictEqual(b.rows[0].status, 'unknown', 'real-shaped history must not collapse into one point');
+}
+
 // --- labels, judged against the age norm ---------------------------------------------------------------------
 {
   // 19yo +7 in a year (norm 3.5 at 18 -> +3.5 above): rising

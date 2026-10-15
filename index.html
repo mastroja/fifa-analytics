@@ -311,6 +311,15 @@
 
     /* News tab flash — an unread edition (see setNewsTabUnread) pulses
        the button until the user actually opens News and views it. */
+    /* Insights > Roster Moves / Progression / Contract Plan (js/insights_planning.js): wide tables with a free-text
+       "Why" column. Tighter than the generic .sub-table so they fit the 900px minimum window; the wrapper scrolls
+       sideways inside the card instead of widening the page. */
+    .planning-wrap { overflow-x: auto; }
+    .planning-table th,
+    .planning-table td { padding: 8px 8px; font-size: 13px; vertical-align: top; }
+    .planning-table td:last-child { min-width: 200px; }
+    .planning-table ul { margin: 0; }
+
     /* Insights > Squad balance heatmap: names wrap inside their cell (see insights_squad.js balanceCard). */
     .insights-balance td,
     .insights-balance th {
@@ -3886,12 +3895,15 @@
        toggle button, so the Squad tab stays List / Depth / Academy. -->
   <div id="insights-tab" class="tab-content">
     <div class="dc-toolbar">
-      <div class="home-toggle" id="insights-view-toggle">
+      <div class="home-toggle" id="insights-view-toggle" style="flex-wrap: wrap;">
         <button class="home-toggle-btn active" id="insights-view-squad" onclick="Insights.setView('squad')">Squad</button>
         <button class="home-toggle-btn" id="insights-view-wages" onclick="Insights.setView('wages')">Wages &amp; Contracts</button>
         <button class="home-toggle-btn" id="insights-view-compare" onclick="Insights.setView('compare')">Compare</button>
         <button class="home-toggle-btn" id="insights-view-seasons" onclick="Insights.setView('seasons')">Seasons</button>
         <button class="home-toggle-btn" id="insights-view-injuries" onclick="Insights.setView('injuries')">Injuries</button>
+        <button class="home-toggle-btn" id="insights-view-advice" onclick="Insights.setView('advice')">Roster Moves</button>
+        <button class="home-toggle-btn" id="insights-view-progress" onclick="Insights.setView('progress')">Progression</button>
+        <button class="home-toggle-btn" id="insights-view-contracts" onclick="Insights.setView('contracts')">Contract Plan</button>
       </div>
     </div>
     <div id="insights-view"></div>
@@ -4288,6 +4300,10 @@
   <script src="js/insights_squad.js"></script>
   <script src="js/insights_seasons.js"></script>
   <script src="js/insights_injuries.js"></script>
+  <script src="js/roster_advice.js"></script>
+  <script src="js/progression.js"></script>
+  <script src="js/contract_planner.js"></script>
+  <script src="js/insights_planning.js"></script>
   <script src="js/all_time.js"></script>
   <script src="js/player_editor_ui.js"></script>
   <script src="js/dynamic_look_ui.js"></script>

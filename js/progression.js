@@ -28,20 +28,26 @@
 
   const num = v => (v == null || v === '' ? NaN : Number(v));
 
-  // One point per season in order, ending with the live row. Duplicate season orders keep the last one.
+  // One point per season in order, ending with the live row. getPlayerHistory (main.js) returns rows oldest -> newest
+  // WITHOUT a season id, only the label ("2026/27"), so seasons are keyed by label (or by seasonOrder when a caller
+  // has it) and kept in the order given. A later row for the same season replaces the earlier one.
   function series(history, player) {
-    const byOrder = new Map();
-    (history || []).forEach(h => {
+    const pts = [], at = new Map();
+    (history || []).forEach((h, i) => {
       const o = num(h.overall);
-      if (Number.isFinite(o) && o > 0) byOrder.set(h.seasonOrder, { order: h.seasonOrder, label: h.season, overall: o, potential: num(h.potential) || null });
+      if (!(Number.isFinite(o) && o > 0)) return;
+      const key = h.seasonOrder != null ? 'o:' + h.seasonOrder : h.season != null ? 'l:' + h.season : 'i:' + i;
+      const pt = { key, order: h.seasonOrder != null ? h.seasonOrder : null, label: h.season, overall: o, potential: num(h.potential) || null };
+      if (at.has(key)) pts[at.get(key)] = pt; else { at.set(key, pts.length); pts.push(pt); }
     });
-    const pts = [...byOrder.values()].sort((a, b) => a.order - b.order);
+    if (pts.length && pts.every(pt => pt.order != null)) pts.sort((a, b) => a.order - b.order);
     const live = num(player.overall);
     if (Number.isFinite(live) && live > 0) {
       const last = pts[pts.length - 1];
       // the current season's row is usually already in `history`; refresh it with the live value rather than add a twin
-      if (last && last.order === player.__seasonOrder) { last.overall = live; last.potential = num(player.potential) || last.potential; }
-      else pts.push({ order: player.__seasonOrder != null ? player.__seasonOrder : (last ? last.order + 1 : 0), label: 'Now', overall: live, potential: num(player.potential) || null });
+      const isCurrent = last && ((player.__seasonLabel != null && last.label === player.__seasonLabel) || (player.__seasonOrder != null && last.order === player.__seasonOrder));
+      if (isCurrent) { last.overall = live; last.potential = num(player.potential) || last.potential; }
+      else pts.push({ key: 'now', order: null, label: 'Now', overall: live, potential: num(player.potential) || null });
     }
     return pts;
   }
@@ -121,13 +127,15 @@
   //   players    live squad rows (player_id, name, overall, potential, overall_delta)
   //   histories  Map or object: player_id -> getPlayerHistory rows
   //   opts.ageOf(p) -> number | null (required for any label), opts.isAway(p), opts.limit (per list, default 5),
-  //   opts.seasonOrder  id of the current season, so the live row replaces its own history entry instead of doubling it
+  //   opts.seasonLabel / opts.seasonOrder  the current season's label ("2026/27") or id, so the live row replaces its own
+  //                     history entry instead of doubling it (getPlayerHistory rows carry the label, not the id)
   function board(players, histories, opts) {
     opts = opts || {};
     const get = id => (histories instanceof Map ? histories.get(id) : histories && histories[id]) || [];
     const limit = opts.limit || 5;
     const rows = (players || []).filter(p => !(opts.isAway && opts.isAway(p))).map(p => {
-      const cur = opts.seasonOrder != null ? Object.assign({}, p, { __seasonOrder: opts.seasonOrder }) : p;
+      const cur = opts.seasonLabel != null || opts.seasonOrder != null
+        ? Object.assign({}, p, { __seasonLabel: opts.seasonLabel, __seasonOrder: opts.seasonOrder }) : p;
       const r = trajectory(cur, get(p.player_id), opts.ageOf ? opts.ageOf(p) : null);
       r.player = p;
       return r;

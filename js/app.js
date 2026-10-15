@@ -4198,6 +4198,7 @@ Live Editor will end each loan and then release the player from your club to fre
       // New sync or save: the Seasons / Injuries views reload their data the next time they are drawn.
       if (window.InsightsSeasons) window.InsightsSeasons.invalidate();
       if (window.InsightsInjuries) window.InsightsInjuries.invalidate();
+      if (window.InsightsPlanning) window.InsightsPlanning.invalidate();
       if (window.Insights) window.Insights.refresh();
       renderHomeDashboard();
       filterAndRenderTransfers(); // Loaned view reads currentPlayers directly
@@ -8994,6 +8995,7 @@ Live Editor will end each loan and then release the player from your club to fre
       // New sync or save: the Seasons / Injuries views reload their data the next time they are drawn.
       if (window.InsightsSeasons) window.InsightsSeasons.invalidate();
       if (window.InsightsInjuries) window.InsightsInjuries.invalidate();
+      if (window.InsightsPlanning) window.InsightsPlanning.invalidate();
       if (window.Insights) window.Insights.refresh();
     }
 
