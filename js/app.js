@@ -3350,6 +3350,8 @@ let currentCalendar = [];
               `}
             </div>
 
+            ${window.InsightsPlanning && !player.__isFormerPlayer ? window.InsightsPlanning.profileHtml(player, chronoSeasons) : ''}
+
             <div class="profile-card">
               <h3 style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                 <span>Transfer History</span>

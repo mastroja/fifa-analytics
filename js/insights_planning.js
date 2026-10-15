@@ -174,6 +174,41 @@
   }
 
   // ---------------------------------------------------------------------------------------------------------
+  // Player profile card: this player's verdict, progression and contract action in one place
+  // ---------------------------------------------------------------------------------------------------------
+
+  // seasons: the profile's per-season rows ({ year_label, overall, potential }), oldest -> newest. '' for anyone who is
+  // not a senior squad player (loaned out, former, academy): there is nothing to advise about.
+  function profileCardHtml(env, player, seasons) {
+    if (!player) return '';
+    const row = computeAdvice(env).find(r => String(r.player.player_id) === String(player.player_id));
+    if (!row) return '';
+    const p = row.player;
+    const hist = (seasons || []).filter(x => x && x.year_label).map(x => ({ season: x.year_label, overall: x.overall, potential: x.potential }));
+    // the stored row for the current season is refreshed with the live value instead of being counted twice
+    const cur = root.Charts ? hist.find(h => root.Charts.seasonEndYear(h.season) === env.seasonEndYear) : null;
+    const tr = root.Progression ? root.Progression.trajectory(Object.assign({}, p, { __seasonLabel: cur ? cur.season : null }), hist, env.ageOf(p)) : null;
+    const plan = computePlan(env);
+    const dec = plan && plan.renewals.find(r => String(r.player.player_id) === String(p.player_id));
+
+    const item = (label, value) => `<div class="attr-item"><span>${esc(label)}:</span> <strong>${value}</strong></div>`;
+    const items = [
+      item('Verdict', badge(VERDICTS[row.verdict]) + (row.blocked ? ' <span style="font-size: 11px; color: #d29922;">blocked</span>' : '')),
+      item('Play time', playTimeText(row.playTime))
+    ];
+    if (tr) items.push(item('Progression', badge(STATUSES[tr.status])));
+    if (dec) items.push(item('Contract', badge(ACTIONS[dec.action] || ACTIONS.review) + (noMoney(dec.action) ? '' : ` <span style="font-weight: 400; color: var(--text-dim); font-size: 12px;">est. ${esc(env.wageFmt(dec.renewalWage))} / wk</span>`)));
+    // a recommended sale already explains the expiring contract; the Contract badge carries the action
+    const reasons = row.reasons.concat(tr ? tr.reasons.slice(0, 2) : [], dec && row.verdict !== 'sell' ? dec.reasons : []);
+    return `<div class="profile-card">
+      <h3 style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><span>Planning</span>
+        <button class="home-toggle-btn" onclick="Insights.open('advice')">Roster Moves →</button></h3>
+      <div class="attr-list">${items.join('')}</div>
+      <div style="margin-top: 10px;">${reasonsHtml(reasons)}</div>
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 8px;">Rule-of-thumb advice from this squad's own numbers, not a prediction.</div></div>`;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
   // Live wiring (the only part that reads app.js globals)
   // ---------------------------------------------------------------------------------------------------------
 
@@ -247,7 +282,14 @@
     root.Insights.addWagesSection('table', () => planTableHtml(liveEnv()));
   }
 
+  // The live card for app.js's player profile. Never throws: a profile must open even if this card cannot be drawn.
+  function profileHtml(player, seasons) {
+    try { return player && player.__clubStatus === 'normal' ? profileCardHtml(liveEnv(), player, seasons) : ''; }
+    catch (e) { console.error('Insights profile card:', e); return ''; }
+  }
+
   const api = {
+    profileCardHtml, profileHtml,
     adviceHtml, progressHtml, planCardHtml, planTableHtml, computePlan, computeAdvice, seasonEndYearNow,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }

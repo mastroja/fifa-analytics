@@ -128,6 +128,39 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   noRawTags(V.planTableHtml(env({ players: [P(4, 'Young <b>Kid</b>', 'MID', 19, 64, 82, 5000, 2027, 1, 90)].concat(squad().slice(0, 3)) })));
 }
 
+// --- Player profile card ------------------------------------------------------------------------------------------
+{
+  const e = env();
+  const seasons = [{ year_label: '2025/26', overall: 61, potential: 82 }, { year_label: '2026/27', overall: 64, potential: 82 }];
+  const kid = squad()[3];
+  const card = V.profileCardHtml(e, kid, seasons);
+  assert(card.includes('<h3') && card.includes('Planning') && /Roster Moves/.test(card), 'card with a link to Roster Moves');
+  assert(/>Loan</.test(card) && /prospect who needs minutes/.test(card), 'the prospect is a loan with the reason');
+  assert(/Progression:/.test(card) && /OVR since last season/.test(card), 'progression line from the season rows');
+  assert(!/Contract:/.test(card), 'no contract action for a deal with years left');
+  assert(/Rule-of-thumb/.test(card));
+  assert(!/<b>/.test(card) && !card.includes('Kid</b>'), 'nothing unescaped leaks into the card');
+
+  // the live current-season row must not be double counted: 61 -> 64 is +3, not 0
+  assert(/\+3 OVR since last season/.test(card), 'current season row is refreshed, not duplicated');
+  const noLabel = V.profileCardHtml(e, kid, [{ overall: 61 }, { overall: 64 }]);
+  assert(noLabel.includes('Planning'), 'season rows without labels still render the card');
+
+  const vet = squad()[4];                                   // Old Timer: sell, expires this summer
+  const vc = V.profileCardHtml(e, vet, [{ year_label: '2025/26', overall: 72, potential: 72 }, { year_label: '2026/27', overall: 70, potential: 70 }]);
+  assert(/>Sell</.test(vc) && /Contract:/.test(vc) && />Sell now</.test(vc), 'verdict and the contract action');
+  assert.strictEqual((vc.match(/sell now or lose him/g) || []).length, 1, 'the expiring-sale reason is shown once');
+  assert(!/est\. €/.test(vc), 'no renewal wage for a player being sold');
+  const key = V.profileCardHtml(e, squad()[5], seasons);
+  assert(/>Renew</.test(key) && /est\. €49,500/.test(key), 'a key expiring player shows the renewal estimate');
+
+  assert.strictEqual(V.profileCardHtml(e, { player_id: 999, name: 'Not In Squad' }, seasons), '', 'not a senior squad player: nothing');
+  assert.strictEqual(V.profileCardHtml(e, null, seasons), '');
+  assert.strictEqual(V.profileCardHtml(e, kid, undefined).includes('Planning'), true, 'no season rows at all still renders');
+  const ban = V.profileCardHtml(env({ transferBan: true }), kid, seasons);
+  assert(/blocked/.test(ban), 'blocked marker under a transfer ban');
+}
+
 // --- live wiring: fake app.js globals, async Progression load, error guard, invalidation ---------------------------
 (async () => {
   const live = squad();
@@ -149,6 +182,15 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   globalThis.currentIngameDate = '2026-09-01'; assert.strictEqual(V.seasonEndYearNow(), 2027, 'September 2026 too');
   globalThis.currentIngameDate = '2027-07-01'; assert.strictEqual(V.seasonEndYearNow(), 2028, 'July starts the next season');
   globalThis.currentIngameDate = '2027-01-10';
+
+  const liveKid = globalThis.currentPlayers[3];
+  assert(V.profileHtml(liveKid, [{ year_label: '2026/27', overall: 64, potential: 82 }]).includes('Planning'), 'live profile card');
+  assert.strictEqual(V.profileHtml({ ...liveKid, __clubStatus: 'loan' }, []), '', 'a loaned-out player gets no card');
+  assert.strictEqual(V.profileHtml(undefined, []), '');
+  const mute = console.error; console.error = () => {};
+  const keepPos = globalThis.getPositionInfo; globalThis.getPositionInfo = () => { throw new Error('boom'); };
+  assert.strictEqual(V.profileHtml(liveKid, []), '', 'the profile still opens if the card cannot be drawn');
+  globalThis.getPositionInfo = keepPos; console.error = mute;
 
   // no window.api: Progression draws from in-season data without hanging on a loader
   assert(!registered.progress().includes('Loading'), 'no api: no endless loading state');
