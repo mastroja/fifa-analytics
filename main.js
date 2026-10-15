@@ -2091,42 +2091,6 @@ function getAcademyTracker(saveId = activeSaveId) {
   }));
 }
 
-function getAcademyWatchlist(saveId = activeSaveId) {
-  if (!db || !saveId) return [];
-  const res = db.exec(`SELECT player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at FROM academy_watchlist WHERE save_id = ${Number(saveId)} ORDER BY added_at DESC;`);
-  if (res.length === 0) return [];
-  return res[0].values.map(([player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at]) =>
-    ({ player_id, base_overall, base_pot_low, base_pot_high, base_season_id, note, added_at }));
-}
-
-// Adds the prospect (freezing their current numbers as the baseline) or removes them if already watched.
-function toggleAcademyWatch(playerId, saveId = activeSaveId) {
-  if (!db || !saveId || !playerId) return { success: false };
-  const existing = db.exec(`SELECT 1 FROM academy_watchlist WHERE save_id = ${Number(saveId)} AND player_id = ${Number(playerId)};`);
-  if (existing.length > 0) {
-    db.run('DELETE FROM academy_watchlist WHERE save_id = ? AND player_id = ?;', [saveId, playerId]);
-    saveDatabaseToDisk();
-    return { success: true, watched: false };
-  }
-  const latest = db.exec(`
-    SELECT y.season_id, y.overall, y.potential_low, y.potential_high
-    FROM youth_academy_snapshot y JOIN seasons se ON se.id = y.season_id
-    WHERE se.save_id = ${Number(saveId)} AND y.player_id = ${Number(playerId)}
-    ORDER BY se.id DESC LIMIT 1;`);
-  const [seasonId, ovr, low, high] = latest.length > 0 ? latest[0].values[0] : [null, null, null, null];
-  db.run('INSERT INTO academy_watchlist (save_id, player_id, base_overall, base_pot_low, base_pot_high, base_season_id) VALUES (?, ?, ?, ?, ?, ?);',
-    [saveId, playerId, ovr, low, high, seasonId]);
-  saveDatabaseToDisk();
-  return { success: true, watched: true };
-}
-
-function setAcademyWatchNote(playerId, note, saveId = activeSaveId) {
-  if (!db || !saveId || !playerId) return { success: false };
-  db.run('UPDATE academy_watchlist SET note = ? WHERE save_id = ? AND player_id = ?;', [String(note || '').slice(0, 500) || null, saveId, playerId]);
-  saveDatabaseToDisk();
-  return { success: true };
-}
-
 // Trophies actually won during this save — a competition result of
 // "Winner" in season_competition_results. Cups reach that text once the
 // final is won (see export_all.lua's round-progress logic); leagues only
@@ -6211,9 +6175,6 @@ ipcMain.handle('get-trophies-won', () => getTrophiesWon());
 ipcMain.handle('get-youth-academy', (_event, saveId) => getYouthAcademy(saveId));
 ipcMain.handle('get-all-time-xi', (_event, saveId) => getAllTimeXI(saveId));
 ipcMain.handle('get-academy-tracker', (_event, saveId) => getAcademyTracker(saveId));
-ipcMain.handle('get-academy-watchlist', (_event, saveId) => getAcademyWatchlist(saveId));
-ipcMain.handle('toggle-academy-watch', (_event, playerId, saveId) => license.isPro('academy-tracker') ? toggleAcademyWatch(playerId, saveId) : { success: false, error: 'Pro feature' });
-ipcMain.handle('set-academy-watch-note', (_event, playerId, note, saveId) => license.isPro('academy-tracker') ? setAcademyWatchNote(playerId, note, saveId) : { success: false, error: 'Pro feature' });
 ipcMain.handle('license-info', () => license.info());
 ipcMain.handle('license-activate', (_event, token) => license.activate(token));
 ipcMain.handle('license-clear', () => license.clear());

@@ -15,7 +15,7 @@ module.exports = {
   // Everything not listed here is free. Add a feature here to make it Pro; remove it to make it free again.
   PRO_FEATURES: {
     'youth-mode': 'Youth Mode and the Challenge dashboard',
-    'academy-tracker': 'Academy tracker and regen watchlist',
+    'academy-tracker': 'Academy tracker',
     'depth-extras': 'Reserves, custom lineups, All-Time XI and the what-if tool',
     'player-editor': 'Player editor'
   }

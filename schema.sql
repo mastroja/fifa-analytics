@@ -934,6 +934,8 @@ CREATE TABLE IF NOT EXISTS challenge_transfer_bans (
     FOREIGN KEY(save_id) REFERENCES saves(id)
 );
 
+-- RETIRED: the regen watchlist was removed from the app and nothing writes to this table any more. It is kept (not
+-- dropped) so existing databases lose no data and the cleanup DELETEs in main.js keep working.
 -- Regen watchlist: academy prospects the user is following. base_* freeze the prospect's overall / potential range
 -- (and season) at the moment they were added, so the tracker can show "since added" movement and alerts.
 CREATE TABLE IF NOT EXISTS academy_watchlist (

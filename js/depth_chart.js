@@ -645,8 +645,9 @@ ${academySection}</aside>
   function applyMode() {
     const list = mode === 'list';
     ['squad-season-bar', 'squad-filter-mount', 'squad-list-controls', 'squad-table-wrap'].forEach(id => { const el = $(id); if (el) el.style.display = list ? '' : 'none'; });
-    const host = $('squad-alt-view'); if (host) host.style.display = list || mode === 'alltime' ? 'none' : '';
+    const host = $('squad-alt-view'); if (host) host.style.display = list || mode === 'alltime' || mode === 'academy' ? 'none' : '';
     const allTime = $('squad-alltime-view'); if (allTime) allTime.style.display = mode === 'alltime' ? '' : 'none';
+    const academy = $('squad-academy-view'); if (academy) academy.style.display = mode === 'academy' ? '' : 'none';
     ['list', 'depth', 'academy', 'alltime'].forEach(m => { const b = $('squad-view-' + m); if (b) b.classList.toggle('active', m === mode); });
     if (mode !== 'depth') { edit = null; refreshModal(); }
   }

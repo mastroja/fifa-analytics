@@ -11,7 +11,7 @@ Audited 2026-10-08 against the app database (the two FC 27 saves, Swansea 2026/2
 | Wage, contract end year, jersey number | Works | wage now on `players`; `contractvaliduntil` |
 | Contract start / duration / squad role | Missing | no FC 27 source (`career_playercontract` is gone); exported as empty defaults |
 | Injuries | Works (none seen yet) | `teamplayerlinks.injury` |
-| Youth academy snapshot, tracker, watchlist | Works | `career_youthplayers`; 17 / 13 rows in the two saves |
+| Youth academy snapshot and Academy page (sort, filter, promotion readiness) | Works | `career_youthplayers`; 17 / 13 rows in the two saves |
 | Player editor (appearance, attributes, positions, PlayStyles, height) | Works | `player_editor_sync.lua`, F11 flow |
 | Appearances + average rating | Approximate | restored from `career_playermatchratinghistory` (new fallback in `export_all.lua`): whole-number ratings, so the average is ~0.2 off the in-game one |
 | Minutes played | Approximate, **not yet verified against the game** | summed from the same `career_playermatchratinghistory` rows (`minsplayed`) in `export_all.lua`, stored in `player_season_stats.minutes_played` (NULL = the export had no minutes, 0 = a real zero), read as `minutes` on each squad row. `js/roster_advice.js` uses it as the best play-time signal and falls back to appearances. See the checklist below. |

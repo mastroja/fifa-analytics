@@ -2,7 +2,7 @@
 
 A companion app for EA Sports FC 27 Career Mode. It reads data out of your save via a Live Editor Lua script bound to a hotkey, and turns it into a Home dashboard, season history, transfer tracking, league stats, and an end-of-season summary — all local, all offline, nothing sent anywhere.
 
-**What you get:** a Home dashboard, squad list with filters, player profiles, a depth chart (Starting XI, Reserves, custom lineups, All-Time XI), an academy tracker with a regen watchlist, Youth Squad Career Mode tools (rules, transfer ban, challenge dashboard), contract and injury tracking, and an in-app player editor.
+**What you get:** a Home dashboard, squad list with filters, player profiles, a depth chart (Starting XI, Reserves, custom lineups, All-Time XI), an academy page (sortable and filterable, with a "ready for promotion" verdict for each prospect), Youth Squad Career Mode tools (rules, transfer ban, challenge dashboard), contract and injury tracking, and an in-app player editor.
 
 This app depends on a specific combination of game version + Live Editor version, because Live Editor works by reading the game's memory at fixed offsets that change with every game patch. **If the versions below don't match, none of this will work**, so read the version-pinning section before installing anything.
 
