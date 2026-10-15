@@ -155,16 +155,15 @@ assert.deepStrictEqual(['70-78', '70–78', '74', '—', '', null, undefined, 'a
   assert.deepStrictEqual(match({ ovr: { min: 62 } }), [7, 101, 102, 103]);
   assert.deepStrictEqual(match({ pot: { min: 82 } }), [102, 103, 104], 'potential 82+ as displayed: 84, 82, 88');
   assert.deepStrictEqual(match({ months: { min: 30 } }), [7, 101, 102, 103, 104, 130]);
-  assert.deepStrictEqual(match({ growth: 14 }), [7, 101], 'OVR gained since first seen, at least (both +14)');
-  assert.deepStrictEqual(match({ growth: 1 }).includes(140), false, 'a track with no change is not "rising"');
   A.FILTER_PRESETS.forEach(p => Object.keys(p.set).forEach(id => assert(fields.some(f => f.id === id), `preset "${p.label}" uses the real field "${id}"`)));
   const preset = label => A.FILTER_PRESETS.find(p => p.label === label).set;
   assert.deepStrictEqual(match(preset('Ready for promotion')), [101]);
   assert.deepStrictEqual(match(preset('Ready or close')), [101, 103]);
   assert.deepStrictEqual(match(preset('Under 18')), [101, 104]);
   assert.deepStrictEqual(match(preset('High ceiling (78+)')), [101, 102, 103, 104], 'potentials 80, 84, 82, 88');
-  assert.deepStrictEqual(match(preset('Rising fast (+8)')), [7, 101, 102, 103, 104]);
   assert.strictEqual(PF.countActive(fields, { ready: ['ready'], age: { max: 17 } }), 2);
+  assert.deepStrictEqual(fields.map(f => f.id), ['group', 'ready', 'age', 'ovr', 'pot', 'months'], 'six filters: no "OVR gained since first seen"');
+  assert.deepStrictEqual(A.FILTER_PRESETS.map(p => p.label), ['Ready for promotion', 'Ready or close', 'Under 18', 'High ceiling (78+)']);
 }
 
 // ---- readyProspects (the Home card) -------------------------------------------------------------------------------

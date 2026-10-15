@@ -22,7 +22,7 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 - **All-Time XI:** a tucked-away 🏆 button builds a lineup of the best players ever to play for your club, ranked by peak overall.
 
 ### Academy
-- The Academy page is laid out like the Squad list: **sortable columns**, the same **filter panel** (position, promotion verdict, age, overall, potential, months in academy, OVR gained) with one-click presets, search, and In academy / Promoted / Left / All tabs. Click a prospect's name to see their season-by-season history; click anywhere else on the row to open the profile.
+- The Academy page is laid out like the Squad list: **sortable columns**, the same **filter panel** (position, promotion verdict, age, overall, potential, months in academy) with one-click presets, search, and In academy / Promoted / Left / All tabs. Click a prospect's name to see their season-by-season history; click anywhere else on the row to open the profile.
 - **Ready for promotion:** each prospect in the academy gets a plain verdict compared with your weakest senior player at the same position: **Ready for promotion** (level or better), Close (within 3), Developing, or Position open (no senior player there), with the comparison and where they would rank in the squad (for example "5 above Jamie Cole (61) · would be 2nd of 3 GKs"). A chip counts the ones who are ready, and the Home Roster Moves card lists them.
 - Sorting and filtering by potential only ever use the number the app shows, so a potential hidden in Youth Mode stays hidden.
 - The regen watchlist (starring prospects, alerts and notes) has been removed. Nothing was deleted from your saves.

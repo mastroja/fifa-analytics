@@ -127,16 +127,14 @@
       { id: 'age', label: 'Age', type: 'range', get: r => r.age },
       { id: 'ovr', label: 'Overall', type: 'range', get: r => r.ovr },
       { id: 'pot', label: 'Potential (as shown)', type: 'range', get: r => r.potHigh },
-      { id: 'months', label: 'Months in academy', type: 'range', get: r => r.months },
-      { id: 'growth', label: 'OVR gained since first seen (at least)', type: 'min', get: r => r.ovrChange }
+      { id: 'months', label: 'Months in academy', type: 'range', get: r => r.months }
     ];
   }
   const FILTER_PRESETS = [
     { label: 'Ready for promotion', set: { ready: ['ready'] } },
     { label: 'Ready or close', set: { ready: ['ready', 'close'] } },
     { label: 'Under 18', set: { age: { max: 17 } } },
-    { label: 'High ceiling (78+)', set: { pot: { min: 78 } } },
-    { label: 'Rising fast (+8)', set: { growth: 8 } }
+    { label: 'High ceiling (78+)', set: { pot: { min: 78 } } }
   ];
 
   // Academy prospects who are ready (or close) for the first team, best margin first; for the Home card.
