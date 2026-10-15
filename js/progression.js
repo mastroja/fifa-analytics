@@ -69,7 +69,7 @@
     const gap = potential > 0 ? Math.max(0, potential - overall) : 0;
     const inSeason = num(player.overall_delta);
     const row = { player, age, series: pts, overall, potential, gap, inSeason: Number.isFinite(inSeason) ? inSeason : 0,
-      sinceLast: null, total: null, change: null, source: null, expected: null, vsExpected: null,
+      sinceLast: null, total: null, change: null, source: null, expected: null, vsExpected: null, ageThen: null,
       status: 'unknown', yearsToPotential: null, curveYears: null, reasons: [] };
 
     if (pts.length >= 2) {
@@ -87,6 +87,7 @@
 
     // compare like with like: the change over the last season is judged against the norm for the age they were then
     const ageThen = row.source === 'seasons' ? age - 1 : age;
+    row.ageThen = ageThen; // the age the change happened at, which is what the norm is looked up by
     row.expected = expectedGrowth(ageThen);
     row.vsExpected = row.change - row.expected;
     // The in-season fallback is part of a season and is 0 for everyone right after a first sync, so it may flag a real

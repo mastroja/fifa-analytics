@@ -79,3 +79,19 @@ assert(/<polyline clip-path="url\(#/.test(s1), 'trend uses the clip');
 assert.notStrictEqual(idOf(s1), idOf(s2), 'clip ids unique');
 
 console.log('charts tests passed');
+
+// scatter: negative values and dot labels
+{
+  const pts = [{ x: 20, y: -3, label: 'Behind' }, { x: 30, y: 6, label: 'Ahead <b>' }, { x: 29, y: 0 }];
+  const clamped = C.scatterSvg(pts, {});
+  const neg = C.scatterSvg(pts, { yNegative: true, yFmt: v => Math.round(v) });
+  const yTicks = svg => [...svg.matchAll(/text-anchor="end" font-size="11"[^>]*>(-?[\d.]+)</g)].map(m => Number(m[1]));
+  assert(Math.min(...yTicks(clamped)) >= 0, 'by default the value axis still starts at 0');
+  assert(Math.min(...yTicks(neg)) < 0, 'yNegative lets the axis go below zero');
+  assert(neg.includes('>Behind<') && neg.includes('&lt;b&gt;'), 'labels are drawn and escaped');
+  assert(!neg.includes('Ahead <b>'), 'no raw markup from a label');
+  assert(/text-anchor="end"[^>]*>Ahead/.test(neg) && /text-anchor="start"[^>]*>Behind/.test(neg), 'a dot in the right quarter labels on its left, otherwise on its right');
+  assert(!C.scatterSvg([{ x: 1, y: 1 }, { x: 2, y: 2 }], {}).includes('paint-order'), 'no labels: nothing extra is drawn');
+  const refNeg = C.scatterSvg(pts, { yNegative: true, yRef: 0 });
+  assert(refNeg.includes('stroke-dasharray: 3 4'), 'a zero reference line is drawn when the axis spans it');
+}

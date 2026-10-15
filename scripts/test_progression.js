@@ -54,6 +54,7 @@ assert.strictEqual(G.expectedGrowth(19.4), 3.5, 'rounds');
   assert.strictEqual(rising.expected, G.expectedGrowth(18));
   assert(Math.abs(rising.vsExpected - 3) < 1e-9);
   assert.strictEqual(rising.yearsToPotential, 2, 'gap 14 at +7 per season = 2 seasons');
+  assert.strictEqual(rising.ageThen, 18, 'the change happened at 18, a year before he turned 19: the norm is looked up by that age');
 
   // 19yo flat for a year with 15 points of potential: stalling, not declining
   const stall = G.trajectory(P(2, 64, 76), [H(1, 64, 76)], 19);
@@ -87,6 +88,8 @@ assert.strictEqual(G.expectedGrowth(19.4), 3.5, 'rounds');
   const r = G.trajectory(P(10, 70, 85, 5), [], 20);
   assert.strictEqual(r.source, 'in-season');
   assert.strictEqual(r.change, 5);
+  assert.strictEqual(r.ageThen, 20, 'an in-season change is judged at his current age');
+  assert.strictEqual(G.trajectory(P(99, 70, 80, 4), [], null).ageThen, null, 'no age: no age-then');
   assert(r.reasons[0].includes('so far this season'));
   assert.strictEqual(r.status, 'rising', '+5 at 20 vs norm 3');
   const flat0 = G.trajectory(P(11, 70, 85, 0), [], 20);

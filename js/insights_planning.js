@@ -108,16 +108,17 @@
   const ATTENTION = ['rising', 'stalling', 'declining'];
   const PROGRESS_FILTERS = ['attention', 'all'].concat(STATUS_ORDER);
 
-  // A tiny line of a player's overall season by season (their trend), ending in a dot. '–' when there is only one point.
-  function sparkline(series, color) {
+  // A compact arrow for the direction of a player's overall (the colour says how that compares with their age).
+  function trendArrow(change, color) {
+    const n = Number(change);
+    if (change == null || !Number.isFinite(n)) return '<span style="color: var(--text-dim);">–</span>';
+    const glyph = n >= 3 ? '↑' : n >= 1 ? '↗' : n <= -3 ? '↓' : n <= -1 ? '↘' : '→';
+    return `<span style="font-size: 20px; font-weight: 700; line-height: 1; color: ${color};" title="${esc(sign(n))} OVR">${glyph}</span>`;
+  }
+  // "64 → 71": a player's overall season by season, as text; '' with fewer than two seasons.
+  function pathText(series) {
     const v = (series || []).map(p => Number(p.overall)).filter(Number.isFinite);
-    if (v.length < 2) return '<span style="color: var(--text-dim);">–</span>';
-    const W = 84, H = 26, P = 4, lo = Math.min(...v), hi = Math.max(...v);
-    const x = i => P + (i * (W - 2 * P)) / (v.length - 1);
-    const y = n => (hi === lo ? H / 2 : H - P - ((n - lo) / (hi - lo)) * (H - 2 * P));
-    const pts = v.map((n, i) => `${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
-    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Overall by season: ${esc(v.join(' to '))}"><title>${esc(v.join(' → '))}</title>
-      <polyline points="${pts}" fill="none" style="stroke: ${color}; stroke-width: 2;" /><circle cx="${x(v.length - 1).toFixed(1)}" cy="${y(v[v.length - 1]).toFixed(1)}" r="3" style="fill: ${color};" /></svg>`;
+    return v.length >= 2 ? v.join(' → ') : '';
   }
 
   const clickName = p => `<span class="clickable-name" style="color: #58a6ff;" onclick="event.stopPropagation(); openPlayerProfile('${esc(p.player_id)}')">${esc(p.name)}</span>`;
@@ -143,7 +144,7 @@
       const side = v >= 0 ? `left: 50%;` : `right: 50%;`;
       const id = esc(r.player.player_id), isOpen = open.has(String(r.player.player_id));
       const detail = isOpen ? `<div style="margin: 0 6px 8px; padding: 8px 12px; background: var(--hover-color); border-radius: 6px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;">
-          <div>${sparkline(r.series, color)}</div><div>${badge(STATUSES[r.status])}</div><div style="flex: 1; min-width: 220px;">${reasonsHtml(r.reasons)}</div></div>` : '';
+          <div>${trendArrow(r.change, color)}</div><div>${badge(STATUSES[r.status])}</div>${pathText(r.series) ? `<div style="font-size: 12px; color: var(--text-dim); white-space: nowrap;">${esc(pathText(r.series))} OVR</div>` : ''}<div style="flex: 1; min-width: 220px;">${reasonsHtml(r.reasons)}</div></div>` : '';
       return `<div class="pl-chart-row" onclick="InsightsPlanning.toggleProgress('${id}')" title="${esc(sign(r.change == null ? 0 : r.change))} OVR ${r.source === 'in-season' ? 'this season' : 'last season'}, typical ${esc(sign(r.expected))}. Click for the reasoning."
           style="display: grid; ${cols} gap: 10px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer;">
         <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${clickName(r.player)} <span style="font-size: 11px; color: var(--text-dim);">${esc([env.posLabel(r.player), ageText(r.age)].filter(x => x != null && x !== '').join(' · '))}</span></div>
@@ -186,7 +187,7 @@
       const id = esc(r.player.player_id), isOpen = open.has(String(r.player.player_id));
       body += `<tr class="player-row${isOpen ? ' expanded' : ''}">
         <td><span class="expand-icon" style="font-size: 14px; padding: 0 6px 0 0;" title="Show the reasoning" onclick="InsightsPlanning.toggleProgress('${id}')">▶</span>${nameLink(r.player)}${subLine([env.posLabel(r.player), ageText(r.age), `${r.overall}/${r.potential || '?'}`])}</td>
-        <td>${sparkline(r.series, STATUSES[r.status].color)}</td>
+        <td>${trendArrow(r.change, STATUSES[r.status].color)}</td>
         <td><strong style="font-size: 16px; color: ${r.change > 0 ? '#3fb950' : r.change < 0 ? '#f85149' : 'inherit'};">${r.change == null ? '–' : sign(r.change)}</strong>${subLine([r.source === 'in-season' ? 'this season' : 'last season', r.expected == null ? null : `typical ${sign(r.expected)}`])}</td>
         <td>${badge(STATUSES[r.status])}</td></tr>`;
       if (isOpen) body += `<tr class="detail-row open"><td colspan="4"><div class="detail-wrapper">${reasonsHtml(r.reasons)}</div></td></tr>`;
@@ -208,6 +209,36 @@
       <div class="profile-card">${table}
         ${f === 'attention' && rest ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">${rest} more ${rest === 1 ? 'is' : 'are'} on track, at their ceiling or have no history yet. <button class="home-toggle-btn" style="font-size: 12px; padding: 2px 10px; margin-left: 6px;" onclick="InsightsPlanning.setProgressFilter('all')">Show everyone</button></div>` : ''}</div>
       ${note('Compared with a typical yearly change for that age (a rule of thumb, not EA\'s curve), not in absolute terms. Click ▶ for the numbers behind a label. A first sync reports no movement, so those players show as unknown.')}`;
+  }
+
+  // Growth graph: the whole squad on one scatter. Each dot is a player at the age the change happened (x) and how many overall
+  // points they gained or lost (y); the dashed line is the typical change for that age, so a dot above it is ahead of
+  // schedule and one below it is behind. Colour follows the progression status; the biggest outliers carry their name.
+  const DOT = { rising: '#3fb950', stalling: '#d29922', declining: '#f85149', maxed: '#58a6ff', 'on-track': '#8b949e', unknown: '#8b949e' };
+  function growthGraphHtml(env) {
+    if (!env.players.length) return empty('No squad loaded.');
+    if (!root.Progression || !root.Charts) return empty('The graph is not available.');
+    const rows = root.Progression.board(env.players, env.histories || new Map(), { ageOf: env.ageOf, seasonLabel: env.seasonLabel, seasonOrder: env.seasonOrder }).rows;
+    const known = rows.filter(r => r.vsExpected != null && Number.isFinite(r.vsExpected) && r.change != null && r.ageThen != null);
+    if (!known.length) return empty('Not enough history yet. Each F10 sync stores a snapshot, so the graph fills in after your second season or once ratings start moving.');
+    const lastName = n => String(n || '').trim().split(/\s+/).pop();
+    // name the biggest outliers on each side so the graph reads without hovering
+    const far = known.filter(r => Math.abs(r.vsExpected) >= 1.5);
+    const named = new Set(far.slice().sort((a, b) => b.vsExpected - a.vsExpected).slice(0, 3).concat(far.slice().sort((a, b) => a.vsExpected - b.vsExpected).slice(0, 3)).map(r => r.player.player_id));
+    const points = known.map(r => ({
+      x: r.ageThen, y: r.change, color: DOT[r.status] || DOT.unknown, id: r.player.player_id,
+      title: `${r.player.name} · ${ageText(r.age)} · ${sign(r.change)} OVR (typical ${sign(r.expected)}) · ${STATUSES[r.status].label}`,
+      label: named.has(r.player.player_id) ? lastName(r.player.name) : undefined
+    }));
+    const lo = Math.min(...known.map(r => r.ageThen)), hi = Math.max(...known.map(r => r.ageThen));
+    const trend = []; for (let a = Math.floor(lo) - 1; a <= Math.ceil(hi) + 1; a++) trend.push({ x: a, y: root.Progression.expectedGrowth(a) });
+    const svg = root.Charts.scatterSvg(points, { xLabel: 'Age (when the change happened)', yLabel: 'OVR change', xFmt: v => Math.round(v), yFmt: v => sign(Math.round(v)), yRef: 0, yNegative: true, trend, onClick: 'openPlayerProfile' });
+    const count = s => known.filter(r => r.status === s).length;
+    const legend = ['rising', 'stalling', 'declining', 'maxed', 'on-track'].filter(s => count(s)).map(s => `<span><span style="color: ${DOT[s]};">●</span> ${esc(STATUSES[s].label)} ${count(s)}</span>`).join('') + '<span>╌ typical for that age</span>';
+    const missing = rows.length - known.length;
+    return `<div class="profile-card" style="max-width: 1000px; margin: 0 auto;">${svg}
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; font-size: 12px; color: var(--text-dim); margin-top: 4px;">${legend}</div></div>
+      ${note(`Dots above the dashed line are growing faster than is typical for their age, dots below it slower. The line is a rule of thumb, not EA's curve. Click a dot to open the player.${missing ? ` ${missing} player${missing === 1 ? ' has' : 's have'} no history yet and ${missing === 1 ? 'is' : 'are'} not shown.` : ''}`)}`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -403,6 +434,11 @@
 
   const views = {
     advice: safe('Roster Moves', () => adviceHtml(liveEnv())),
+    growth: safe('Growth Graph', () => {
+      if (!root.api || !root.api.getPlayerHistory) return growthGraphHtml(liveEnv());
+      if (!cache || cache.saveId !== saveIdNow()) { load(); return empty('Loading season history…'); }
+      return growthGraphHtml(liveEnv());
+    }),
     progress: safe('Progression', () => {
       if (!root.api || !root.api.getPlayerHistory) return progressHtml(liveEnv()); // no stored history to load: in-season changes only
       if (!cache || cache.saveId !== saveIdNow()) { load(); return empty('Loading season history…'); }
@@ -452,7 +488,7 @@
     setProgressFilter(v) { progressFilter = PROGRESS_FILTERS.includes(v) ? v : 'attention'; if (root.Insights) root.Insights.render(); },
     setProgressMode(v) { progressMode = v === 'list' ? 'list' : 'chart'; if (root.Insights) root.Insights.render(); },
     toggleProgress(id) { const k = String(id); progressOpen.has(k) ? progressOpen.delete(k) : progressOpen.add(k); if (root.Insights) root.Insights.render(); },
-    sparkline, progressChartHtml,
+    trendArrow, pathText, progressChartHtml, growthGraphHtml,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }
   };

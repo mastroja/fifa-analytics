@@ -15,10 +15,10 @@ const V = require('../js/insights_planning.js');
 
 assert(/\.planning-wrap\s*\{\s*overflow-x:\s*auto/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'index.html styles the scrolling table wrapper');
 assert(/\.planning-table td\s*\{[^}]*white-space:\s*normal/.test(require('fs').readFileSync(__dirname + '/../index.html', 'utf8')), 'cells must wrap: the app inherits nowrap, which made the Why column 500px wide');
-assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'progress'], 'registers the two views');
+assert.deepStrictEqual(Object.keys(registered).sort(), ['advice', 'growth', 'progress'], 'registers the three views');
 assert.deepStrictEqual(Object.keys(wageSections).sort(), ['cards', 'table'], 'fills both Wages & Contracts slots');
 const ids = require('fs').readFileSync(__dirname + '/../index.html', 'utf8');
-['advice', 'progress'].forEach(k => assert(ids.includes(`id="insights-view-${k}"`) && ids.includes(`Insights.setView('${k}')`), `index.html has the ${k} button`));
+['advice', 'progress', 'growth'].forEach(k => assert(ids.includes(`id="insights-view-${k}"`) && ids.includes(`Insights.setView('${k}')`), `index.html has the ${k} button`));
 assert(!ids.includes('insights-view-contracts') && !ids.includes('Contract Plan</button>'), 'there is no separate Contract Plan tab: wages and contracts are one view');
 assert.strictEqual((ids.match(/id="insights-view-wages"/g) || []).length, 1);
 const tag = f => `<script src="js/${f}.js"></script>`;
@@ -102,7 +102,8 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(/Needs attention <span[^>]*>3<\/span>/.test(h) && /Everyone <span[^>]*>4<\/span>/.test(h), 'the two toggles with counts');
   assert(/1 more is on track/.test(h) && /Show everyone/.test(h), 'says how many were left out and offers them');
   assert(h.includes('+7'), 'one number per player: 64 -> the live 71, which replaces the stored 70');
-  assert(/<svg[^>]*aria-label="Overall by season: 64 to 71"/.test(h), 'a trend line from the season history');
+  assert(/title="\+7 OVR"[^>]*>↑</.test(h) && /title="0 OVR"[^>]*>→</.test(h) && /title="-4 OVR"[^>]*>↓</.test(h), 'a compact arrow per player: up, flat, down');
+  assert(!/<svg/.test(h), 'no trend lines');
   assert(!/Biggest risers|Whole squad|Outlook/.test(h), 'the old duplicate lists and the Outlook column are gone');
   assert(/home-toggle-btn active"[^>]*>Chart/.test(V.progressHtml(env({ ...base, progressMode: undefined }))) && /home-toggle-btn active"[^>]*>List/.test(h), 'the chart is the default view; the list is the alternative');
   assert(!/OVR since last season/.test(h), 'the reasoning stays hidden until a row is opened');
@@ -125,12 +126,13 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(/moving about as expected/.test(V.progressHtml(env({ players: [players[3]], histories, seasonLabel: '2026/27', progressMode: 'list' }))), 'nobody needs attention: says so');
   assert(V.progressHtml(env({ ...base, progressFilter: 'bogus' })).includes('Rocket'), 'an unknown filter falls back to the default');
 
-  // the trend line
-  const sp = V.sparkline([{ overall: 60 }, { overall: 66 }, { overall: 71 }], '#3fb950');
-  assert(/<polyline points="[\d.,\s]+"/.test(sp) && /<circle/.test(sp) && /60 to 66 to 71/.test(sp));
-  assert(!/NaN|Infinity/.test(V.sparkline([{ overall: 70 }, { overall: 70 }, { overall: 70 }], 'x')), 'a flat line does not divide by zero');
-  assert(!/<svg/.test(V.sparkline([{ overall: 70 }], 'x')) && !/<svg/.test(V.sparkline([], 'x')) && !/<svg/.test(V.sparkline(undefined, 'x')), 'fewer than two points: no chart');
-  assert(!/<svg/.test(V.sparkline([{ overall: 'x' }, { overall: null }], 'x')), 'junk values are ignored');
+  // the trend arrow: direction of the overall, colour supplied by the caller
+  const arrow = (n, c) => V.trendArrow(n, c || '#fff');
+  assert.deepStrictEqual([7, 3, 2, 1, 0, -1, -2, -3, -9].map(n => (arrow(n).match(/>([↑↗→↘↓])</) || [])[1]), ['↑', '↑', '↗', '↗', '→', '↘', '↘', '↓', '↓'], 'arrow thresholds: 3+ up, 1-2 up-right, flat, 1-2 down-right, 3+ down');
+  assert(/color: #3fb950/.test(arrow(2, '#3fb950')) && /title="\+2 OVR"/.test(arrow(2)), 'the colour is the one given; the hover text has the number');
+  assert.deepStrictEqual([null, undefined, 'abc', NaN].map(n => /–/.test(arrow(n)) && !/↑|↗|→|↘|↓/.test(arrow(n))), [true, true, true, true], 'no change known: a dash, never a made-up arrow');
+  assert.strictEqual(V.pathText([{ overall: 60 }, { overall: 66 }, { overall: 71 }]), '60 → 66 → 71');
+  assert.deepStrictEqual([[{ overall: 70 }], [], undefined, [{ overall: 'x' }, { overall: null }]].map(V.pathText), ['', '', '', ''], 'fewer than two usable seasons: nothing');
   // without the current label the live value is appended and read as a second change: still renders
   assert(V.progressHtml(env({ players, histories, progressMode: 'list' })).includes('Needs attention'));
 }
@@ -184,9 +186,50 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(/Nobody is "At potential"/.test(V.progressHtml(env({ ...base, progressFilter: 'maxed' }))), 'an empty group says so');
   assert(V.progressHtml(env({ ...base, progressFilter: 'attention' })).includes('Steady') && V.progressHtml(env({ ...base, progressFilter: 'all' })).includes('Steady'), 'Needs attention / Everyone mean the whole squad here');
   const open1 = V.progressHtml(env({ ...base, progressOpen: new Set(['1']) }));
-  assert(/<svg[^>]*aria-label="Overall by season: 64 to 71"/.test(open1) && /OVR since last season/.test(open1), 'opening a row shows the trend line and the reasoning');
+  assert(/64 → 71 OVR/.test(open1) && />↑</.test(open1) && /OVR since last season/.test(open1), 'opening a row shows the arrow, the seasons it went through and the reasoning');
   assert((open1.match(/OVR since last season/g) || []).length === 1, 'for that player only');
   assert(/Not enough history/.test(V.progressHtml(env({ players: [ps[4]], histories: new Map() }))), 'nobody with history: the existing message');
+}
+
+// --- Growth graph --------------------------------------------------------------------------------------------
+{
+  const row = (season, overall, potential) => ({ season, overall, potential });
+  const ps = [
+    P(1, 'Rocket', 'MID', 19, 71, 85, 1, 2029, 10, 800), P(2, 'Slowpoke', 'MID', 19, 64, 76, 1, 2029, 10, 800),
+    P(3, 'Fading <i>Star</i>', 'MID', 31, 76, 76, 1, 2029, 10, 800), P(4, 'Steady', 'MID', 27, 80, 80, 1, 2029, 10, 800),
+    P(5, 'No History', 'MID', 25, 70, 75, 1, 2029, 10, 800),
+    P(6, 'Inseason', 'MID', 27, 80, 80, 1, 2029, 10, 800, { overall_delta: 3 })      // no season history: his +3 is this season's, judged at 27
+  ];
+  const hs = new Map([
+    [1, [row('2025/26', 64, 84), row('2026/27', 70, 85)]], [2, [row('2025/26', 64, 76), row('2026/27', 64, 76)]],
+    [3, [row('2025/26', 80, 80), row('2026/27', 76, 76)]], [4, [row('2025/26', 80, 80), row('2026/27', 80, 80)]]
+  ]);
+  const g = V.growthGraphHtml(env({ players: ps, histories: hs, seasonLabel: '2026/27' }));
+  assert.strictEqual((g.match(/<circle/g) || []).length, 5, 'one dot per player with a history or an in-season change');
+  assert(/<title>Rocket · 19 · \+7 OVR \(typical \+4\) · Rising<\/title>/.test(g), 'hovering a dot gives name, age, change, typical change and status');
+  assert(/fill="#3fb950"/.test(g) && /fill="#d29922"/.test(g) && /fill="#f85149"/.test(g) && /fill="#8b949e"/.test(g), 'dots are coloured by status (rising, stalling, declining, on track)');
+  assert(/>Rocket<\/text>/.test(g) && />Slowpoke<\/text>/.test(g) && !/>Steady<\/text>/.test(g), 'the big outliers are named, the ordinary players are not');
+  assert(/Star&lt;\/i&gt;<\/text>/.test(g) && !g.includes('Star</i>'), 'labels and titles are escaped');
+  assert(/<polyline[^>]*points="[\d.,\s-]+"/.test(g), 'the typical-change-by-age line is drawn');
+  assert(/stroke-dasharray: 3 4/.test(g), 'and a zero line, since the axis spans it');
+  assert(/>-\d+</.test(g), 'the axis goes below zero for players who lost rating');
+  assert(/onclick="openPlayerProfile\('1'\)"/.test(g), 'a dot opens the player');
+  assert(/Rising 2/.test(g) && /Stalling 1/.test(g) && /Declining 1/.test(g) && /On track 1/.test(g) && !/At potential/.test(g), 'a legend with counts, only for groups that exist');
+  assert(/typical for that age/.test(g) && /1 player has no history yet and is not shown/.test(g), 'and the line is explained; the missing player is mentioned');
+  const ys = [...(g.match(/<polyline[^>]*points="([^"]+)"/)[1]).matchAll(/[\d.]+,([\d.]+)/g)].map(m => Number(m[1]));
+  assert(ys.length >= 10 && ys[0] < ys[ys.length - 1] && new Set(ys).size > 5, 'the typical line slopes down with age (young players are expected to grow most)');
+  assert(/growing faster than is typical/.test(g), 'one sentence tells you how to read it');
+  assert(/Age \(when the change happened\)/.test(g), 'the x axis says what age means here');
+  // x position is the age the change happened at: Rocket (19 now) at 18, Fading Star (31 now) at 30
+  const cx = [...g.matchAll(/<circle cx="([\d.]+)"/g)].map(m => Number(m[1]));    // players in order: Rocket, Slowpoke, Fading Star, Steady, Inseason
+  assert(cx[0] === cx[1] && cx[3] > cx[0] && cx[2] > cx[3], 'dots sit at the age the change happened: both 19-year-olds at 18, Steady (27 now) at 26, Fading Star (31 now) at 30');
+  assert(cx[4] > cx[3], 'an in-season change is judged at his current age: Inseason (27, this season) sits a year to the right of Steady (27, last season)');
+  assert(/No squad loaded/.test(V.growthGraphHtml(env({ players: [] }))));
+  assert(/Not enough history/.test(V.growthGraphHtml(env({ players: ps.slice(0, 5), histories: new Map() }))), 'no history anywhere: the existing message');
+  assert(/Not enough history/.test(V.growthGraphHtml(env({ players: [ps[4]], histories: new Map(), seasonLabel: '2026/27' }))));
+  // a lone outlier is the only one named when nobody else is far from typical
+  const calm = V.growthGraphHtml(env({ players: [ps[3]], histories: hs, seasonLabel: '2026/27' }));
+  assert((calm.match(/<text[^>]*paint-order/g) || []).length === 0, 'no outliers: no labels');
 }
 
 // --- Wages & Contracts sections (projection card + decisions table) ------------------------------------------------
@@ -439,6 +482,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
     V.setProgressMode('nonsense'); assert(/pl-chart-row/.test(registered.progress()), 'an unknown mode falls back to the chart');
     V.setProgressMode('list'); assert(/Needs attention/.test(registered.progress()), 'list view');
     V.setProgressMode('chart');
+    assert(/<circle/.test(registered.growth()) && /Age \(when the change happened\)/.test(registered.growth()), 'the live graph view draws from the same loaded history');
   }
 
   // filter setter re-renders the Insights view
