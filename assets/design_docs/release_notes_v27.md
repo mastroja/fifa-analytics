@@ -1,6 +1,8 @@
 # FIFA Analytics v27 — first release for EA SPORTS FC 27
 
-The companion app for Career Mode, rebuilt for FC 27. It reads your save through Live Editor and turns it into a Home dashboard, squad tools, a depth chart, an academy tracker and an in-app player editor. Your save data stays on your PC.
+The companion app for Career Mode, rebuilt for FC 27. It reads your save through Live Editor and turns it into a Home dashboard, squad tools, a depth chart, an Insights tab with planning and analysis views, a weekly news feed, an academy tracker and an in-app player editor. Your save data stays on your PC.
+
+**This is a beta and the first public release (27.1.0).** Live Editor for FC 27 does not expose everything yet, so some widgets say "Not available in FC 27 yet" and will fill in as Live Editor adds the data (see "FC 27 limitations"). Everything the game does expose is covered below.
 
 **Works with:** EA SPORTS FC 27 build `1.0.141.12554` and FC 27 Live Editor `v27.1.4`. Live Editor reads game memory, so a different game build can break it. Pin your game version first (see the README).
 
@@ -9,7 +11,7 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 - **Contract planning** (Insights > Wages & Contracts): the weekly wage bill projected season by season, an estimated renewal wage for each expiring contract, and one recommended action per player (renew, short extension, let go, sell now).
 - **Progression** (Insights): a chart of who is ahead of or behind what is typical for their age, with a **Season** picker to look at earlier years. Click a row for the reasoning.
 - **Academy:** now laid out like the Squad list (sortable columns, the shared filter panel, search), with a **Ready for promotion** verdict for each prospect compared with your weakest senior player at that position. The regen watchlist was removed.
-- **Home and profiles:** a Roster Moves card next to Squad Gaps, contract actions on the Contracts card, a Ready badge in the Youth Pipeline list, and Planning / Promotion cards on player profiles.
+- **Home and profiles:** contract actions on the Contracts card, a Ready badge in the Youth Pipeline list, and Planning / Promotion cards on player profiles.
 - **Minutes played** is carried from the game export (when the match-rating table is readable) and used as the best play-time signal; otherwise appearances are used.
 - **No automatic updates for now.** The app no longer checks for updates; download new installers by hand. Your save data is never uploaded; the app only loads club badges (TheSportsDB, which receives the club name), country flags (flagcdn.com) and fonts (Google Fonts) from the internet.
 - All of the above are rules of thumb built from your own squad's numbers, not predictions.
@@ -17,6 +19,7 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 ## Read this first
 - **This release is for FC 27 only.** If you are still playing FC 26, stay on your current version; this update is not for you.
 - **Updating from an older version:** the installer upgrades in place. The app was renamed, so your data folder moved from `%APPDATA%\fifa-career-companion` to `%APPDATA%\fifa-analytics`. On the first launch your saves are **copied** across and the old folder is left untouched as a backup.
+- **Press ↻ Refresh** (or turn on Auto-refresh in Settings) after you load your save. The app updates when it receives an export.
 - **Live Editor hotkeys:** bind `assets/lua/export_all.lua` to **F10** (read-only export) and, for the player editor, `assets/lua/player_editor_sync.lua` to **F11**. The script paths are now under `assets\lua\`. See README sections 5 and 5b.
 - **Windows may show a SmartScreen warning** the first time you run the installer (it is not code-signed yet). Choose "More info", then "Run anyway".
 
@@ -38,9 +41,32 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 - The regen watchlist (starring prospects, alerts and notes) has been removed. Nothing was deleted from your saves.
 
 ### Home page
-- **Squad Gaps** replaces the separate Expiring Contracts and Team Needs cards and follows your Starting XI.
+- A dashboard for your club: manager, trophies, squad age profile, a **Contracts** card (expiring within 12 months, linking to Wages & Contracts), the top-stat cards and the news feed.
+- **Ticker** with a CLUB group after the scores: in-game date, transfer window countdown and deadline day, contracts expiring within 12 months, and injuries. It keeps running on saves without fixtures, which is every FC 27 save today.
 - **Youth Pipeline** (Future Stars and Academy in one card) and a single, tidier Youth Mode strip for the challenge status, over-the-cap warning and Overall Cap Watch. The header is cleaner.
 - **Not available in FC 27 yet** notes explain why a widget is empty instead of leaving a blank box (see below).
+
+### Insights tab (analysis and planning)
+Analysis lives in its own tab. The views:
+- **Squad:** age against overall scatter (sized by wage, with the peak-age band and best-11 line), Core / Prospects / Veterans / Rotation groups, and a per-role depth heatmap with red and amber flags.
+- **Roster Moves, Progression and Wages & Contracts:** described under "New in 27.1.0" above.
+- **Wages & Contracts** also keeps the wage bill, contract expiries and the wage-against-overall curve with over- and underpaid callouts.
+- **Compare:** a radar chart and side-by-side table for any players. The Compare button on a profile opens it with a like-for-like rival preselected.
+- **Seasons:** squad size, best-11 and squad overall, average age, wage bill and U21 count for each season, with trend charts and a table, built from the rosters the app has stored.
+- **Injuries:** who is injured now, days lost, who is injury-prone, an 18-month timeline and an all-time record table.
+
+### Player profiles
+- **Development:** overall and potential by age, season by season, with attribute growth, as a chart or a table (remembered). Players past peak age no longer project a jump to potential.
+- **Injury history** with a summary line and timeline, plus the Planning and Promotion cards mentioned above.
+
+### News
+- A weekly edition of up to five stories, built from your squad and the in-game date: injuries and recoveries, youth promotions, milestones, contracts running out, a physio concern, a scout report on your worst squad hole, a breakthrough season, and award races (Golden Boot, Golden Glove, Playmaker, Ballon d'Or) that only report real overtakes.
+- Stories expire so an old injury never runs weeks late, filler only runs on quiet weeks, and headlines vary. Browse older editions with the arrows.
+
+### Settings
+- **Auto-refresh:** presses Refresh every minute, but only while the app window is focused, so it never steals focus from the game.
+- **Units** (imperial or metric) and **currency** (€, $ or £).
+- **Theme:** League-based (follows promotion and relegation), Team-based (your club's kit colours, with a colour picker and a Kit reset) or Default.
 
 ### Youth Squad Career Mode
 - **Challenge dashboard** with obligations, a transfer-ban tracker (flags incoming deals dated inside a ban) and the rules reference, opened from Settings.
@@ -66,6 +92,7 @@ What does work: squad, attributes, PlayStyles, loans, wage and contract end, inj
 ## Other changes
 - The app is now simply **FIFA Analytics** (`fifa-analytics`), and versions follow `27.minor.patch`: the major number is the game, minor is a larger change, patch a smaller one.
 - **Connected Career has been removed** from this release.
+- **PlayStyle auto-earning is switched off for now** and will be revisited. You can still add PlayStyles by hand with **+ Playstyle** on a profile.
 - Behind-the-scenes groundwork for optional Pro features exists but is switched off; everything in this release is unlocked.
 - Fixes and polish: updater failures are logged instead of raising errors, duplicate squad rows can no longer put a player on the pitch twice, and README and setup instructions are refreshed.
 
@@ -74,6 +101,8 @@ What does work: squad, attributes, PlayStyles, loans, wage and contract end, inj
 - No automatic updates: download new versions by hand.
 - Several stats are missing until Live Editor exposes them for FC 27 (see the limitations above).
 - No FC 26 support in this version.
+- A game patch can break Live Editor. Keep your game version pinned.
+- This is a beta: if something looks wrong, note your game build, Live Editor version and what you pressed so it can be reproduced.
 
 ## Credits
 Built on top of **FC 27 Live Editor** by xAranaktu. This project is not affiliated with or endorsed by EA, FIFA or any league, club or player.
