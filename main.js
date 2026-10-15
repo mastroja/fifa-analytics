@@ -2282,6 +2282,8 @@ const PLAYSTYLE_NEW_FLAG_DAYS = 14;
 // on the dashboard, on the assumption that's been plenty of time to
 // notice and apply it.
 function getPendingPlaystyleAlerts() {
+  // Feeds the Home banner and the "New PlayStyle Development" popup; nothing to show while auto-earning is off.
+  if (!PLAYSTYLE_AUTO_EARN_ENABLED) return [];
   if (!db || !currentSeasonId) return [];
   const squadIds = getSquadFromDB(currentSeasonId).map(p => p.player_id);
   if (squadIds.length === 0) return [];
