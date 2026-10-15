@@ -90,7 +90,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
     [1, [row('2025/26', 64, 84), row('2026/27', 70, 85)]], [2, [row('2025/26', 64, 76), row('2026/27', 64, 76)]],
     [3, [row('2025/26', 80, 80), row('2026/27', 76, 76)]], [4, [row('2025/26', 80, 80), row('2026/27', 80, 80)]]
   ]);
-  const base = { players, histories, seasonLabel: '2026/27' };
+  const base = { players, histories, seasonLabel: '2026/27', progressMode: 'list' };
   const h = V.progressHtml(env(base));
   // statuses: Rocket rising (+7 vs +3), Slowpoke stalling (flat at 19), Fading Star declining (-4 at 31), Steady on track
   assert(h.includes('planning-wrap') && h.includes('planning-table'), 'table sits in a scrolling wrapper');
@@ -104,6 +104,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(h.includes('+7'), 'one number per player: 64 -> the live 71, which replaces the stored 70');
   assert(/<svg[^>]*aria-label="Overall by season: 64 to 71"/.test(h), 'a trend line from the season history');
   assert(!/Biggest risers|Whole squad|Outlook/.test(h), 'the old duplicate lists and the Outlook column are gone');
+  assert(/home-toggle-btn active"[^>]*>Chart/.test(V.progressHtml(env({ ...base, progressMode: undefined }))) && /home-toggle-btn active"[^>]*>List/.test(h), 'the chart is the default view; the list is the alternative');
   assert(!/OVR since last season/.test(h), 'the reasoning stays hidden until a row is opened');
   assert(/InsightsPlanning\.toggleProgress\('1'\)/.test(h), 'each row has an expand control');
   assert(/setProgressFilter\('rising'\)/.test(h) && /setProgressFilter\('declining'\)/.test(h), 'the tiles are filters');
@@ -120,8 +121,8 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   const rising = V.progressHtml(env({ ...base, progressFilter: 'rising' }));
   assert(/Rocket/.test(rising) && !/Slowpoke/.test(rising) && !/Steady/.test(rising), 'a tile filters to one status');
   assert(/outline: 2px solid/.test(rising), 'and shows it is active');
-  assert(/Nobody is "Declining"/.test(V.progressHtml(env({ players: players.slice(0, 2), histories, seasonLabel: '2026/27', progressFilter: 'declining' }))), 'an empty status says so');
-  assert(/moving about as expected/.test(V.progressHtml(env({ players: [players[3]], histories, seasonLabel: '2026/27' }))), 'nobody needs attention: says so');
+  assert(/Nobody is "Declining"/.test(V.progressHtml(env({ players: players.slice(0, 2), histories, seasonLabel: '2026/27', progressFilter: 'declining', progressMode: 'list' }))), 'an empty status says so');
+  assert(/moving about as expected/.test(V.progressHtml(env({ players: [players[3]], histories, seasonLabel: '2026/27', progressMode: 'list' }))), 'nobody needs attention: says so');
   assert(V.progressHtml(env({ ...base, progressFilter: 'bogus' })).includes('Rocket'), 'an unknown filter falls back to the default');
 
   // the trend line
@@ -131,7 +132,61 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert(!/<svg/.test(V.sparkline([{ overall: 70 }], 'x')) && !/<svg/.test(V.sparkline([], 'x')) && !/<svg/.test(V.sparkline(undefined, 'x')), 'fewer than two points: no chart');
   assert(!/<svg/.test(V.sparkline([{ overall: 'x' }, { overall: null }], 'x')), 'junk values are ignored');
   // without the current label the live value is appended and read as a second change: still renders
-  assert(V.progressHtml(env({ players, histories })).includes('Needs attention'));
+  assert(V.progressHtml(env({ players, histories, progressMode: 'list' })).includes('Needs attention'));
+}
+
+// --- Progression chart ---------------------------------------------------------------------------------------
+{
+  const row = (season, overall, potential) => ({ season, overall, potential });
+  const ps = [
+    P(1, 'Rocket', 'MID', 19, 71, 85, 1, 2029, 10, 800),
+    P(2, 'Slowpoke', 'MID', 19, 64, 76, 1, 2029, 10, 800),
+    P(3, 'Fading <i>Star</i>', 'MID', 31, 76, 76, 1, 2029, 10, 800),
+    P(4, 'Steady', 'MID', 27, 80, 80, 1, 2029, 10, 800),
+    P(5, 'No History', 'MID', 25, 70, 75, 1, 2029, 10, 800)
+  ];
+  const hs = new Map([
+    [1, [row('2025/26', 64, 84), row('2026/27', 70, 85)]], [2, [row('2025/26', 64, 76), row('2026/27', 64, 76)]],
+    [3, [row('2025/26', 80, 80), row('2026/27', 76, 76)]], [4, [row('2025/26', 80, 80), row('2026/27', 80, 80)]]
+  ]);
+  const base = { players: ps, histories: hs, seasonLabel: '2026/27' };
+  // vs typical for their age: Rocket +7 vs +4 = +3, Steady 0 vs 0 = 0, Fading Star -4 vs -1 = -3, Slowpoke 0 vs +4 = -4
+  const c = V.progressHtml(env(base));
+  const barRows = [...c.matchAll(/class="pl-chart-row"/g)].length;
+  assert.strictEqual(barRows, 4, 'one bar per player with a history; the player with no history is left out');
+  assert(/1 player has no history yet and is not shown/.test(c), 'and the chart says so');
+  assert(c.indexOf('Rocket') < c.indexOf('Steady') && c.indexOf('Steady') < c.indexOf('Fading') && c.indexOf('Fading') < c.indexOf('Slowpoke'), 'best at the top, worst at the bottom');
+  // bar geometry: the biggest gap is 4 -> scale 4 -> Slowpoke fills half the track to the left, Rocket 3/4 of the right half
+  const barOf = name => { const i = c.indexOf(name); const j = c.indexOf('background:', c.indexOf('position: absolute; top: 2px', i)); return c.slice(c.indexOf('position: absolute; top: 2px', i), j + 40); };
+  assert(/right: 50%; width: 50\.0%/.test(barOf('Slowpoke')), 'behind for their age: grows left from the centre');
+  assert(/left: 50%; width: 37\.5%/.test(barOf('Rocket')), 'ahead: grows right, scaled to the biggest gap');
+  assert(/left: 50%; width: 0\.0%; min-width: 3px/.test(barOf('Steady')), 'as expected: a short tick, never invisible');
+  assert(/#3fb950/.test(barOf('Rocket')) && /#d29922/.test(barOf('Slowpoke')) && /#f85149/.test(barOf('Fading')) && /var\(--text-dim\)/.test(barOf('Steady')), 'colour follows the status (rising, stalling, declining, on track)');
+  assert(/>\+3<\/div>/.test(c) && />-4<\/div>/.test(c) && />-3<\/div>/.test(c) && />0<\/div>/.test(c), 'one number per bar');
+  assert(!/Needs attention/.test(c) && /home-toggle-btn active"[^>]*>Chart/.test(c), 'the attention toggle belongs to the list view');
+  assert(/border-left: 3px solid #3fb950/.test(c) && /border-left: 3px solid #f85149/.test(c), 'the status tiles are tinted so they double as the colour key');
+  assert(/behind for their age/.test(c) && /ahead for their age/.test(c) && /as expected/.test(c), 'the axis says what left and right mean');
+  assert(!/OVR since last season/.test(c) && !/<svg/.test(c), 'reasoning and trend line stay hidden until a row is opened');
+  assert(/!?[^"]*toggleProgress\('1'\)/.test(c), 'rows expand on click');
+  assert(/event\.stopPropagation\(\); openPlayerProfile\('1'\)/.test(c), 'the name opens the profile without toggling the row');
+  assert(!c.includes('Fading <i>') && /Fading &lt;i&gt;Star&lt;\/i&gt;/.test(c), 'names escaped');
+  assert(/title="\+7 OVR last season, typical \+4\./.test(c), 'hovering a row gives the raw numbers');
+
+  // one extreme outlier must not flatten everyone else: the scale is capped at 8 and the long bar stops at the edge
+  const withOutlier = V.progressHtml(env({ ...base, histories: new Map([...hs, [1, [row('2025/26', 40, 84), row('2026/27', 70, 85)]]]) }));
+  assert(/left: 50%; width: 50\.0%/.test(withOutlier.slice(withOutlier.indexOf('Rocket'))) && />\+27<\/div>/.test(withOutlier), 'a 40 -> 71 jump (+27 vs the +4 typical): the bar stops at the edge but the label keeps the real number');
+  assert(/right: 50%; width: 25\.0%/.test(withOutlier.slice(withOutlier.indexOf('Slowpoke'))), 'the scale is capped at 8, so Slowpoke (4 behind) takes a quarter of the track instead of vanishing');
+
+  // filters and opening a row
+  const onlyDown = V.progressHtml(env({ ...base, progressFilter: 'declining' }));
+  assert(/Fading/.test(onlyDown) && !/Rocket/.test(onlyDown) && !/Steady/.test(onlyDown), 'a tile focuses the chart on one status');
+  assert(/outline: 2px solid/.test(onlyDown));
+  assert(/Nobody is "At potential"/.test(V.progressHtml(env({ ...base, progressFilter: 'maxed' }))), 'an empty group says so');
+  assert(V.progressHtml(env({ ...base, progressFilter: 'attention' })).includes('Steady') && V.progressHtml(env({ ...base, progressFilter: 'all' })).includes('Steady'), 'Needs attention / Everyone mean the whole squad here');
+  const open1 = V.progressHtml(env({ ...base, progressOpen: new Set(['1']) }));
+  assert(/<svg[^>]*aria-label="Overall by season: 64 to 71"/.test(open1) && /OVR since last season/.test(open1), 'opening a row shows the trend line and the reasoning');
+  assert((open1.match(/OVR since last season/g) || []).length === 1, 'for that player only');
+  assert(/Not enough history/.test(V.progressHtml(env({ players: [ps[4]], histories: new Map() }))), 'nobody with history: the existing message');
 }
 
 // --- Wages & Contracts sections (projection card + decisions table) ------------------------------------------------
@@ -335,7 +390,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert.strictEqual(historyCalls, live.length, 'one history fetch per senior player, started once');
   assert(refreshes > before, 'asks Insights to redraw when the history arrives');
   const done = registered.progress();
-  assert(!done.includes('Loading') && done.includes('Needs attention'), 'renders once loaded');
+  assert(!done.includes('Loading') && done.includes('pl-chart-row'), 'renders once loaded (the chart is the default view)');
   assert.strictEqual(historyCalls, live.length, 'cached: drawing again does not refetch');
 
   V.invalidate();
@@ -366,6 +421,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
     getSeasonsList: async () => [{ id: 2, year_label: '2026/27', is_current: true }],
     getPlayerHistory: async id => [{ season: '2025/26', overall: WAS[id] || NOW[id], potential: 85 }, { season: '2026/27', overall: NOW[id], potential: 85 }]
   };
+  V.setProgressMode('list');
   registered.progress(); await new Promise(r => setTimeout(r, 20));
   {
     const def = registered.progress();
@@ -378,6 +434,11 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
     assert((registered.progress().match(/class="detail-row open"/g) || []).length === 1, 'exactly that row\'s reasons are open');
     V.toggleProgress(globalThis.currentPlayers[3].player_id); assert(!/class="detail-row open"/.test(registered.progress()), 'and they close again');
     V.setProgressFilter('attention');
+    const r3 = renders; V.setProgressMode('chart'); assert.strictEqual(renders, r3 + 1, 'switching view redraws');
+    assert(/pl-chart-row/.test(registered.progress()) && !/Needs attention/.test(registered.progress()), 'chart view');
+    V.setProgressMode('nonsense'); assert(/pl-chart-row/.test(registered.progress()), 'an unknown mode falls back to the chart');
+    V.setProgressMode('list'); assert(/Needs attention/.test(registered.progress()), 'list view');
+    V.setProgressMode('chart');
   }
 
   // filter setter re-renders the Insights view

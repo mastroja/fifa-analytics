@@ -42,7 +42,8 @@
 
   const badge = (def, text) => `<span style="display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap; color: ${def.color}; border: 1px solid ${def.color};">${esc(text || def.label)}</span>`;
   const empty = msg => `<div class="empty-state">${msg}</div>`;
-  const tile = (label, value, sub, onclick, active) => `<div class="profile-card" style="margin: 0; padding: 12px 14px;${onclick ? ' cursor: pointer;' : ''}${active ? ' outline: 2px solid var(--accent-color);' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
+  // accent: optional colour for a left edge, so a row of tiles can double as a colour key for a chart
+  const tile = (label, value, sub, onclick, active, accent) => `<div class="profile-card" style="margin: 0; padding: 12px 14px;${accent ? ` border-left: 3px solid ${accent};` : ''}${onclick ? ' cursor: pointer;' : ''}${active ? ' outline: 2px solid var(--accent-color);' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
     <div style="font-size: 11px; text-transform: uppercase; color: var(--text-dim);">${esc(label)}</div>
     <div style="font-size: 22px; font-weight: 700; margin-top: 2px;">${value}</div>
     <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">${sub || '&nbsp;'}</div></div>`;
@@ -119,6 +120,40 @@
       <polyline points="${pts}" fill="none" style="stroke: ${color}; stroke-width: 2;" /><circle cx="${x(v.length - 1).toFixed(1)}" cy="${y(v[v.length - 1]).toFixed(1)}" r="3" style="fill: ${color};" /></svg>`;
   }
 
+  const clickName = p => `<span class="clickable-name" style="color: #58a6ff;" onclick="event.stopPropagation(); openPlayerProfile('${esc(p.player_id)}')">${esc(p.name)}</span>`;
+  const round1 = n => Math.round(n * 10) / 10;
+
+  // The chart: one bar per player, from a centre line. Right = ahead of what is typical for their age, left = behind, length
+  // = how far (capped so one outlier cannot flatten everyone else), best at the top. On-track players are short grey ticks,
+  // so the whole squad can be shown without the quiet ones competing for attention. Click a row for the reasoning.
+  //   rows: Progression.board rows; f: status key or anything else for everyone; open: Set of player ids
+  function progressChartHtml(env, rows, f, open) {
+    const known = rows.filter(r => r.vsExpected != null && Number.isFinite(r.vsExpected));
+    const missing = rows.length - known.length;
+    const pick = STATUS_ORDER.includes(f) ? known.filter(r => r.status === f) : known;
+    if (!pick.length) return empty(`Nobody is "${esc(STATUSES[f] ? STATUSES[f].label : f)}" right now.`);
+    const sorted = pick.slice().sort((a, b) => b.vsExpected - a.vsExpected || b.overall - a.overall);
+    const maxAbs = Math.max(4, Math.min(8, Math.ceil(Math.max(...known.map(r => Math.abs(r.vsExpected))))));
+    const cols = 'grid-template-columns: minmax(140px, 230px) 1fr 52px;';
+    const head = `<div style="display: grid; ${cols} gap: 10px; font-size: 11px; color: var(--text-dim); padding: 0 6px 6px;"><span></span>
+      <div style="display: flex; justify-content: space-between;"><span>◀ behind for their age</span><span>as expected</span><span>ahead for their age ▶</span></div><span style="text-align: right;">vs typical</span></div>`;
+    const rowsHtml = sorted.map(r => {
+      const v = r.vsExpected, color = STATUSES[r.status].color;
+      const pct = Math.min(Math.abs(v), maxAbs) / maxAbs * 50;
+      const side = v >= 0 ? `left: 50%;` : `right: 50%;`;
+      const id = esc(r.player.player_id), isOpen = open.has(String(r.player.player_id));
+      const detail = isOpen ? `<div style="margin: 0 6px 8px; padding: 8px 12px; background: var(--hover-color); border-radius: 6px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;">
+          <div>${sparkline(r.series, color)}</div><div>${badge(STATUSES[r.status])}</div><div style="flex: 1; min-width: 220px;">${reasonsHtml(r.reasons)}</div></div>` : '';
+      return `<div class="pl-chart-row" onclick="InsightsPlanning.toggleProgress('${id}')" title="${esc(sign(r.change == null ? 0 : r.change))} OVR ${r.source === 'in-season' ? 'this season' : 'last season'}, typical ${esc(sign(r.expected))}. Click for the reasoning."
+          style="display: grid; ${cols} gap: 10px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer;">
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${clickName(r.player)} <span style="font-size: 11px; color: var(--text-dim);">${esc([env.posLabel(r.player), ageText(r.age)].filter(x => x != null && x !== '').join(' · '))}</span></div>
+        <div style="position: relative; height: 16px;"><div style="position: absolute; left: 50%; top: -6px; bottom: -6px; width: 1px; background: var(--border-color);"></div>
+          <div style="position: absolute; top: 2px; height: 12px; ${side} width: ${pct.toFixed(1)}%; min-width: 3px; border-radius: 3px; background: ${color};"></div></div>
+        <div style="text-align: right; font-weight: 600; color: ${color};">${sign(round1(v))}</div></div>${detail}`;
+    }).join('');
+    return `${head}${rowsHtml}${missing ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${missing} player${missing === 1 ? ' has' : 's have'} no history yet and ${missing === 1 ? 'is' : 'are'} not shown.</div>` : ''}`;
+  }
+
   // Progression: by default only the players who need attention (rising, stalling or declining for their age), each with
   // a trend line and one number; the reasoning opens on a click. "Everyone" and the tiles are filters over the same rows.
   //   env.progressFilter: 'attention' (default) | 'all' | a status key;  env.progressOpen: Set of player ids with reasons open
@@ -138,7 +173,7 @@
     const shown = pick.slice().sort((a, b) => rank(a) - rank(b) || Math.abs(b.vsExpected || 0) - Math.abs(a.vsExpected || 0) || b.overall - a.overall);
 
     const hint = { rising: 'ahead of their age', stalling: 'young, not growing', declining: 'falling for their age', maxed: 'at their ceiling' };
-    const tileFor = s => tile(STATUSES[s].label, count(s), hint[s], `InsightsPlanning.setProgressFilter('${f === s ? 'attention' : s}')`, f === s);
+    const tileFor = s => tile(STATUSES[s].label, count(s), hint[s], `InsightsPlanning.setProgressFilter('${f === s ? 'attention' : s}')`, f === s, STATUSES[s].color);
     const toggle = (key, label, n) => `<button class="home-toggle-btn${f === key ? ' active' : ''}" onclick="InsightsPlanning.setProgressFilter('${key}')">${label} <span style="opacity: 0.7;">${n}</span></button>`;
 
     let body = '';
@@ -161,8 +196,15 @@
     const table = shown.length
       ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Trend</th><th>Change</th><th>Status</th></tr></thead><tbody>${body}</tbody></table></div>`
       : empty(f === 'attention' ? 'Everyone is moving about as expected for their age.' : `Nobody is "${esc(STATUSES[f] ? STATUSES[f].label : f)}" right now.`);
-    return `${tiles(['rising', 'stalling', 'declining', 'maxed'].map(tileFor).join(''))}
-      <div class="home-toggle" style="margin-bottom: 12px;">${toggle('attention', 'Needs attention', attention.length)}${toggle('all', 'Everyone', rows.length)}</div>
+    const mode = env.progressMode === 'list' ? 'list' : 'chart';
+    const modeBtn = (m, label) => `<button class="home-toggle-btn${mode === m ? ' active' : ''}" onclick="InsightsPlanning.setProgressMode('${m}')">${label}</button>`;
+    const controls = `<div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;"><div class="home-toggle">${modeBtn('chart', 'Chart')}${modeBtn('list', 'List')}</div>${mode === 'list' ? `<div class="home-toggle">${toggle('attention', 'Needs attention', attention.length)}${toggle('all', 'Everyone', rows.length)}</div>` : ''}</div>`;
+    const tileRow = tiles(['rising', 'stalling', 'declining', 'maxed'].map(tileFor).join(''));
+    if (mode === 'chart') {
+      return `${tileRow}${controls}<div class="profile-card">${progressChartHtml(env, rows, f, open)}</div>
+      ${note('Each bar is last season\'s change compared with what is typical for that age (a rule of thumb, not EA\'s curve). Click a row for the reasoning, a tile to focus on one group.')}`;
+    }
+    return `${tileRow}${controls}
       <div class="profile-card">${table}
         ${f === 'attention' && rest ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">${rest} more ${rest === 1 ? 'is' : 'are'} on track, at their ceiling or have no history yet. <button class="home-toggle-btn" style="font-size: 12px; padding: 2px 10px; margin-left: 6px;" onclick="InsightsPlanning.setProgressFilter('all')">Show everyone</button></div>` : ''}</div>
       ${note('Compared with a typical yearly change for that age (a rule of thumb, not EA\'s curve), not in absolute terms. Click ▶ for the numbers behind a label. A first sync reports no movement, so those players show as unknown.')}`;
@@ -297,6 +339,7 @@
 
   let adviceFilter = 'all';
   let progressFilter = 'attention';
+  let progressMode = 'chart'; // 'chart' | 'list'
   const progressOpen = new Set();
   let cache = null;   // { saveId, seasonLabel, byId: Map(player_id -> history rows) } for Progression
   let loading = false;
@@ -320,7 +363,7 @@
     const SA = root.SquadAnalytics;
     const curve = SA && SA.fitWageCurve ? SA.fitWageCurve(players.filter(p => Number(p.wage) > 0)) : null;
     return {
-      players, filter: adviceFilter, progressFilter, progressOpen, transferBan: !!ban, seasonEndYear: seasonEndYearNow(),
+      players, filter: adviceFilter, progressFilter, progressMode, progressOpen, transferBan: !!ban, seasonEndYear: seasonEndYearNow(),
       ageOf: p => { const a = root.computeAge ? root.computeAge(p.dob || p.birthdate) : null; return a == null ? null : a; },
       groupOf: p => root.getPositionInfo(p.position_id).group,
       posLabel: p => root.getPositionInfo(p.position_id).label,
@@ -407,8 +450,9 @@
     profileCardHtml, profileHtml, promotionCardHtml,
     adviceHtml, progressHtml, planCardHtml, planTableHtml, computePlan, computeAdvice, seasonEndYearNow,
     setProgressFilter(v) { progressFilter = PROGRESS_FILTERS.includes(v) ? v : 'attention'; if (root.Insights) root.Insights.render(); },
+    setProgressMode(v) { progressMode = v === 'list' ? 'list' : 'chart'; if (root.Insights) root.Insights.render(); },
     toggleProgress(id) { const k = String(id); progressOpen.has(k) ? progressOpen.delete(k) : progressOpen.add(k); if (root.Insights) root.Insights.render(); },
-    sparkline,
+    sparkline, progressChartHtml,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }
   };
