@@ -4,7 +4,6 @@ const fs = require('fs');
 const chokidar = require('chokidar');
 const initSqlJs = require('sql.js');
 const { execFile } = require('child_process');
-const { autoUpdater } = require('electron-updater');
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
@@ -6092,7 +6091,14 @@ async function exportSeasonOverviewPdf(suggestedFileName) {
 // Electron boilerplate
 // ------------------------------------------------------------------
 
+// Auto-update is switched off for the beta: downloads are manual (see README), and the releases repo is private, so the
+// check could only ever 404. Set this to true (and publish releases to a public repo, see assets/design_docs/release_process.md)
+// to bring it back. While it is false electron-updater is not even loaded, so the app makes no update requests at all.
+const AUTO_UPDATE_ENABLED = false;
+
 function setupAutoUpdater() {
+  if (!AUTO_UPDATE_ENABLED) return;
+  const { autoUpdater } = require('electron-updater');
   // No app-update.yml exists outside a real electron-builder package, so
   // checking in a dev run (`npm start`) just throws — skip entirely there.
   if (!app.isPackaged) return;
