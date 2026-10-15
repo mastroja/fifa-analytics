@@ -3192,6 +3192,11 @@ const PLAYSTYLE_MILESTONE_RULES = [
 // like a genuinely rare, special moment, not a near-guarantee.
 const PLAYSTYLE_AWARD_CHANCE = 0.12;
 
+// Master switch for the auto-earn system (checkPlaystyleEligibility). Off
+// while the system is on hold; the UI's "How These Are Earned" button is
+// hidden to match (js/app.js).
+const PLAYSTYLE_AUTO_EARN_ENABLED = false;
+
 // How much PLAYSTYLE_AWARD_CHANCE shrinks per style a player already has
 // — see computePlaystyleAwardChance. Replaced a flat hard cap
 // (PLAYSTYLE_MAX_PER_PLAYER = 4) on 2026-09-14 per the user's ask: a hard
@@ -4666,8 +4671,12 @@ function importFifaData(jsonPayload) {
         checkSeasonMilestones(activeSaveId, currentSeasonId, p.player_id, p.name, previous,
           { goals: p.goals || 0, assists: p.assists || 0, appearances: p.appearances || 0 }, syncInGameDate);
 
-        checkPlaystyleEligibility(activeSaveId, currentSeasonId, p.player_id, p.name,
-          p.position_id, p.overall, p.attributes, syncInGameDate, p.skill_moves);
+        // PlayStyle auto-earning is switched off for now (to be revisited) —
+        // flip PLAYSTYLE_AUTO_EARN_ENABLED to bring it back.
+        if (PLAYSTYLE_AUTO_EARN_ENABLED) {
+          checkPlaystyleEligibility(activeSaveId, currentSeasonId, p.player_id, p.name,
+            p.position_id, p.overall, p.attributes, syncInGameDate, p.skill_moves);
+        }
       }
 
       // Youth academy promotion — this player has a youth_academy_snapshot

@@ -3296,7 +3296,8 @@ let currentCalendar = [];
               <h3>
                 <span>PlayStyles</span>
                 <span style="display: flex; gap: 6px;">
-                  <button class="refresh-btn" style="font-size: 11px; padding: 3px 10px;" onclick="openPlaystyleRulesDialog()" title="See exactly what it takes to earn each PlayStyle">ℹ️ How These Are Earned</button>
+                  <!-- "How These Are Earned" hidden while PlayStyle auto-earning is on hold (PLAYSTYLE_AUTO_EARN_ENABLED in main.js):
+                  <button class="refresh-btn" style="font-size: 11px; padding: 3px 10px;" onclick="openPlaystyleRulesDialog()" title="See exactly what it takes to earn each PlayStyle">ℹ️ How These Are Earned</button> -->
                   ${player.player_id ? `<button class="refresh-btn" style="font-size: 11px; padding: 3px 10px;" onclick="openPlaystylePicker(${player.player_id})">+ Playstyle</button>` : ''}
                 </span>
               </h3>
