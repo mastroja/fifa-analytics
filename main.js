@@ -6198,6 +6198,15 @@ minifaces.configure({
   userDataPath: app.getPath('userData'),
   triggerF11: manual => triggerLiveEditorRefresh(manual !== false, 'F11'),
   getSquadPlayerIds: () => getSquadFromDB().map(p => p.player_id),
+  // everyone who can have a face: the senior squad plus every editable (academy / regen) player of the active save
+  getAllFacePlayerIds: () => {
+    const ids = new Set(getSquadFromDB().map(p => p.player_id));
+    if (db && activeSaveId) {
+      const r = db.exec(`SELECT player_id FROM player_editor_state WHERE save_id = ${Number(activeSaveId)} AND editable = 1;`);
+      if (r.length > 0) r[0].values.forEach(([pid]) => ids.add(pid));
+    }
+    return [...ids];
+  },
   isPro: feature => license.isPro(feature),
   onChanged: count => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('minifaces-updated', { count });

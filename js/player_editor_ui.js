@@ -235,6 +235,7 @@
       .pe-st.queued { background: #d4a72c30; color: #d4a72c; } .pe-st.applied { background: #3fb95030; color: #3fb950; }
       .pe-st.failed { background: #f8514930; color: #f85149; } .pe-st.undone { background: #8b949e30; color: var(--text-dim); }
       .pe-hint { font-size: 12px; color: var(--text-dim); }
+      .pe-banner.pe-syncing { background: transparent; border-color: var(--border-color); color: var(--text-dim); padding: 6px 12px; font-size: 12px; }
       .pe-banner { padding: 10px 14px; border-radius: 8px; background: #d4a72c20; border: 1px solid #d4a72c60; font-size: 13px; margin-bottom: 18px; }
       .pe-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 24px; border-top: 1px solid var(--border-color); background: var(--expand-bg); flex-wrap: wrap; }
       .pe-msg { font-size: 13px; flex: 1; min-width: 200px; } .pe-msg.err { color: #f85149; } .pe-msg.ok { color: #3fb950; }
@@ -633,7 +634,7 @@
     const prevTab = panel ? panel.dataset.panel : null;
     const changes = changedKeys();
     const body = { look: tabLook, kit: tabKit, body: tabBody, boots: tabBoots, ratings: tabRatings, pos: tabPositions, play: tabPlaystyles, hist: tabHistory }[ed.tab]();
-    const staleBanner = ed.stale ? `<div class="pe-banner">${esc(ed.stale)}</div>` : '';
+    const staleBanner = ed.stale ? `<div class="pe-banner">${esc(ed.stale)}</div>` : (ed.syncing ? '<div class="pe-banner pe-syncing">Checking the game for newer values…</div>' : '');
     dlg.innerHTML = `<div class="pe-shell">
       <div class="pe-top">
         <div class="pe-title"><h2>${esc(ed.name)}</h2><span>${esc(posLabel(ed.cur.preferredposition1))} · ${esc(ed.source === 'academy' ? 'Academy' : 'Squad')} · generic player</span></div>
@@ -961,16 +962,41 @@
   }
 
   // Opens the editor. `fromButton` = the Edit button, which shows progress while it refreshes from the game.
+  // Asks the game for fresh values after the editor is already on screen. Replaces what is shown only while nothing has
+  // been edited yet; otherwise it leaves the edits alone and says the game's values moved.
+  async function refreshFromGame(openId) {
+    if (!ed || ed.playerId !== openId || !api().triggerEditorSync) return;
+    ed.syncing = true;
+    render();
+    const r = await pressSync('export', 8000);
+    if (!ed || ed.playerId !== openId) return; // closed or switched to another player meanwhile
+    ed.syncing = false;
+    if (r === 'unreachable') ed.stale = 'The game could not be reached, so these are the last values synced from Live Editor.';
+    else if (r === 'timeout') ed.stale = 'Live Editor did not answer (is F11 bound to player_editor_sync.lua?). Showing the last synced values.';
+    else {
+      try {
+        const fresh = await api().getPlayerEditorState(openId);
+        if (fresh && fresh.state && fresh.state.editable && ed && ed.playerId === openId) {
+          const s2 = fresh.state.state;
+          if (!ed.saving && !changedKeys().length) {
+            ed.orig = Object.assign({}, s2); ed.baseline = Object.assign({}, s2); ed.cur = Object.assign({}, s2);
+            ed.usedNumbers = fresh.usedNumbers || ed.usedNumbers; ed.edits = fresh.edits || ed.edits;
+          } else if (JSON.stringify(s2) !== JSON.stringify(ed.baseline)) {
+            ed.stale = "The game's values changed while you were editing. Close and reopen the editor to load them.";
+          }
+        }
+      } catch (e) { /* keep what is shown */ }
+    }
+    if (ed && ed.playerId === openId && document.getElementById('pe-dialog').open) render();
+  }
+
   async function open(playerId, fromButton) {
     if (!api() || !api().getPlayerEditorState) return;
     let stale = '';
     if (fromButton) { fromButton.disabled = true; fromButton.textContent = 'Syncing with game…'; }
     try {
-      if (api().triggerEditorSync) {
-        const r = await pressSync('export', 6000);
-        if (r === 'unreachable') stale = 'The game could not be reached, so these are the last values synced from Live Editor.';
-        else if (r === 'timeout') stale = 'Live Editor did not answer (is F11 bound to player_editor_sync.lua?). Showing the last synced values.';
-      }
+      // the editor opens at once from the last synced values; the game is asked for fresh ones in the background
+      // (refreshFromGame), instead of making you wait up to 6 seconds before anything appears
       const [stateRes, cat, stat] = await Promise.all([
         api().getPlayerEditorState(playerId),
         catalog ? Promise.resolve(catalog) : api().getCustomizationCatalog(),
@@ -994,6 +1020,7 @@
       const dlg = ensureDialog();
       render();
       if (!dlg.open) dlg.showModal();
+      refreshFromGame(playerId); // not awaited on purpose
     } finally {
       if (fromButton) { fromButton.disabled = false; fromButton.textContent = 'Edit player'; }
     }
