@@ -103,33 +103,69 @@
   // Progression
   // ---------------------------------------------------------------------------------------------------------
 
+  const STATUS_ORDER = ['rising', 'stalling', 'declining', 'maxed', 'on-track', 'unknown'];
+  const ATTENTION = ['rising', 'stalling', 'declining'];
+  const PROGRESS_FILTERS = ['attention', 'all'].concat(STATUS_ORDER);
+
+  // A tiny line of a player's overall season by season (their trend), ending in a dot. '–' when there is only one point.
+  function sparkline(series, color) {
+    const v = (series || []).map(p => Number(p.overall)).filter(Number.isFinite);
+    if (v.length < 2) return '<span style="color: var(--text-dim);">–</span>';
+    const W = 84, H = 26, P = 4, lo = Math.min(...v), hi = Math.max(...v);
+    const x = i => P + (i * (W - 2 * P)) / (v.length - 1);
+    const y = n => (hi === lo ? H / 2 : H - P - ((n - lo) / (hi - lo)) * (H - 2 * P));
+    const pts = v.map((n, i) => `${x(i).toFixed(1)},${y(n).toFixed(1)}`).join(' ');
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Overall by season: ${esc(v.join(' to '))}"><title>${esc(v.join(' → '))}</title>
+      <polyline points="${pts}" fill="none" style="stroke: ${color}; stroke-width: 2;" /><circle cx="${x(v.length - 1).toFixed(1)}" cy="${y(v[v.length - 1]).toFixed(1)}" r="3" style="fill: ${color};" /></svg>`;
+  }
+
+  // Progression: by default only the players who need attention (rising, stalling or declining for their age), each with
+  // a trend line and one number; the reasoning opens on a click. "Everyone" and the tiles are filters over the same rows.
+  //   env.progressFilter: 'attention' (default) | 'all' | a status key;  env.progressOpen: Set of player ids with reasons open
   function progressHtml(env) {
     if (!env.players.length) return empty('No squad loaded.');
     if (!root.Progression) return empty('Progression logic is not available.');
-    const b = root.Progression.board(env.players, env.histories || new Map(), { ageOf: env.ageOf, seasonLabel: env.seasonLabel, seasonOrder: env.seasonOrder, limit: 5 });
-    const known = b.rows.filter(r => r.status !== 'unknown');
-    if (!known.length) {
-      return empty('Not enough history yet. Each F10 sync stores a snapshot, so rises and falls appear after your second season or once ratings start moving in this one.');
+    const rows = root.Progression.board(env.players, env.histories || new Map(), { ageOf: env.ageOf, seasonLabel: env.seasonLabel, seasonOrder: env.seasonOrder }).rows;
+    if (!rows.some(r => r.status !== 'unknown')) {
+      return empty('Not enough history yet. Each F10 sync stores a snapshot, so rises and falls appear after your second season or once ratings start moving.');
     }
-    const list = (title, items, none) => `<div class="profile-card" style="margin: 0;"><h3>${esc(title)}</h3>${items.length
-      ? `<table class="sub-table"><tbody>${items.map(r => `<tr><td>${nameLink(r.player)}</td><td>${esc(r.player.overall)}${r.change != null ? ` <span style="color: ${r.change < 0 ? '#f85149' : r.change > 0 ? '#3fb950' : 'var(--text-dim)'};">${sign(r.change)}</span>` : ''}</td>
-          <td style="color: var(--text-dim); font-size: 12px;">${r.expected != null ? `age norm ${sign(r.expected)}` : ''}</td></tr>`).join('')}</tbody></table>`
-      : `<div style="color: var(--text-dim); font-size: 13px;">${none}</div>`}</div>`;
-    const all = b.rows.slice().sort((x, y) => (y.vsExpected == null ? -99 : y.vsExpected) - (x.vsExpected == null ? -99 : x.vsExpected));
-    const countOf = s => b.rows.filter(r => r.status === s).length;
-    const table = `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Change</th><th>vs age norm</th><th>Status</th><th>Outlook</th></tr></thead><tbody>
-      ${all.map(r => `<tr><td>${nameLink(r.player)}${subLine([env.posLabel(r.player), ageText(r.age), `${r.overall}/${r.potential || '?'}`])}</td>
-        <td>${r.change == null ? '–' : sign(r.change)}${subLine([r.source === 'in-season' ? 'this season' : 'last season', r.total != null && r.series.length >= 3 ? `${sign(r.total)} in total` : null])}</td>
-        <td>${r.vsExpected == null ? '–' : sign(Math.round(r.vsExpected * 10) / 10)}${subLine([r.expected == null ? null : `norm ${sign(r.expected)}`])}</td>
-        <td>${badge(STATUSES[r.status])}</td><td>${reasonsHtml(r.reasons.slice(0, 2))}</td></tr>`).join('')}</tbody></table></div>`;
-    return `${tiles(['rising', 'stalling', 'declining', 'maxed'].map(s => tile(STATUSES[s].label, countOf(s), s === 'rising' ? 'ahead of the age norm' : s === 'stalling' ? 'young, not growing' : s === 'declining' ? 'falling faster than age' : 'young, at the ceiling')).join(''))}
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
-        ${list('Biggest risers', b.risers, 'Nobody is growing faster than their age allows.')}
-        ${list('Stalling prospects', b.stalling, 'No young player with room to grow has stopped developing.')}
-        ${list('Biggest fallers', b.fallers, 'Nobody is falling faster than their age explains.')}
-      </div>
-      <div class="profile-card"><h3>Whole squad</h3>${table}</div>
-      ${note('"Age norm" is a rule-of-thumb yearly change for that age (about +4 at 18, 0 at 26-27, -2.5 from 33), not EA\'s real curve. A player is rising or declining relative to it, not in absolute terms. With one season of history the figure is the change so far this season, which a first sync reports as 0, so those players show as unknown. Under each name: position · age · OVR/POT.')}`;
+    const count = s => rows.filter(r => r.status === s).length;
+    const f = PROGRESS_FILTERS.includes(env.progressFilter) ? env.progressFilter : 'attention';
+    const open = env.progressOpen || new Set();
+    const attention = rows.filter(r => ATTENTION.includes(r.status));
+    const pick = f === 'attention' ? attention : f === 'all' ? rows : rows.filter(r => r.status === f);
+    const rank = r => STATUS_ORDER.indexOf(r.status);
+    const shown = pick.slice().sort((a, b) => rank(a) - rank(b) || Math.abs(b.vsExpected || 0) - Math.abs(a.vsExpected || 0) || b.overall - a.overall);
+
+    const hint = { rising: 'ahead of their age', stalling: 'young, not growing', declining: 'falling for their age', maxed: 'at their ceiling' };
+    const tileFor = s => tile(STATUSES[s].label, count(s), hint[s], `InsightsPlanning.setProgressFilter('${f === s ? 'attention' : s}')`, f === s);
+    const toggle = (key, label, n) => `<button class="home-toggle-btn${f === key ? ' active' : ''}" onclick="InsightsPlanning.setProgressFilter('${key}')">${label} <span style="opacity: 0.7;">${n}</span></button>`;
+
+    let body = '';
+    let lastStatus = null;
+    shown.forEach(r => {
+      if (r.status !== lastStatus) {
+        lastStatus = r.status;
+        body += `<tr><td colspan="4" style="background: var(--hover-color); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: ${STATUSES[r.status].color};">${esc(STATUSES[r.status].label)} <span style="opacity: 0.7;">· ${shown.filter(x => x.status === r.status).length}</span></td></tr>`;
+      }
+      const id = esc(r.player.player_id), isOpen = open.has(String(r.player.player_id));
+      body += `<tr class="player-row${isOpen ? ' expanded' : ''}">
+        <td><span class="expand-icon" style="font-size: 14px; padding: 0 6px 0 0;" title="Show the reasoning" onclick="InsightsPlanning.toggleProgress('${id}')">▶</span>${nameLink(r.player)}${subLine([env.posLabel(r.player), ageText(r.age), `${r.overall}/${r.potential || '?'}`])}</td>
+        <td>${sparkline(r.series, STATUSES[r.status].color)}</td>
+        <td><strong style="font-size: 16px; color: ${r.change > 0 ? '#3fb950' : r.change < 0 ? '#f85149' : 'inherit'};">${r.change == null ? '–' : sign(r.change)}</strong>${subLine([r.source === 'in-season' ? 'this season' : 'last season', r.expected == null ? null : `typical ${sign(r.expected)}`])}</td>
+        <td>${badge(STATUSES[r.status])}</td></tr>`;
+      if (isOpen) body += `<tr class="detail-row open"><td colspan="4"><div class="detail-wrapper">${reasonsHtml(r.reasons)}</div></td></tr>`;
+    });
+
+    const rest = rows.length - attention.length;
+    const table = shown.length
+      ? `<div class="planning-wrap"><table class="sub-table planning-table"><thead><tr><th>Player</th><th>Trend</th><th>Change</th><th>Status</th></tr></thead><tbody>${body}</tbody></table></div>`
+      : empty(f === 'attention' ? 'Everyone is moving about as expected for their age.' : `Nobody is "${esc(STATUSES[f] ? STATUSES[f].label : f)}" right now.`);
+    return `${tiles(['rising', 'stalling', 'declining', 'maxed'].map(tileFor).join(''))}
+      <div class="home-toggle" style="margin-bottom: 12px;">${toggle('attention', 'Needs attention', attention.length)}${toggle('all', 'Everyone', rows.length)}</div>
+      <div class="profile-card">${table}
+        ${f === 'attention' && rest ? `<div style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">${rest} more ${rest === 1 ? 'is' : 'are'} on track, at their ceiling or have no history yet. <button class="home-toggle-btn" style="font-size: 12px; padding: 2px 10px; margin-left: 6px;" onclick="InsightsPlanning.setProgressFilter('all')">Show everyone</button></div>` : ''}</div>
+      ${note('Compared with a typical yearly change for that age (a rule of thumb, not EA\'s curve), not in absolute terms. Click ▶ for the numbers behind a label. A first sync reports no movement, so those players show as unknown.')}`;
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -260,6 +296,8 @@
   // ---------------------------------------------------------------------------------------------------------
 
   let adviceFilter = 'all';
+  let progressFilter = 'attention';
+  const progressOpen = new Set();
   let cache = null;   // { saveId, seasonLabel, byId: Map(player_id -> history rows) } for Progression
   let loading = false;
 
@@ -282,7 +320,7 @@
     const SA = root.SquadAnalytics;
     const curve = SA && SA.fitWageCurve ? SA.fitWageCurve(players.filter(p => Number(p.wage) > 0)) : null;
     return {
-      players, filter: adviceFilter, transferBan: !!ban, seasonEndYear: seasonEndYearNow(),
+      players, filter: adviceFilter, progressFilter, progressOpen, transferBan: !!ban, seasonEndYear: seasonEndYearNow(),
       ageOf: p => { const a = root.computeAge ? root.computeAge(p.dob || p.birthdate) : null; return a == null ? null : a; },
       groupOf: p => root.getPositionInfo(p.position_id).group,
       posLabel: p => root.getPositionInfo(p.position_id).label,
@@ -368,6 +406,9 @@
     homeMovesHtml, homeActionsFor, homeActions: () => homeActionsFor(liveEnv()), renderHomeWidget,
     profileCardHtml, profileHtml, promotionCardHtml,
     adviceHtml, progressHtml, planCardHtml, planTableHtml, computePlan, computeAdvice, seasonEndYearNow,
+    setProgressFilter(v) { progressFilter = PROGRESS_FILTERS.includes(v) ? v : 'attention'; if (root.Insights) root.Insights.render(); },
+    toggleProgress(id) { const k = String(id); progressOpen.has(k) ? progressOpen.delete(k) : progressOpen.add(k); if (root.Insights) root.Insights.render(); },
+    sparkline,
     setAdviceFilter(v) { adviceFilter = VERDICTS[v] ? v : 'all'; if (root.Insights) root.Insights.render(); },
     invalidate() { cache = null; }
   };

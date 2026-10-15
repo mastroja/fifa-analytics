@@ -90,17 +90,48 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
     [1, [row('2025/26', 64, 84), row('2026/27', 70, 85)]], [2, [row('2025/26', 64, 76), row('2026/27', 64, 76)]],
     [3, [row('2025/26', 80, 80), row('2026/27', 76, 76)]], [4, [row('2025/26', 80, 80), row('2026/27', 80, 80)]]
   ]);
-  const h = V.progressHtml(env({ players, histories, seasonLabel: '2026/27' }));
-  assert(h.includes('planning-wrap') && h.includes('planning-table'), 'wide table sits in a scrolling wrapper');
-  assert(h.includes('Biggest risers') && h.includes('Stalling prospects') && h.includes('Biggest fallers') && h.includes('Whole squad'));
-  assert(/Rocket/.test(h) && /Slowpoke/.test(h) && /Steady/.test(h));
+  const base = { players, histories, seasonLabel: '2026/27' };
+  const h = V.progressHtml(env(base));
+  // statuses: Rocket rising (+7 vs +3), Slowpoke stalling (flat at 19), Fading Star declining (-4 at 31), Steady on track
+  assert(h.includes('planning-wrap') && h.includes('planning-table'), 'table sits in a scrolling wrapper');
+  assert(/Rocket/.test(h) && /Slowpoke/.test(h), 'attention players are shown');
+  assert(!/Steady/.test(h), 'the default view leaves out players who are simply on track');
   assert(!/<i>Star<\/i>/.test(h) && /&lt;i&gt;Star&lt;\/i&gt;/.test(h), 'names escaped');
-  assert(/>Rising</.test(h) && />Stalling</.test(h) && />Declining</.test(h) && />On track</.test(h), 'each status badge appears');
-  const risers = h.slice(h.indexOf('Biggest risers'), h.indexOf('Stalling prospects'));
-  assert(risers.includes('Rocket') && !risers.includes('Slowpoke'), 'risers list holds the riser only');
-  assert(h.includes('+7'), 'shows the +7 change: 64 -> the live 71, which replaces the stored 70');
+  assert(/>Rising</.test(h) && />Stalling</.test(h) && />Declining</.test(h), 'status badges and group headings');
+  assert(h.indexOf('Rocket') < h.indexOf('Slowpoke') && h.indexOf('Slowpoke') < h.indexOf('Fading'), 'grouped: rising, then stalling, then declining');
+  assert(/Needs attention <span[^>]*>3<\/span>/.test(h) && /Everyone <span[^>]*>4<\/span>/.test(h), 'the two toggles with counts');
+  assert(/1 more is on track/.test(h) && /Show everyone/.test(h), 'says how many were left out and offers them');
+  assert(h.includes('+7'), 'one number per player: 64 -> the live 71, which replaces the stored 70');
+  assert(/<svg[^>]*aria-label="Overall by season: 64 to 71"/.test(h), 'a trend line from the season history');
+  assert(!/Biggest risers|Whole squad|Outlook/.test(h), 'the old duplicate lists and the Outlook column are gone');
+  assert(!/OVR since last season/.test(h), 'the reasoning stays hidden until a row is opened');
+  assert(/InsightsPlanning\.toggleProgress\('1'\)/.test(h), 'each row has an expand control');
+  assert(/setProgressFilter\('rising'\)/.test(h) && /setProgressFilter\('declining'\)/.test(h), 'the tiles are filters');
+  assert(h.length < 14000, 'the default view stays small');
+
+  // opening a row shows the reasons for that player only
+  const opened = V.progressHtml(env({ ...base, progressOpen: new Set(['1']) }));
+  assert(/OVR since last season/.test(opened) && /class="detail-row open"/.test(opened) && /player-row expanded/.test(opened), 'reasons appear for the opened row');
+  assert((opened.match(/class="detail-row open"/g) || []).length === 1, 'and only for it');
+
+  // everyone / one status
+  const all = V.progressHtml(env({ ...base, progressFilter: 'all' }));
+  assert(/Steady/.test(all) && />On track</.test(all) && !/more is on track/.test(all), 'Everyone includes the on-track players');
+  const rising = V.progressHtml(env({ ...base, progressFilter: 'rising' }));
+  assert(/Rocket/.test(rising) && !/Slowpoke/.test(rising) && !/Steady/.test(rising), 'a tile filters to one status');
+  assert(/outline: 2px solid/.test(rising), 'and shows it is active');
+  assert(/Nobody is "Declining"/.test(V.progressHtml(env({ players: players.slice(0, 2), histories, seasonLabel: '2026/27', progressFilter: 'declining' }))), 'an empty status says so');
+  assert(/moving about as expected/.test(V.progressHtml(env({ players: [players[3]], histories, seasonLabel: '2026/27' }))), 'nobody needs attention: says so');
+  assert(V.progressHtml(env({ ...base, progressFilter: 'bogus' })).includes('Rocket'), 'an unknown filter falls back to the default');
+
+  // the trend line
+  const sp = V.sparkline([{ overall: 60 }, { overall: 66 }, { overall: 71 }], '#3fb950');
+  assert(/<polyline points="[\d.,\s]+"/.test(sp) && /<circle/.test(sp) && /60 to 66 to 71/.test(sp));
+  assert(!/NaN|Infinity/.test(V.sparkline([{ overall: 70 }, { overall: 70 }, { overall: 70 }], 'x')), 'a flat line does not divide by zero');
+  assert(!/<svg/.test(V.sparkline([{ overall: 70 }], 'x')) && !/<svg/.test(V.sparkline([], 'x')) && !/<svg/.test(V.sparkline(undefined, 'x')), 'fewer than two points: no chart');
+  assert(!/<svg/.test(V.sparkline([{ overall: 'x' }, { overall: null }], 'x')), 'junk values are ignored');
   // without the current label the live value is appended and read as a second change: still renders
-  assert(V.progressHtml(env({ players, histories })).includes('Whole squad'));
+  assert(V.progressHtml(env({ players, histories })).includes('Needs attention'));
 }
 
 // --- Wages & Contracts sections (projection card + decisions table) ------------------------------------------------
@@ -304,7 +335,7 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   assert.strictEqual(historyCalls, live.length, 'one history fetch per senior player, started once');
   assert(refreshes > before, 'asks Insights to redraw when the history arrives');
   const done = registered.progress();
-  assert(!done.includes('Loading') && done.includes('Whole squad'), 'renders once loaded');
+  assert(!done.includes('Loading') && done.includes('Needs attention'), 'renders once loaded');
   assert.strictEqual(historyCalls, live.length, 'cached: drawing again does not refetch');
 
   V.invalidate();
@@ -326,6 +357,28 @@ const noRawTags = html => assert(!/<b>Kid<\/b>/.test(html) && /&lt;b&gt;Kid&lt;\
   const broken = registered.advice();
   console.error = silence;
   assert(broken.includes('Could not draw this view') && broken.includes('boom'));
+
+  // progression clicks: a tile filters, the arrow opens one player's reasons, both redraw the Insights view
+  globalThis.getPositionInfo = () => ({ group: 'MID', label: 'CM' });
+  const NOW = { 1: 80, 2: 78, 3: 76, 4: 64, 5: 70, 6: 79 }, WAS = { 4: 58, 5: 75 };      // the 19yo gained 6, the 32yo lost 5, the rest are flat
+  globalThis.currentSaveId = 10;
+  globalThis.api = {
+    getSeasonsList: async () => [{ id: 2, year_label: '2026/27', is_current: true }],
+    getPlayerHistory: async id => [{ season: '2025/26', overall: WAS[id] || NOW[id], potential: 85 }, { season: '2026/27', overall: NOW[id], potential: 85 }]
+  };
+  registered.progress(); await new Promise(r => setTimeout(r, 20));
+  {
+    const def = registered.progress();
+    assert(/Kid/.test(def) && /Old Timer/.test(def) && !/Star Mid/.test(def), 'default: the riser and the decliner, not the flat players');
+    const r1 = renders; V.setProgressFilter('declining'); assert.strictEqual(renders, r1 + 1, 'a tile click redraws');
+    const dec = registered.progress(); assert(/Old Timer/.test(dec) && !/Kid/.test(dec), 'the declining filter is applied to the live view');
+    V.setProgressFilter('nonsense'); assert(/Kid/.test(registered.progress()), 'an unknown filter resets to the default');
+    V.setProgressFilter('all'); assert(/Star Mid/.test(registered.progress()), 'Everyone shows the flat players too');
+    const r2 = renders; V.toggleProgress(globalThis.currentPlayers[3].player_id); assert.strictEqual(renders, r2 + 1, 'opening a row redraws');
+    assert((registered.progress().match(/class="detail-row open"/g) || []).length === 1, 'exactly that row\'s reasons are open');
+    V.toggleProgress(globalThis.currentPlayers[3].player_id); assert(!/class="detail-row open"/.test(registered.progress()), 'and they close again');
+    V.setProgressFilter('attention');
+  }
 
   // filter setter re-renders the Insights view
   const r0 = renders; V.setAdviceFilter('sell'); assert.strictEqual(renders, r0 + 1);
