@@ -354,7 +354,9 @@
 
   function seasonEndYearNow() {
     const raw = typeof currentIngameDate !== 'undefined' ? currentIngameDate : null;
-    const d = (root.parseBirthDate && raw ? root.parseBirthDate(raw) : null) || new Date();
+    // Read yyyy-mm-dd straight off the string: new Date('2027-07-01') is UTC midnight, which is 30 June in the Americas.
+    const iso = raw && /^(\d{4})-(\d{2})-\d{2}/.exec(String(raw));
+    const d = iso ? new Date(+iso[1], +iso[2] - 1, 1) : (root.parseBirthDate && raw ? root.parseBirthDate(raw) : null) || new Date();
     return d.getMonth() >= 6 ? d.getFullYear() + 1 : d.getFullYear(); // July-June seasons, as computeMonthsUntilExpiry assumes
   }
 

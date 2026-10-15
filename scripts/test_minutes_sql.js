@@ -19,12 +19,12 @@ assert.strictEqual(placeholders, cols.length, `INSERT has ${cols.length} columns
 assert(cols.includes('minutes_played'), 'INSERT writes minutes_played');
 assert.strictEqual(cols.indexOf('minutes_played'), cols.indexOf('appearances') + 1, 'minutes sit right after appearances in the column list');
 
-const migrations = [...main.match(/const seasonStatsMigrations = \[([\s\S]*?)\n  \];/)[1].matchAll(/\['(\w+)',\s*'([^']+)'\]/g)].map(m => [m[1], m[2]]);
+const migrations = [...main.match(/const seasonStatsMigrations = \[([\s\S]*?)\r?\n  \];/)[1].matchAll(/\['(\w+)',\s*'([^']+)'\]/g)].map(m => [m[1], m[2]]);
 const minutesMigration = migrations.find(m => m[0] === 'minutes_played');
 assert(minutesMigration, 'a migration adds minutes_played to existing databases');
 assert.strictEqual(minutesMigration[1], 'INTEGER', 'no DEFAULT: a missing value must stay NULL, not 0');
 
-const bindExpr = main.match(/p\.appearances \|\| 0,\n\s*(Number\.isFinite[^\n]*?),\s*\/\/ null = not exported/)[1];
+const bindExpr = main.match(/p\.appearances \|\| 0,\r?\n\s*(Number\.isFinite[^\r\n]*?),\s*\/\/ null = not exported/)[1];
 const bindMinutes = new Function('p', 'return ' + bindExpr);
 
 const selectSql = main.match(/function getSquadFromDB[\s\S]*?db\.exec\(`\s*SELECT([\s\S]*?)FROM players p/)[1];
