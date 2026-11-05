@@ -4,7 +4,18 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 
 **This is a beta and the first public release (27.1.0).** Live Editor for FC 27 does not expose everything yet, so some widgets say "Not available in FC 27 yet" and will fill in as Live Editor adds the data (see "FC 27 limitations"). Everything the game does expose is covered below.
 
-**Works with:** EA SPORTS FC 27 build `1.0.141.12554` and FC 27 Live Editor `v27.1.4`. Live Editor reads game memory, so a different game build can break it. Pin your game version first (see the README).
+**Works with:** EA SPORTS FC 27 build `1.0.141.12554` or `1.0.141.46637` (v1.1.0) and FC 27 Live Editor `v27.1.8`. Live Editor reads game memory, so a different game build can break it. Pin your game version first (see the README).
+
+## New in 27.2.0: season stats are back
+**Update Live Editor to v27.1.8** for this release: it brings back the game's season statistics, which FC 27 had been missing.
+- **Goals, assists, clean sheets, cards, saves and MOTM** for every player, per competition (league, cups, Europe). Top Goals / Top Assists and the league leaders on Home fill in, and profiles show the per-competition breakdown.
+- **League-wide leaderboards** for your league: every player at every club, with the league found automatically (no fixture data needed).
+- **Minutes played** keep coming from the game's match-rating table, so play-time advice still uses minutes.
+- **Reactions and Composure** were never read from the game (32 of the 34 attributes were). They are now exported and shown under Dribbling on player profiles.
+- **Depth chart: all 30 EA FC formations** with EA's names (4-3-3, 4-3-3 (2) ... 5-4-1), grouped by back four / three / five, including second-striker (CF / LF / RF) slots. Cards never overlap on the pitch. Your saved lineups move to the matching official formation and keep their arrangement: the old "4-3-3" becomes 4-3-3 (2), "4-3-3 Holding" becomes 4-3-3 (4), "4-2-3-1" becomes 4-2-3-1 (2) and "3-5-2" becomes 5-3-2.
+- **Penalties and free kicks grow** (optional, Dynamic look > What can change): the game hardly ever develops these, so once a month penalties move toward the average of Finishing and Composure, and free-kick accuracy toward 50% Curve, 30% Long shots and 20% Composure. +1 to +3 a month, only ever raised, once per in-game month, for generic / regen / academy players. Neither counts toward overall. Off until you switch it on; Undo ALL switches it off too.
+- With an older Live Editor everything works as before (goals and assists stay empty).
+- Still not available on FC 27: league standings (points, W/D/L), fixtures and results. Live Editor v27.1.7 shows them in its Team Editor, but scripts cannot read them yet.
 
 ## New in 27.1.0: planning tools
 - **Roster Moves** (Insights): a sell / keep / loan call for every player with the reasons behind it (age, overall vs potential, play time, wage against your squad, contract length). Click a tile to filter. Respects a Youth Mode transfer ban.
@@ -27,7 +38,7 @@ The companion app for Career Mode, rebuilt for FC 27. It reads your save through
 
 ### Squad tab: List, Depth and Academy
 - **Filters on the squad list and Former Players:** position, age, overall, potential, OVR change, appearances, goals, assists, G+A, clean sheets, rating, cards, contract year, injured; and for former players club, fee, value, years at club, joined and departed season. One-click presets, an active-filter count and "Showing X of Y", remembered per view.
-- **Depth chart:** a full pitch with 8 formations (including 4-3-3 Holding). Each position holds 1st, 2nd, 3rd... strings. Drag players to rearrange, or use the ✎ on a position to pick each string. Hover a player for age, overall, potential, the six category totals, preferred foot, height, weak foot, skill moves and alternative positions.
+- **Depth chart:** a full pitch with all 30 EA FC formations (from 27.2.0; 27.1.0 had 8). Each position holds 1st, 2nd, 3rd... strings. Drag players to rearrange, or use the ✎ on a position to pick each string. Hover a player for age, overall, potential, the six category totals, preferred foot, height, weak foot, skill moves and alternative positions.
 - **Starting XI, Reserves and your own lineups:** every change is saved to the lineup you have selected. Reserves auto-fill with the players the XI doesn't use. A two-wide list on the right shows everyone not in the lineup, with the youth academy beneath it.
 - **Position fit at a glance:** the ring around each avatar is green for a main position, yellow for an alternative (CDM, CM and CAM count as close fits for each other) and red for neither. Alternative positions show as small chips beside the main badge.
 - **Gap flags:** vacant positions, no backup, expiring contracts with no cover, and the Team Needs reasons (aging, regression, underperforming, limited minutes, potential reached). A player appears at most once per lineup, and you can remove anyone from the chart.
@@ -80,10 +91,10 @@ Analysis lives in its own tab. The views:
 - Hair filtering follows skin tone: "Suggested for skin tone" now counts only styles in the suggested categories, with the rest under "Other". Heights are capped at 6'9" (206 cm).
 
 ## FC 27 limitations (Live Editor does not provide these yet)
-The game's data for these is not exposed by Live Editor v27.1.3, so these parts of the app stay empty. Each affected Home widget says "Not available in FC 27 yet".
-- Current-season **goals, assists, clean sheets and cards** (and so the Top Goals / Top Assists widgets).
+The game's data for these is not exposed by Live Editor (checked up to v27.1.8), so these parts of the app stay empty. Each affected Home widget says "Not available in FC 27 yet".
 - **League standings, fixtures, results and the calendar.**
-- **Transfers and negotiations**, trophies won, league-wide stats and competition names.
+- **Transfers and negotiations** and trophies won.
+- (Fixed in 27.2.0 with Live Editor v27.1.8: current-season goals, assists, clean sheets and cards, league-wide stats and competition names.)
 - **Contract start date, length and squad role.** Wage and contract end year work.
 - **Dynamic (in-game) overall:** the app shows the player's base overall.
 
@@ -99,7 +110,7 @@ What does work: squad, attributes, PlayStyles, loans, wage and contract end, inj
 ## Known issues
 - The installer is unsigned (SmartScreen warning).
 - No automatic updates: download new versions by hand.
-- Several stats are missing until Live Editor exposes them for FC 27 (see the limitations above).
+- League standings, fixtures and results are missing until Live Editor exposes them to scripts for FC 27 (see the limitations above). Season stats need Live Editor v27.1.8 or newer.
 - No FC 26 support in this version.
 - A game patch can break Live Editor. Keep your game version pinned.
 - This is a beta: if something looks wrong, note your game build, Live Editor version and what you pressed so it can be reproduced.

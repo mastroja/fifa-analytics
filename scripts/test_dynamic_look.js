@@ -104,4 +104,78 @@ assert(raised > 0 && same > 0, 'some players grow, some stay');
 const bad = DL.planGrowth({ playerId: 5, state: Object.assign(baseState(5, 50, 1), { height: 256 }), ageYears: 16, record: null });
 assert(bad.changes.height !== undefined && bad.changes.height <= 206, 'an impossible height is repaired');
 
-console.log('dynamic look tests passed');
+// ---- set pieces: penalties and free-kick accuracy ----
+{
+  // Malik Kane-like: PEN target (60+52)/2 = 56, FK target 0.5*50 + 0.3*52 + 0.2*52 = 51
+  const s = { finishing: 60, composure: 52, curve: 50, longshots: 52, penalties: 51, freekickaccuracy: 35 };
+  const sp = DL.planSetPieces(s);
+  assert.strictEqual(sp.targets.penalties, 56);
+  assert.strictEqual(sp.targets.freekickaccuracy, 51);
+  assert.strictEqual(sp.changes.penalties, 53, 'gap 5 -> +2 a month');
+  assert.strictEqual(sp.changes.freekickaccuracy, 38, 'gap 16 -> +3 a month');
+  assert.strictEqual(DL.setPieceStep(1), 1); assert.strictEqual(DL.setPieceStep(4), 1);
+  assert.strictEqual(DL.setPieceStep(5), 2); assert.strictEqual(DL.setPieceStep(11), 2); assert.strictEqual(DL.setPieceStep(12), 3);
+  // never lowered: a specialist above his target keeps his rating
+  const spec = DL.planSetPieces({ finishing: 40, composure: 40, curve: 40, longshots: 40, penalties: 80, freekickaccuracy: 85 });
+  assert.deepStrictEqual(spec.changes, {}, 'never lowered');
+  // never past the target, never past 99
+  const near = DL.planSetPieces({ finishing: 70, composure: 71, curve: 60, longshots: 60, penalties: 70, freekickaccuracy: 59 });
+  assert.strictEqual(near.changes.penalties, 71, 'stops at the target (70.5 rounds to 71)');
+  assert.strictEqual(near.changes.freekickaccuracy, 60);
+  const top = DL.planSetPieces({ finishing: 99, composure: 99, curve: 99, longshots: 99, penalties: 98, freekickaccuracy: 90 });
+  assert(top.changes.penalties <= 99 && top.changes.freekickaccuracy <= 99, 'capped at 99');
+  // missing inputs: no guess
+  assert.deepStrictEqual(DL.planSetPieces({ penalties: 40, freekickaccuracy: 40 }).changes, {}, 'no inputs, no change');
+  // repeated months converge on the target and stop there
+  let st = Object.assign({}, s);
+  for (let m = 0; m < 24; m++) Object.assign(st, DL.planSetPieces(st).changes);
+  assert.strictEqual(st.penalties, 56); assert.strictEqual(st.freekickaccuracy, 51);
+  assert(!DL.FEATURE_DEFAULTS.setpieces, 'set pieces are opt-in');
+}
+
+// ---- the runner: set pieces apply once per in-game month, with one log note ----
+(async () => {
+  const initSqlJs = require('sql.js');
+  const fs = require('fs');
+  const path = require('path');
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  db.run(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
+  try { db.run('ALTER TABLE player_editor_state ADD COLUMN save_uid TEXT;'); } catch (e) { /* already in schema */ }
+  const state = Object.assign(baseState(77, 50, 0), { finishing: 60, composure: 52, curve: 50, longshots: 52, penalties: 51, freekickaccuracy: 35 });
+  db.run("INSERT INTO player_editor_state (player_id, save_id, editable, name, source, state_json) VALUES (77, 1, 1, 'Test Kane', 'squad', ?)", [JSON.stringify(state)]);
+  db.run("INSERT INTO players (player_id, name, dob) VALUES (77, 'Test Kane', '03-10-2009')");
+  const queued = [];
+  const look = new DL.instance.constructor();
+  look.configure({
+    getDb: () => db, getActiveSaveId: () => 1, saveDatabaseToDisk: () => {},
+    pressSync: async () => true, pressApply: async () => true, getCatalog: () => ({ hair: [], facialHair: [], boots: [] }), getBootLinks: () => ({}),
+    notify: () => {}, log: m => { throw new Error(m); },
+    playerEditor: {
+      queueEdit: (pid, changes) => {
+        queued.push(changes);
+        db.run("INSERT INTO player_edits (player_id, save_id, old_json, new_json, status) VALUES (?, 1, '{}', ?, 'applied')", [pid, JSON.stringify(changes)]);
+        // what Live Editor would do on F11: the new values become the player's state
+        const cur = JSON.parse(db.exec('SELECT state_json FROM player_editor_state WHERE player_id = 77')[0].values[0][0]);
+        db.run('UPDATE player_editor_state SET state_json = ? WHERE player_id = 77', [JSON.stringify(Object.assign(cur, changes))]);
+        return { success: true };
+      }
+    }
+  });
+  look.setSettings(1, { enabled: true, features: { hair: false, beard: false, colour: false, boots: false, accessories: false, setpieces: true } });
+  look.setLastMonth(1, '2026-09');
+
+  await look.onSquadSync({ saveId: 1, currentDate: '2026-10-24' });
+  assert.deepStrictEqual(queued[0], { penalties: 53, freekickaccuracy: 38 }, 'October: one step each');
+  const note = db.exec('SELECT summary FROM dynamic_look_log')[0].values[0][0];
+  assert.strictEqual(note, 'PEN 51 → 53, FK 35 → 38');
+
+  await look.runNow(1, '2026-10-24');
+  assert.strictEqual(queued.length, 1, '"Run this month now" does not add a second step in the same month');
+
+  await look.onSquadSync({ saveId: 1, currentDate: '2027-01-02' });
+  // Nov, Dec, Jan caught up: FK 38 -> 41 -> 43 -> 45 (gaps 13, 10, 8), PEN 53 -> 54 -> 55 -> 56 (gaps 3, 2, 1: target reached)
+  assert.deepStrictEqual(queued[1], { penalties: 56, freekickaccuracy: 45 }, 'three missed months caught up');
+
+  console.log('dynamic look tests passed');
+})().catch(err => { console.error(err); process.exit(1); });

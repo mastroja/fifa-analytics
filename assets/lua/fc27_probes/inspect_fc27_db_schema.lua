@@ -164,6 +164,39 @@ check_table("career_managerhistory", {
 })
 check_table("career_users", { "clubteamid", "nationalteamid" })
 
+-- ------------------------------------------------------------
+-- PHASE 3 — fields/tables added or exposed by Live Editor v27.1.1-27.1.6
+-- Metadata only. Lists every table whose NAME or any field NAME contains one of
+-- these keywords, so a schema re-run after an update shows where the new data lives
+-- (contract role -> 27.1.5, transfer bans / jersey name outline -> 27.1.6,
+-- personality picker -> 27.1.6, Player Career reputation/funds/attribute points -> 27.1.1,
+-- suspension -> 27.1.2, dynamic OVR / reveal player data -> 27.1.3 / 27.1.6).
+-- ------------------------------------------------------------
+section("PHASE 3: LIVE EDITOR 27.1.x FEATURE KEYWORDS")
+local KEYWORDS = {
+    "role", "squadrole", "ban", "personality", "outline", "suspen", "reputation", "funds",
+    "attributepoint", "objective", "reveal", "hidden", "dynamic", "miniface", "transferhist", "undo"
+}
+for _, tname in ipairs(names) do
+    local tbl = tables[tname]
+    local hits = {}
+    local tl = tname:lower()
+    for _, k in ipairs(KEYWORDS) do
+        if tl:find(k, 1, true) then table.insert(hits, "TABLE:" .. k) end
+    end
+    if tbl.fields then
+        for _, fname in ipairs(sorted_keys(tbl.fields)) do
+            local fl = fname:lower()
+            for _, k in ipairs(KEYWORDS) do
+                -- "ban" also matches "bannerplayers"/"urban"-style noise; the table name is printed so it is easy to skim
+                if fl:find(k, 1, true) then table.insert(hits, fname) break end
+            end
+        end
+    end
+    if #hits > 0 then log(string.format("  %-28s %s", tname, table.concat(hits, ", "))) end
+end
+flush_report()
+
 section("DONE")
 log("No raw memory offsets (standings/fixtures/transfers) were touched.")
 log("Send the whole file back to Claude: " .. out_path)

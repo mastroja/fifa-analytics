@@ -25,6 +25,8 @@ heap range the manager objects live in (0x66000000-0x6B000000), pointer-followin
 | `inspect_fc27_find_fce_lists.lua` | Stage 4: looks for list objects under `FCEDataManager`; also tallies the match-rating table | medium |
 | `inspect_fc27_find_standings.lua` | Stages 5-6: scans the schedule-related managers' big pools for fixture-shaped runs (YYYYMMDD dates at a 0x18 stride) and standings-shaped runs (the user's league team ids at a 0x18 stride) | medium (reads only inside arena-bounded vectors, chunked, flushed) |
 | `inspect_fc27_next_match.lua` | Stage 7: dumps the small result/next-match managers (NextMatchManager, SimResultsManager, InterestingResultManager, StandingsViewManager, ...) and their pointer targets, tagging league team ids and dates in four encodings, to find where one fixture lives | medium (arena / near-object pointers only) |
+| `inspect_fc27_season_stats.lua` | Stage 9 (LE v27.1.8+): native/stand-in check of the new stats functions, `GetPlayersStats()` row keys, competitions covered (rows, teams, names), which competition is the user's league (vs `leagueteamlinks`), top 5 scorers per competition, the squad's rows vs `GetPlayerStats(pid)`, and the `players_development.json` file | low (native calls + table reads) |
+| `inspect_fc27_standings_sources.lua` | Stage 10 (LE v27.1.8+): the user's league from `leagueteamlinks` sorted by position (which columns are live), team GF / GA / clean sheets rebuilt from `GetPlayersStats` (GKs for GA), every other table with team + points/wins/goals columns, transfer bans via the v2 `transfer_ban_manager`, and transfer/loan-listed / loaned-out / pre-signed flags for the squad | low (native calls + table reads) |
 | `inspect_fc27_find_injury.lua` | Stage 8: searches News/Events/UnexpectedEvents/PersistentEvents/PlayerStatus/Fitness managers' vectors for an injured player's id (Malik Kane 460012) and dumps the surrounding bytes; run WHILE he is injured | medium (arena-bounded, capped, flushed) |
 
 ## What was learned (v27.1.2, tested 2026-10-05/06)
@@ -59,7 +61,8 @@ competition column and no goals/assists, so it only approximates apps and averag
 ## Re-testing after a Live Editor update
 
 1. Run `inspect_fc27_api_availability.lua` first — if `GetPlayersStats` is no longer nil, stats may
-   just work in the existing export.
+   just work in the existing export. On v27.1.8+ run `inspect_fc27_season_stats.lua` instead: it
+   covers the same functions and checks the row shape the export depends on.
 2. Re-run `inspect_fc27_db_schema.lua` and diff against the previous report for table changes.
 3. Only then consider the memory scripts (set `FC27_MEMORY_OFFSETS_VERIFIED` back to `true` in
    `export_all.lua` only after new offsets are confirmed standalone).

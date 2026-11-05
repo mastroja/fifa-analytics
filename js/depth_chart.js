@@ -21,21 +21,103 @@
     CDM: ['CDM', 'RDM', 'LDM'], CM: ['CM', 'RCM', 'LCM'], CAM: ['CAM', 'RAM', 'LAM'],
     RM: ['RM', 'RW'], LM: ['LM', 'LW'],
     RW: ['RW', 'RM', 'RAM', 'RF'], LW: ['LW', 'LM', 'LAM', 'LF'],
-    ST: ['ST', 'RS', 'LS', 'CF', 'RF', 'LF']
+    ST: ['ST', 'RS', 'LS', 'CF', 'RF', 'LF'],
+    // second strikers / inside forwards (4-4-1-1, 4-3-3 (5), 4-3-2-1, 3-4-2-1)
+    CF: ['CF', 'ST', 'RS', 'LS', 'LF', 'RF'], LF: ['LF', 'CF', 'LW'], RF: ['RF', 'CF', 'RW']
   };
 
-  // [role, x%, y%] — y=0 is the opposition goal, y=100 is ours.
-  const FORMATIONS = {
-    '4-3-3': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CM', 27, 52], ['CDM', 50, 58], ['CM', 73, 52], ['LW', 17, 24], ['ST', 50, 16], ['RW', 83, 24]],
-    '4-3-3 Holding': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CM', 33, 52], ['CM', 67, 52], ['CAM', 50, 38], ['LW', 17, 22], ['ST', 50, 15], ['RW', 83, 22]],
-    '4-4-2': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['LM', 14, 48], ['CM', 38, 53], ['CM', 62, 53], ['RM', 86, 48], ['ST', 36, 20], ['ST', 64, 20]],
-    '4-2-3-1': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CDM', 31, 56], ['CDM', 69, 56], ['LM', 16, 36], ['CAM', 50, 38], ['RM', 84, 36], ['ST', 50, 15]],
-    '4-1-4-1': [['GK', 50, 91], ['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72], ['CDM', 50, 58], ['LM', 14, 38], ['CM', 38, 38], ['CM', 62, 38], ['RM', 86, 40], ['ST', 50, 15]],
-    '3-5-2': [['GK', 50, 91], ['CB', 26, 76], ['CB', 50, 78], ['CB', 74, 76], ['LWB', 10, 52], ['CM', 32, 52], ['CDM', 50, 58], ['CM', 68, 52], ['RWB', 90, 52], ['ST', 37, 20], ['ST', 63, 20]],
-    '3-4-3': [['GK', 50, 91], ['CB', 26, 76], ['CB', 50, 78], ['CB', 74, 76], ['LM', 12, 52], ['CM', 38, 54], ['CM', 62, 54], ['RM', 88, 52], ['LW', 20, 24], ['ST', 50, 16], ['RW', 80, 24]],
-    '5-3-2': [['GK', 50, 91], ['LWB', 9, 68], ['CB', 28, 77], ['CB', 50, 77], ['CB', 72, 77], ['RWB', 91, 68], ['CM', 28, 48], ['CM', 50, 52], ['CM', 72, 48], ['ST', 37, 20], ['ST', 63, 20]]
-  };
+  // EA FC's formations, with EA's own names. [role, x%, y%] — y=0 is the opposition goal, y=100 is ours.
+  // Roles are generic (a LCM / RCM slot is 'CM', LDM / RDM 'CDM', LAM / RAM 'CAM', LS / RS 'ST'); x orders them left to right.
+  // Slot order matters: pins are stored by slot index (see LEGACY_FORMATIONS for how older lineups are remapped).
+  // Rows (y, before mapY): keeper 91, centre-backs 76, full-backs 72, low central mid 57, wide mids 46-50, high central
+  // mid / CAM 35, wingers 24, strikers 14-20. Cards are 20% of the pitch wide and 18.4% tall, so any two slots less
+  // than 20 apart sideways sit at least one card height apart after mapY (scripts/test_depth_chart.js checks every pair).
+  const GK = ['GK', 50, 91];
+  const BACK4 = [['LB', 14, 72], ['CB', 38, 76], ['CB', 62, 76], ['RB', 86, 72]];
+  const BACK3 = [['CB', 26, 76], ['CB', 50, 78], ['CB', 74, 76]];
+  const BACK5 = [['LWB', 10, 68], ['CB', 30, 77], ['CB', 50, 78], ['CB', 70, 77], ['RWB', 90, 68]];
+  const TWO_ST = [['ST', 36, 14], ['ST', 64, 14]];
+  const ONE_ST = [['ST', 50, 14]];
+  const FRONT3 = [['LW', 15, 24], ['ST', 50, 14], ['RW', 85, 24]];
+  const FORMATION_GROUPS = [
+    ['Back four', {
+      '4-1-2-1-2': [...BACK4, ['CDM', 50, 57], ['LM', 12, 46], ['RM', 88, 46], ['CAM', 50, 35], ...TWO_ST],
+      '4-1-2-1-2 (2)': [...BACK4, ['CDM', 50, 57], ['CM', 28, 48], ['CM', 72, 48], ['CAM', 50, 35], ...TWO_ST],
+      '4-1-3-2': [...BACK4, ['CDM', 50, 57], ['LM', 12, 46], ['CM', 50, 35], ['RM', 88, 46], ...TWO_ST],
+      '4-1-4-1': [...BACK4, ['CDM', 50, 57], ['LM', 12, 40], ['CM', 34, 36], ['CM', 66, 36], ['RM', 88, 40], ...ONE_ST],
+      '4-2-1-3': [...BACK4, ['CDM', 36, 57], ['CDM', 64, 57], ['CAM', 50, 35], ...FRONT3],
+      '4-2-2-2': [...BACK4, ['CDM', 36, 57], ['CDM', 64, 57], ['CAM', 20, 36], ['CAM', 80, 36], ...TWO_ST],
+      '4-2-3-1': [...BACK4, ['CDM', 36, 57], ['CDM', 64, 57], ['CAM', 20, 35], ['CAM', 50, 35], ['CAM', 80, 35], ...ONE_ST],
+      '4-2-3-1 (2)': [...BACK4, ['CDM', 36, 57], ['CDM', 64, 57], ['LM', 14, 40], ['CAM', 50, 35], ['RM', 86, 40], ...ONE_ST],
+      '4-2-4': [...BACK4, ['CM', 36, 54], ['CM', 64, 54], ['LW', 12, 24], ['ST', 37, 17], ['ST', 63, 17], ['RW', 88, 24]],
+      '4-3-1-2': [...BACK4, ['CM', 27, 50], ['CM', 50, 57], ['CM', 73, 50], ['CAM', 50, 35], ...TWO_ST],
+      '4-3-2-1': [...BACK4, ['CM', 27, 50], ['CM', 50, 57], ['CM', 73, 50], ['LF', 28, 28], ['RF', 72, 28], ['ST', 50, 12]],
+      '4-3-3': [...BACK4, ['CM', 27, 50], ['CM', 50, 54], ['CM', 73, 50], ...FRONT3],
+      '4-3-3 (2)': [...BACK4, ['CM', 27, 50], ['CDM', 50, 57], ['CM', 73, 50], ...FRONT3],
+      '4-3-3 (3)': [...BACK4, ['CDM', 36, 57], ['CDM', 64, 57], ['CM', 50, 35], ...FRONT3],
+      '4-3-3 (4)': [...BACK4, ['CM', 28, 50], ['CM', 72, 50], ['CAM', 50, 35], ...FRONT3],
+      '4-3-3 (5)': [...BACK4, ['CM', 27, 50], ['CDM', 50, 57], ['CM', 73, 50], ['LW', 15, 24], ['CF', 50, 26], ['RW', 85, 24]],
+      '4-4-1-1 (2)': [...BACK4, ['LM', 12, 48], ['CM', 38, 57], ['CM', 62, 57], ['RM', 88, 48], ['CF', 50, 35], ['ST', 50, 14]],
+      '4-4-2': [...BACK4, ['LM', 12, 48], ['CM', 38, 53], ['CM', 62, 53], ['RM', 88, 48], ['ST', 36, 18], ['ST', 64, 18]],
+      '4-4-2 (2)': [...BACK4, ['LM', 12, 46], ['CDM', 38, 57], ['CDM', 62, 57], ['RM', 88, 46], ['ST', 36, 18], ['ST', 64, 18]],
+      '4-5-1': [...BACK4, ['LM', 12, 48], ['CM', 50, 57], ['RM', 88, 48], ['CAM', 34, 35], ['CAM', 66, 35], ...ONE_ST],
+      '4-5-1 (2)': [...BACK4, ['LM', 10, 46], ['CM', 30, 50], ['CM', 50, 57], ['CM', 70, 50], ['RM', 90, 46], ...ONE_ST]
+    }],
+    ['Back three', {
+      '3-1-4-2': [...BACK3, ['CDM', 50, 57], ['LM', 12, 46], ['CM', 33, 36], ['CM', 67, 36], ['RM', 88, 46], ...TWO_ST],
+      '3-4-1-2': [...BACK3, ['LM', 12, 50], ['CM', 36, 56], ['CM', 64, 56], ['RM', 88, 50], ['CAM', 50, 35], ...TWO_ST],
+      '3-4-2-1': [...BACK3, ['LM', 12, 50], ['CM', 36, 56], ['CM', 64, 56], ['RM', 88, 50], ['LF', 28, 28], ['RF', 72, 28], ['ST', 50, 12]],
+      '3-4-3': [...BACK3, ['LM', 12, 50], ['CM', 36, 56], ['CM', 64, 56], ['RM', 88, 50], ['LW', 18, 24], ['ST', 50, 15], ['RW', 82, 24]],
+      '3-5-2': [...BACK3, ['CDM', 36, 57], ['CDM', 64, 57], ['LM', 12, 46], ['CAM', 50, 35], ['RM', 88, 46], ...TWO_ST]
+    }],
+    ['Back five', {
+      '5-2-1-2': [...BACK5, ['CM', 34, 56], ['CM', 66, 56], ['CAM', 50, 35], ...TWO_ST],
+      '5-2-3': [...BACK5, ['CM', 34, 54], ['CM', 66, 54], ['LW', 15, 24], ['ST', 50, 15], ['RW', 85, 24]],
+      '5-3-2': [...BACK5, ['CM', 27, 49], ['CDM', 50, 57], ['CM', 73, 49], ['ST', 36, 18], ['ST', 64, 18]],
+      '5-4-1': [...BACK5, ['LM', 12, 46], ['CM', 36, 54], ['CM', 64, 54], ['RM', 88, 46], ...ONE_ST]
+    }]
+  ];
+  const FORMATIONS = {};
+  FORMATION_GROUPS.forEach(([, group]) => Object.keys(group).forEach(name => { FORMATIONS[name] = [GK, ...group[name]]; }));
   const DEFAULT_FORMATION = '4-3-3';
+  // Formation names saved before the official list (lineups without formationsVersion 2), and the official formation
+  // each one became. The old "4-3-3" was really EA's 4-3-3 (2) (holding CDM), "4-3-3 Holding" is 4-3-3 (4), the old
+  // "4-2-3-1" (with LM / RM) is 4-2-3-1 (2), the old "3-5-2" (wing-backs, CM-CDM-CM) is EA's 5-3-2, and the old flat
+  // "5-3-2" maps to 5-3-2 too (one of its three CM pins is dropped: the middle slot is a CDM there).
+  const LEGACY_FORMATIONS = {
+    '4-3-3': '4-3-3 (2)', '4-3-3 Holding': '4-3-3 (4)', '4-4-2': '4-4-2', '4-2-3-1': '4-2-3-1 (2)', '4-1-4-1': '4-1-4-1',
+    '3-4-3': '3-4-3', '3-5-2': '5-3-2', '5-3-2': '5-3-2'
+  };
+  const LEGACY_SHAPES = {
+    '4-3-3': ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CDM', 'CM', 'LW', 'ST', 'RW'],
+    '4-3-3 Holding': ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CAM', 'LW', 'ST', 'RW'],
+    '4-4-2': ['GK', 'LB', 'CB', 'CB', 'RB', 'LM', 'CM', 'CM', 'RM', 'ST', 'ST'],
+    '4-2-3-1': ['GK', 'LB', 'CB', 'CB', 'RB', 'CDM', 'CDM', 'LM', 'CAM', 'RM', 'ST'],
+    '4-1-4-1': ['GK', 'LB', 'CB', 'CB', 'RB', 'CDM', 'LM', 'CM', 'CM', 'RM', 'ST'],
+    '3-5-2': ['GK', 'CB', 'CB', 'CB', 'LWB', 'CM', 'CDM', 'CM', 'RWB', 'ST', 'ST'],
+    '3-4-3': ['GK', 'CB', 'CB', 'CB', 'LM', 'CM', 'CM', 'RM', 'LW', 'ST', 'RW'],
+    '5-3-2': ['GK', 'LWB', 'CB', 'CB', 'CB', 'RWB', 'CM', 'CM', 'CM', 'ST', 'ST']
+  };
+  // Pins follow the role, not the index: the 2nd CB of the old shape is pinned to the 2nd CB of the new one. A pin whose
+  // role does not exist in the new shape is dropped (that player goes back to the auto fill).
+  function remapPins(pins, oldRoles, newRoles) {
+    const out = {};
+    const occurrence = (roles, i) => roles.slice(0, i).filter(r => r === roles[i]).length;
+    Object.keys(pins || {}).forEach(k => {
+      const i = Number(k);
+      if (!(i >= 0 && i < oldRoles.length)) return;
+      const role = oldRoles[i], n = occurrence(oldRoles, i);
+      const j = newRoles.findIndex((r, idx) => r === role && occurrence(newRoles, idx) === n);
+      if (j >= 0) out[j] = pins[k];
+    });
+    return out;
+  }
+  function migrateLegacyLineup(l) {
+    const to = LEGACY_FORMATIONS[l.formation];
+    if (!to) { if (!FORMATIONS[l.formation]) { l.formation = DEFAULT_FORMATION; l.pins = {}; } return; }
+    l.pins = remapPins(l.pins, LEGACY_SHAPES[l.formation], FORMATIONS[to].map(s => s[0]));
+    l.formation = to;
+  }
   const EMPTY = '-'; // pin value meaning "leave this string vacant" (a player was removed from the chart)
 
   const OVR_ALT_PENALTY = 6; // an off-position (alt_positions) player must be this much better to beat a natural one
@@ -52,11 +134,17 @@
   // counts as a "close" (tier 1, yellow) fit for the others, rather than out of position.
   const CENTRAL_MID_ROLES = ['CDM', 'CM', 'CAM'];
   const CENTRAL_MID_LABELS = CENTRAL_MID_ROLES.flatMap(r => FAMILY[r]);
+  // Few players are listed at CF / LF / RF, so for those second-striker roles any striker or attacking midfielder
+  // is a close fit too.
+  const SECOND_STRIKER_ROLES = ['CF', 'LF', 'RF'];
+  const SECOND_STRIKER_LABELS = ['ST', 'LS', 'RS', 'CF', 'LF', 'RF', 'CAM', 'LAM', 'RAM'];
   function tierFor(p, role) {
     const fam = FAMILY[role];
     if (fam.includes(labelOf(p.position_id))) return 0;
     if (altLabels(p).some(l => fam.includes(l))) return 1;
-    if (CENTRAL_MID_ROLES.includes(role) && [labelOf(p.position_id), ...altLabels(p)].some(l => CENTRAL_MID_LABELS.includes(l))) return 1;
+    const all = [labelOf(p.position_id), ...altLabels(p)];
+    if (CENTRAL_MID_ROLES.includes(role) && all.some(l => CENTRAL_MID_LABELS.includes(l))) return 1;
+    if (SECOND_STRIKER_ROLES.includes(role) && all.some(l => SECOND_STRIKER_LABELS.includes(l))) return 1;
     return null;
   }
   const scoreOf = (p, tier) => Number(p.overall || 0) - tier * OVR_ALT_PENALTY;
@@ -194,6 +282,7 @@
   // `reserve` lineups auto-fill without the Starting XI's starters, so Reserves is naturally the next eleven.
   function freshLineups(formation) {
     return {
+      formationsVersion: 2,
       active: 'xi',
       list: [
         { id: 'xi', name: 'Starting XI', core: true, formation: formation || DEFAULT_FORMATION, pins: {} },
@@ -219,20 +308,32 @@
         ['xi', 'rot'].forEach(id => { if (!lineupById(id)) lineups = freshLineups(); });
         if (!lineupById('alltime')) lineups.list.push(ALLTIME());
         if (!lineupById(lineups.active)) lineups.active = 'xi';
+        // One-time move to EA's official formation names (version 2): old names become their official shape.
+        if (lineups.formationsVersion !== 2) {
+          lineups.list.forEach(migrateLegacyLineup);
+          lineups.formationsVersion = 2;
+          saveLineups();
+        }
+        lineups.list.forEach(l => { if (!FORMATIONS[l.formation]) { l.formation = DEFAULT_FORMATION; l.pins = {}; } });
         return;
       }
     } catch (e) { /* fall through to migration */ }
     // Migrate the pre-lineup storage (one formation + pins per formation, starter/backup keys).
-    const f = store.get('formation', DEFAULT_FORMATION);
+    const stored = store.get('formation', null);
+    const f = stored ? (LEGACY_FORMATIONS[stored] || stored) : DEFAULT_FORMATION;
     lineups = freshLineups(FORMATIONS[f] ? f : DEFAULT_FORMATION);
     lineups.list.push(ALLTIME());
     try {
       const old = JSON.parse(store.get('pins', '{}')) || {};
-      const forF = old[lineups.list[0].formation] || {};
+      const oldName = stored || '4-3-3'; // that storage predates the official names
+      const forF = old[oldName] || {};
+      const pins = {};
       Object.keys(forF).forEach(slot => {
         const o = {}; if (forF[slot].starter != null) o[0] = forF[slot].starter; if (forF[slot].backup != null) o[1] = forF[slot].backup;
-        if (Object.keys(o).length) lineups.list[0].pins[slot] = o;
+        if (Object.keys(o).length) pins[slot] = o;
       });
+      lineups.list[0].pins = LEGACY_SHAPES[oldName]
+        ? remapPins(pins, LEGACY_SHAPES[oldName], FORMATIONS[lineups.list[0].formation].map(s => s[0])) : pins;
     } catch (e) { /* ignore */ }
   }
 
@@ -428,7 +529,7 @@ ${academySection}</aside>
     const hasPins = Object.keys(l.pins).length > 0 || (l.removed || []).length > 0;
     const trophy = `<button class="dc-trophy${l.alltime ? ' on' : ''}" title="All-Time XI: the best players ever to play for the club" onclick="SquadViews.setLineup('alltime')">🏆 All-Time XI${lockMark('depth-extras')}</button>`;
     return `<div class="home-toggle dc-lineups">${chips}</div>${trophy}
-      <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${Object.keys(FORMATIONS).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</select></label>
+      <label class="dc-ctl">Formation <select onchange="SquadViews.setFormation(this.value)">${FORMATION_GROUPS.map(([label, group]) => `<optgroup label="${label}">${Object.keys(group).map(f => `<option${f === l.formation ? ' selected' : ''}>${f}</option>`).join('')}</optgroup>`).join('')}</select></label>
       ${l.alltime ? '' : `<label class="dc-ctl">What if I sell${lockMark('depth-extras')} <select onchange="SquadViews.setSell(this.value)"><option value="">—</option>${sellOptions}</select></label>`}
       ${hasPins ? '<button class="home-toggle-btn" onclick="SquadViews.resetOrder()">Reset order</button>' : ''}`;
   }
@@ -711,7 +812,7 @@ ${academySection}</aside>
       mode = 'list'; // the Squad tab always opens on the List view
       applyMode(); render(); renderGapsCard();
     },
-    buildDepth, findGaps, FORMATIONS, movePlayer, summaryHtml,
+    buildDepth, findGaps, FORMATIONS, FORMATION_GROUPS, mapY, LEGACY_FORMATIONS, LEGACY_SHAPES, remapPins, migrateLegacyLineup, tierFor, movePlayer, summaryHtml,
     _lineups: () => lineups
   };
 

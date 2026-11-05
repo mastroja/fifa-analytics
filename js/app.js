@@ -3209,6 +3209,8 @@ let currentCalendar = [];
                       <div class="sub-attr-item"><span>Ball Control:</span> <strong class="${getAttributeColorClass(attrs.ball_control ?? baseOvr)}">${attrs.ball_control ?? baseOvr}</strong>${deltaBadge(attrDeltas.ball_control)}</div>
                       <div class="sub-attr-item"><span>Agility:</span> <strong class="${getAttributeColorClass(attrs.agility ?? baseOvr)}">${attrs.agility ?? baseOvr}</strong>${deltaBadge(attrDeltas.agility)}</div>
                       <div class="sub-attr-item"><span>Balance:</span> <strong class="${getAttributeColorClass(attrs.balance ?? baseOvr)}">${attrs.balance ?? baseOvr}</strong>${deltaBadge(attrDeltas.balance)}</div>
+                      ${attrs.reactions != null ? `<div class="sub-attr-item"><span>Reactions:</span> <strong class="${getAttributeColorClass(attrs.reactions)}">${attrs.reactions}</strong>${deltaBadge(attrDeltas.reactions)}</div>` : ''}
+                      ${attrs.composure != null ? `<div class="sub-attr-item"><span>Composure:</span> <strong class="${getAttributeColorClass(attrs.composure)}">${attrs.composure}</strong>${deltaBadge(attrDeltas.composure)}</div>` : ''}
                     </div>
                   </div>
 
@@ -6905,7 +6907,7 @@ Live Editor will end each loan and then release the player from your club to fre
           <span class="comp-standing">${p[statKey] || 0}</span>
         </div>
       `).join(''), (isFc27Save() && (statKey === 'goals' || statKey === 'assists'))
-        ? fc27Message(`Live Editor doesn't provide ${statKey} for FC 27.`) : 'No data yet.');
+        ? fc27Message(`${statKey} need Live Editor v27.1.8 or newer. Update it and press F10 in career mode.`) : 'No data yet.');
     }
 
     function renderTopStatsWidgets() {

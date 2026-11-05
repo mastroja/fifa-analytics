@@ -75,7 +75,44 @@ const ACCESSORY_REMOVE_RATE = 0.08;
 const ACCESSORY_ADD_RATE = 0.015;
 const MAX_CHANGES_PER_MONTH = 2;      // never a total makeover in one month
 
-const FEATURE_DEFAULTS = { hair: true, beard: true, colour: true, boots: true, accessories: true, growth: false };
+const FEATURE_DEFAULTS = { hair: true, beard: true, colour: true, boots: true, accessories: true, growth: false, setpieces: false };
+
+// ---------------- set pieces: penalties and free-kick accuracy ----------------
+// The game's own development hardly ever raises penalties or free-kick accuracy, so a player who becomes a sharp,
+// composed finisher stays a poor penalty taker for years. Once a month each one is nudged toward what the player's
+// related skills say it should be (a weighted average of game columns). Neither is in any position's overall formula
+// (FC 27 attributeprefpositionformula probe: 5 outfield attributes are used by no position), so overalls do not move.
+const SET_PIECE_FORMULAS = {
+  penalties: { label: 'PEN', parts: [['finishing', 0.5], ['composure', 0.5]] },
+  freekickaccuracy: { label: 'FK', parts: [['curve', 0.5], ['longshots', 0.3], ['composure', 0.2]] }
+};
+// Monthly step by how far below its target the attribute is: a big gap closes faster, but never overnight.
+function setPieceStep(gap) { return gap >= 12 ? 3 : gap >= 5 ? 2 : 1; }
+function setPieceTarget(state, formula) {
+  let sum = 0;
+  for (const [col, w] of formula.parts) {
+    if (!Number.isFinite(state[col])) return null;
+    sum += state[col] * w;
+  }
+  return Math.round(sum);
+}
+/**
+ * One month of set-piece growth for one player. Only ever raises, never past the target or 99.
+ * @param {object} state  the player's editor columns (finishing, composure, curve, longshots, penalties, freekickaccuracy)
+ * @returns {{ changes:object, targets:object }}
+ */
+function planSetPieces(state) {
+  const changes = {}, targets = {};
+  for (const [col, formula] of Object.entries(SET_PIECE_FORMULAS)) {
+    const cur = state[col];
+    const target = setPieceTarget(state, formula);
+    if (target === null || !Number.isInteger(cur)) continue;
+    targets[col] = target;
+    if (target <= cur) continue;
+    changes[col] = Math.min(99, target, cur + setPieceStep(target - cur));
+  }
+  return { changes, targets };
+}
 
 // ---------------- height, growth and weight ----------------
 // Every player gets their own genetic adult height, drawn once from a normal distribution that depends on position
@@ -577,7 +614,7 @@ class DynamicLook {
         db.run("UPDATE player_edits SET status = 'undone' WHERE save_id = ? AND status = 'applied' AND id <= ?", [saveId, lastEdit]);
         db.run('DELETE FROM dynamic_look_height WHERE save_id = ?', [saveId]);
         db.run('DELETE FROM dynamic_look_players WHERE save_id = ?', [saveId]);
-        this.setSettings(saveId, { enabled: false, features: { growth: false } });
+        this.setSettings(saveId, { enabled: false, features: { growth: false, setpieces: false } });
       }
       this.ctx.saveDatabaseToDisk();
       let presses = 0;
@@ -666,6 +703,9 @@ class DynamicLook {
         .map(r => [r.player_id, { natural_haircolor: r.natural_haircolor, dyed_until_index: r.dyed_until === null || r.dyed_until === undefined ? null : Number(r.dyed_until) }]));
 
       const heightRecords = this.loadHeightRecords(saveId);
+      // Set-piece growth counts each in-game month once: "Run this month now" replays a month that was already played out
+      // (last_month), and pressing it again must not add another step.
+      const setPiecesAfter = settings.lastMonth ? monthIndexOf(settings.lastMonth) : -Infinity;
 
       // 2. plan every month for every player, carrying the state forward month to month
       const queued = [];
@@ -703,7 +743,15 @@ class DynamicLook {
               }
             }
           }
+          if (features.setpieces && monthIndexOf(month) > setPiecesAfter) {
+            const sp = planSetPieces(state);
+            if (Object.keys(sp.changes).length) { Object.assign(state, sp.changes); lastMonth = month; }
+          }
         }
+        // one note per attribute for the whole run, e.g. "FK 35 → 41" over a three-month catch-up
+        Object.entries(SET_PIECE_FORMULAS).forEach(([col, f]) => {
+          if (state[col] !== startState[col]) notes.push(`${f.label} ${startState[col]} → ${state[col]}`);
+        });
         if (touchedHeight && heightRec) this.saveHeightRecord(saveId, row.player_id, heightRec);
         if (record) {
           this.ctx.getDb().run(`INSERT INTO dynamic_look_players (save_id, player_id, natural_haircolor, dyed_until) VALUES (?, ?, ?, ?)
@@ -808,5 +856,6 @@ function register(ipcMain) {
 module.exports = {
   instance, register, planMonth, planGrowth, profile, monthKeyOf, monthIndexOf, keyOfIndex, ageAt, ageYearsAt,
   drawAdultHeight, drawTempo, growthShare, heightAt, bodyTypeFor, weightFor, suggestedCats, FEATURE_DEFAULTS,
+  planSetPieces, setPieceStep, SET_PIECE_FORMULAS,
   DYES_FOR_DARK, DYES_FOR_LIGHT, NATURAL_COLOURS, SILVER
 };

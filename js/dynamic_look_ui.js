@@ -16,8 +16,10 @@
     ['colour', 'Hair colour: dye and greying', 'Rare dye jobs for players up to 27 that grow out after a few months: dark hair is almost always bleached blonde. Pink, blue and green are never picked, only by hand. Veterans from 35 slowly go silver.'],
     ['boots', 'Boots', 'Mostly new-season switches, usually staying with the same brand. Only boots linked to a game id are used.'],
     ['accessories', 'Accessories', 'Tape, wristbands and gloves come and go.'],
-    ['growth', 'Height, weight and growth', 'Youth players keep growing toward their own adult height each month, and weight and body type follow. A height is only ever raised, and heights you set by hand are left alone.']
+    ['growth', 'Height, weight and growth', 'Youth players keep growing toward their own adult height each month, and weight and body type follow. A height is only ever raised, and heights you set by hand are left alone.'],
+    ['setpieces', 'Penalties and free kicks', 'The game barely develops these, so each month they grow toward what the player\'s other skills say: penalties toward the average of Finishing and Composure, free-kick accuracy toward 50% Curve, 30% Long shots and 20% Composure. +1 to +3 a month, only ever raised, once per in-game month. Neither counts toward overall.']
   ];
+  const OPT_IN = new Set(['growth', 'setpieces']); // off unless switched on
 
   let S = null; // { tab, data, q, msg, msgKind, busy, heightPreview, undoPreview, logQ }
 
@@ -132,7 +134,7 @@
     const d = S.data, players = d.players || [];
     return d.settings.scope === 'selected' ? players.filter(p => p.selected) : players;
   }
-  const featureOn = k => S.data.settings.features[k] !== false && (k !== 'growth' || S.data.settings.features.growth === true);
+  const featureOn = k => OPT_IN.has(k) ? S.data.settings.features[k] === true : S.data.settings.features[k] !== false;
 
   const faceLine = f => {
     if (!f) return 'Checking…';

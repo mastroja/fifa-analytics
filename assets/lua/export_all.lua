@@ -20,13 +20,20 @@
 assert(IsInCM(), "Script must be executed in career mode")
 
 -- ============================================================
--- FC 27 COMPAT (Live Editor v27.1.2 – v27.1.4) — see assets/lua/fc27_probes/
+-- FC 27 COMPAT (Live Editor v27.1.2 – v27.1.8) — see assets/lua/fc27_probes/
 -- for the probe scripts and the evidence behind each line below.
 --
--- GetPlayersStats / GetCompetitionNameByObjID are native v1 functions
--- that FC 27's Live Editor doesn't provide (yet). Stubbed so every
--- caller degrades to "no data" instead of an "attempt to call a nil
--- value" error that would abort the whole F10 export.
+-- GetPlayersStats / GetCompetitionNameByObjID are native v1 functions.
+-- Up to v27.1.4 FC 27's Live Editor either lacked them or GetPlayersStats
+-- returned 0 rows; v27.1.8 binds them natively again (its DLL exports
+-- lua_GetPlayersStats / lua_GetCompetitionNameByObjID). The stand-ins
+-- below only apply when they are missing, so older builds degrade to
+-- "no data" instead of an "attempt to call a nil value" error that would
+-- abort the whole F10 export.
+--
+-- FC 27 stats rows are documented (lua/DOC.MD) with teamid + compobjid
+-- keys; FC 26 rows carried compname. stat_comp_name() below accepts
+-- either, so both games go through the same code.
 --
 -- FC27_MEMORY_OFFSETS_VERIFIED gates the raw-memory reads carried over
 -- from FC 26 (FCEDataManager fixtures +0x60 / standings +0x88, and
@@ -41,6 +48,40 @@ if type(GetPlayersStats) ~= "function" then
 end
 if type(GetCompetitionNameByObjID) ~= "function" then
     GetCompetitionNameByObjID = function() return nil end
+end
+
+-- GetPlayersStats() once per F10 press, shared by the squad and league
+-- blocks (it returns thousands of rows). pcall'd: a native error here
+-- must not abort the other exports.
+local all_stats_cache = nil
+local function get_all_stats()
+    if all_stats_cache == nil then
+        local ok, rows = pcall(GetPlayersStats)
+        all_stats_cache = (ok and type(rows) == "table") and rows or {}
+    end
+    return all_stats_cache
+end
+
+-- Competition name for one stats row: FC 26 rows carry compname, FC 27
+-- rows carry compobjid (resolved once per id). nil when neither resolves.
+local comp_name_by_objid = {}
+local function stat_comp_name(stat)
+    if stat.compname ~= nil and stat.compname ~= "" then return stat.compname end
+    local objid = stat.compobjid
+    if objid == nil then return nil end
+    local cached = comp_name_by_objid[objid]
+    if cached == nil then
+        local ok, name = pcall(GetCompetitionNameByObjID, objid)
+        cached = (ok and type(name) == "string" and name ~= "") and name or false
+        comp_name_by_objid[objid] = cached
+    end
+    return cached or nil
+end
+
+-- Stable grouping key for a row's competition: its name, or "#<objid>"
+-- when the name doesn't resolve (so unnamed competitions still stay apart).
+local function stat_comp_key(stat)
+    return stat_comp_name(stat) or (stat.compobjid ~= nil and ("#" .. tostring(stat.compobjid))) or "?"
 end
 
 -- Persistent per-career identifier (documented Live Editor function,
@@ -291,6 +332,10 @@ do
                     local ball_control = players_table:GetRecordFieldValue(current_record, "ballcontrol") or 70
                     local agility = players_table:GetRecordFieldValue(current_record, "agility") or 70
                     local balance = players_table:GetRecordFieldValue(current_record, "balance") or 70
+                    -- reactions / composure were never exported (32 of the game's 34 attributes); same field names the
+                    -- player editor already reads in player_editor_sync.lua.
+                    local reactions = players_table:GetRecordFieldValue(current_record, "reactions") or 70
+                    local composure = players_table:GetRecordFieldValue(current_record, "composure") or 70
 
                     local marking = players_table:GetRecordFieldValue(current_record, "defensiveawareness") or players_table:GetRecordFieldValue(current_record, "marking") or 70
                     local standing_tackle = players_table:GetRecordFieldValue(current_record, "standingtackle") or 70
@@ -368,6 +413,7 @@ do
                         vision = vision, crossing = crossing, long_passing = long_passing,
                         curve = curve, fk_accuracy = free_kick_accuracy, dribbling = dribbling_attr,
                         ball_control = ball_control, agility = agility, balance = balance,
+                        reactions = reactions, composure = composure,
                         marking = marking, standing_tackle = standing_tackle, interceptions = interceptions,
                         heading_accuracy = heading_accuracy, sliding_tackle = sliding_tackle,
                         strength = strength, stamina = stamina, aggression = aggression, jumping = jumping,
@@ -403,17 +449,18 @@ do
             current_record = players_table:GetNextValidRecord()
         end
 
-        local all_stats = GetPlayersStats()
+        local all_stats = get_all_stats()
         for i = 1, #all_stats do
             local stat = all_stats[i]
             local playerid = stat.playerid
             local app = stat.app or 0
+            local comp_name = stat_comp_name(stat)
 
             -- "World's Game" is a generic/unlicensed exhibition bucket,
             -- not a real competition — excluded from every player's
             -- stats entirely (both totals and the per-competition
             -- breakdown) per user request.
-            if result[playerid] ~= nil and stat.compname ~= "World's Game" then
+            if result[playerid] ~= nil and comp_name ~= "World's Game" then
                 local player = result[playerid]
                 if player.name == "" then player.name = GetPlayerName(playerid) end
 
@@ -424,12 +471,12 @@ do
                 player.assists = player.assists + (stat.assists or 0)
                 player.appearances = player.appearances + app
                 player.clean_sheets = player.clean_sheets + (stat.clean_sheets or 0)
-                player.saves = player.saves + (stat.saves or 5)
+                player.saves = player.saves + (stat.saves or 0)
                 player.yellow_cards = player.yellow_cards + (stat.yellow or 0)
                 player.red_cards = player.red_cards + (stat.red or 0)
 
                 table.insert(player.competitions, {
-                    comp_name = stat.compname or "Unknown Competition",
+                    comp_name = comp_name or (stat.compobjid ~= nil and ("Competition #" .. tostring(stat.compobjid))) or "Unknown Competition",
                     appearances = app, goals = stat.goals or 0, assists = stat.assists or 0,
                     clean_sheets = stat.clean_sheets or 0, saves = stat.saves or 0,
                     yellow_cards = stat.yellow or 0, red_cards = stat.red or 0, avg_rating = avg
@@ -437,13 +484,15 @@ do
             end
         end
 
-        -- FC 27 fallback: GetPlayersStats() returns no rows there (see assets/lua/fc27_probes/README.md), so goals /
-        -- assists / clean sheets / cards have no source, but the DB table career_playermatchratinghistory (one row per
-        -- player per match: date YYYYMMDD, minsplayed, whole-number rating) is live. From it we can restore appearances
-        -- and an approximate average rating for this season. The rating is stored as a whole number, so the average
-        -- runs a little off the in-game one (e.g. 6.67 vs 6.49); it is reported as its own competition row so the
-        -- breakdown makes the source obvious.
-        if #all_stats == 0 then
+        -- career_playermatchratinghistory (one row per player per match: date YYYYMMDD, minsplayed, whole-number
+        -- rating) is live on FC 27 and is the only source of minutes played, so it is read on every press.
+        -- Before Live Editor v27.1.8, GetPlayersStats() returned no rows on FC 27 (see assets/lua/fc27_probes/README.md),
+        -- so the same table also restores appearances and an approximate average rating. The rating is stored as a
+        -- whole number, so that average runs a little off the in-game one (e.g. 6.67 vs 6.49); it is reported as its
+        -- own competition row so the breakdown makes the source obvious. With real stats rows it is not added (that
+        -- would double-count appearances), and only minutes come from this table.
+        local stats_from_ratings = (#all_stats == 0)
+        do
             local ok_rt, rating_table = pcall(function() return LE.db:GetTable("career_playermatchratinghistory") end)
             local ok_cd, cd = pcall(GetCurrentDate)
             if ok_rt and rating_table and ok_cd and cd and cd.year then
@@ -466,17 +515,24 @@ do
                     rec = rating_table:GetNextValidRecord()
                 end
                 -- minutes played: every squad player gets a number once the table was readable (0 = on the books but has
-                -- not played), so the app can tell "played 0 minutes" from "this export has no minutes at all" (nil -> null)
-                for _, player in pairs(result) do player.minutes = 0 end
+                -- not played), so the app can tell "played 0 minutes" from "this export has no minutes at all" (nil -> null).
+                -- Exception: the table only holds matches of the user's club (first v27.1.8 sync, 2026-11-05: a loanee with
+                -- 3 Ligue 1 apps had no rows), so a player with GetPlayersStats appearances but no rating rows gets nil
+                -- (unknown), not a false 0.
+                for _, player in pairs(result) do
+                    if player.appearances > 0 then player.minutes = nil else player.minutes = 0 end
+                end
                 for pid, t in pairs(tally) do
                     local player = result[pid]
                     player.minutes = t.mins
-                    player.appearances = player.appearances + t.apps
-                    table.insert(player.competitions, {
-                        comp_name = "All competitions (from match ratings)",
-                        appearances = t.apps, goals = 0, assists = 0, clean_sheets = 0, saves = 0,
-                        yellow_cards = 0, red_cards = 0, avg_rating = t.rating_sum / t.apps
-                    })
+                    if stats_from_ratings then
+                        player.appearances = player.appearances + t.apps
+                        table.insert(player.competitions, {
+                            comp_name = "All competitions (from match ratings)",
+                            appearances = t.apps, goals = 0, assists = 0, clean_sheets = 0, saves = 0,
+                            yellow_cards = 0, red_cards = 0, avg_rating = t.rating_sum / t.apps
+                        })
+                    end
                 end
             end
         end
@@ -535,10 +591,11 @@ do
 
             json = json .. ',"attributes":'
             json = json .. string.format(
-                '{"acceleration":%d,"sprint_speed":%d,"finishing":%d,"long_shots":%d,"shot_power":%d,"positioning":%d,"penalties":%d,"volleys":%d,"short_passing":%d,"vision":%d,"crossing":%d,"long_passing":%d,"curve":%d,"fk_accuracy":%d,"dribbling":%d,"ball_control":%d,"agility":%d,"balance":%d,"marking":%d,"standing_tackle":%d,"interceptions":%d,"heading_accuracy":%d,"sliding_tackle":%d,"strength":%d,"stamina":%d,"aggression":%d,"jumping":%d,"diving":%d,"handling":%d,"kicking":%d,"gk_positioning":%d,"reflexes":%d}}',
+                '{"acceleration":%d,"sprint_speed":%d,"finishing":%d,"long_shots":%d,"shot_power":%d,"positioning":%d,"penalties":%d,"volleys":%d,"short_passing":%d,"vision":%d,"crossing":%d,"long_passing":%d,"curve":%d,"fk_accuracy":%d,"dribbling":%d,"ball_control":%d,"agility":%d,"balance":%d,"reactions":%d,"composure":%d,"marking":%d,"standing_tackle":%d,"interceptions":%d,"heading_accuracy":%d,"sliding_tackle":%d,"strength":%d,"stamina":%d,"aggression":%d,"jumping":%d,"diving":%d,"handling":%d,"kicking":%d,"gk_positioning":%d,"reflexes":%d}}',
                 attr.acceleration or 70, attr.sprint_speed or 70, attr.finishing or 70, attr.long_shots or 70, attr.shot_power or 70, attr.positioning or 70, attr.penalties or 70, attr.volleys or 70,
                 attr.short_passing or 70, attr.vision or 70, attr.crossing or 70, attr.long_passing or 70, attr.curve or 70, attr.fk_accuracy or 70,
                 attr.dribbling or 70, attr.ball_control or 70, attr.agility or 70, attr.balance or 70,
+                attr.reactions or 70, attr.composure or 70,
                 attr.marking or 70, attr.standing_tackle or 70, attr.interceptions or 70, attr.heading_accuracy or 70, attr.sliding_tackle or 70,
                 attr.strength or 70, attr.stamina or 70, attr.aggression or 70, attr.jumping or 70,
                 attr.diving or 70, attr.handling or 70, attr.kicking or 70, attr.gk_positioning or 70, attr.reflexes or 70
@@ -659,7 +716,9 @@ do
                     ball_control = players_table:GetRecordFieldValue(record, "ballcontrol") or 70,
                     agility = players_table:GetRecordFieldValue(record, "agility") or 70,
                     balance = players_table:GetRecordFieldValue(record, "balance") or 70,
-                    marking = players_table:GetRecordFieldValue(record, "defensiveawareness") or players_table:GetRecordFieldValue(record, "marking") or 70,
+                    reactions = players_table:GetRecordFieldValue(record, "reactions") or 70,
+                    composure = players_table:GetRecordFieldValue(record, "composure") or 70,
+                    marking =players_table:GetRecordFieldValue(record, "defensiveawareness") or players_table:GetRecordFieldValue(record, "marking") or 70,
                     standing_tackle = players_table:GetRecordFieldValue(record, "standingtackle") or 70,
                     interceptions = players_table:GetRecordFieldValue(record, "interceptions") or 70,
                     heading_accuracy = players_table:GetRecordFieldValue(record, "headingaccuracy") or 70,
@@ -1910,6 +1969,103 @@ do
         return os.date("%m-%d-%Y", targetSeconds) or tostring(dayOffset)
     end
 
+    local all_stats = get_all_stats()
+
+    -- FC 27: the calendar block above has no fixtures (memory offsets
+    -- unverified), so league_team_ids / primary_league_comp_name arrive
+    -- empty. Rebuild both from DB tables + the stats rows instead:
+    --   * league teams = every team sharing the user team's leagueid in
+    --     leagueteamlinks (its standings columns are stale on FC 27, but
+    --     team -> league membership is not);
+    --   * league competition = the stats competition named
+    --     GetCompetitionNameByID(user leagueid) (LE v27.1.8 probe, Man City
+    --     in League Two: "EFL League Two", the exact stats compname).
+    --     If no name matches: the competition whose teams overlap that set
+    --     the most, then the one with the fewest teams from OUTSIDE the
+    --     league, then most appearances. The probe showed the Carabao Cup
+    --     (92 teams) and EFL Trophy (48) both overlap League Two 24/24, and
+    --     in August the Carabao Cup can have more appearances than the
+    --     league, so appearances alone are not a safe tie-break.
+    -- Without a leagueteamlinks match it falls back to the competition the
+    -- user team has the most appearances in (the league, ~38 games).
+    if primary_league_comp_name == nil and #all_stats > 0 then
+        local user_team_id = GetUserTeamID()
+        local user_league_name = nil
+        if next(league_team_ids) == nil then
+            local ok_ltl, ltl = pcall(function() return LE.db:GetTable("leagueteamlinks") end)
+            if ok_ltl and ltl then
+                local rows, user_league = {}, nil
+                local rec, n = ltl:GetFirstRecord(), 0
+                while rec and rec > 0 and n < 5000 do
+                    n = n + 1
+                    local tid = ltl:GetRecordFieldValue(rec, "teamid")
+                    local lid = ltl:GetRecordFieldValue(rec, "leagueid")
+                    if tid and lid then
+                        rows[#rows + 1] = { tid, lid }
+                        if tid == user_team_id then user_league = lid end
+                    end
+                    rec = ltl:GetNextValidRecord()
+                end
+                if user_league ~= nil then
+                    for _, r in ipairs(rows) do
+                        if r[2] == user_league then league_team_ids[r[1]] = true end
+                    end
+                    if type(GetCompetitionNameByID) == "function" then
+                        local ok_n, nm = pcall(GetCompetitionNameByID, user_league)
+                        if ok_n and type(nm) == "string" and nm ~= "" then user_league_name = nm end
+                    end
+                end
+            end
+        end
+        local have_league_set = next(league_team_ids) ~= nil
+
+        local by_comp = {}
+        for i = 1, #all_stats do
+            local stat = all_stats[i]
+            local key = stat_comp_key(stat)
+            local c = by_comp[key]
+            if not c then c = { teams = {}, nteams = 0, overlap = 0, apps = 0, user_apps = 0 }; by_comp[key] = c end
+            local app = stat.app or 0
+            c.apps = c.apps + app
+            local tid = stat.teamid
+            if tid ~= nil then
+                if tid == user_team_id then c.user_apps = c.user_apps + app end
+                if not c.teams[tid] then
+                    c.teams[tid] = true
+                    c.nteams = c.nteams + 1
+                    if league_team_ids[tid] then c.overlap = c.overlap + 1 end
+                end
+            end
+        end
+        local best_key, best = nil, nil
+        if user_league_name ~= nil and by_comp[user_league_name] then
+            best_key, best = user_league_name, by_comp[user_league_name]
+        else
+            for key, c in pairs(by_comp) do
+                local eligible = key ~= "World's Game" and (have_league_set and c.overlap > 0 or c.user_apps > 0)
+                if eligible then
+                    local better
+                    if best == nil then better = true
+                    elseif c.overlap ~= best.overlap then better = c.overlap > best.overlap
+                    elseif have_league_set and (c.nteams - c.overlap) ~= (best.nteams - best.overlap) then
+                        better = (c.nteams - c.overlap) < (best.nteams - best.overlap)
+                    elseif have_league_set then better = c.apps > best.apps
+                    else better = c.user_apps > best.user_apps end
+                    if better then best_key, best = key, c end
+                end
+            end
+        end
+        if best_key ~= nil then
+            primary_league_comp_name = best_key
+            -- No leagueteamlinks match: the league is whoever played in that competition.
+            if next(league_team_ids) == nil then
+                for tid in pairs(best.teams) do league_team_ids[tid] = true end
+            end
+        end
+    end
+
+    -- Each FC 27 stats row names its team (stat.teamid); FC 26 rows don't,
+    -- so teamplayerlinks is still scanned as the fallback.
     local team_id_by_player = {}
     if league_tpl_table then
         local rec = league_tpl_table:GetFirstRecord()
@@ -1932,12 +2088,14 @@ do
     -- here or the league leaderboard would include non-league goals/
     -- assists/cards.
     local combined = {}
-    local all_stats = GetPlayersStats()
     for i = 1, #all_stats do
         local stat = all_stats[i]
         local pid = stat.playerid
         local tid = team_id_by_player[pid]
-        if tid and primary_league_comp_name and stat.compname == primary_league_comp_name then
+        -- Prefer the row's own team (FC 27): it is the team the player
+        -- played these games for, even after a mid-season move.
+        if stat.teamid ~= nil and league_team_ids[stat.teamid] then tid = stat.teamid end
+        if tid and primary_league_comp_name and stat_comp_key(stat) == primary_league_comp_name then
             if not combined[pid] then
                 combined[pid] = {
                     team_id = tid, appearances = 0, goals = 0, assists = 0,
@@ -2009,7 +2167,10 @@ do
     local league_current_date_str = string.format("%04d-%02d-%02d", league_current_date_tbl.year, league_current_date_tbl.month, league_current_date_tbl.day)
 
     local league_save_uid_escaped = save_uid:gsub('"', '\\"')
-    local league_name_escaped = (primary_league_comp_name or ""):gsub('"', '\\"')
+    -- "#<objid>" = a competition whose name didn't resolve: filter by it, but never show it as a league name.
+    local league_name_out = primary_league_comp_name
+    if league_name_out and league_name_out:sub(1, 1) == "#" then league_name_out = nil end
+    local league_name_escaped = (league_name_out or ""):gsub('"', '\\"')
     local league_json_output = string.format(
         '{"save_uid":"%s","current_date":"%s","league_name":"%s","players":[\n    %s\n  ]}',
         league_save_uid_escaped, league_current_date_str, league_name_escaped, table.concat(league_players_json_list, ",\n    ")

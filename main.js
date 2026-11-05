@@ -3268,6 +3268,7 @@ const PLAYSTYLE_ATTRIBUTE_LABELS = {
   long_shots: 'Long Shots', heading_accuracy: 'Heading', jumping: 'Jumping', balance: 'Balance',
   volleys: 'Volleys', vision: 'Vision', short_passing: 'Short Passing', dribbling: 'Dribbling',
   long_passing: 'Long Passing', crossing: 'Crossing', ball_control: 'Ball Control', agility: 'Agility',
+  reactions: 'Reactions', composure: 'Composure',
   stamina: 'Stamina', aggression: 'Aggression', acceleration: 'Acceleration', sprint_speed: 'Sprint Speed',
   strength: 'Strength', interceptions: 'Interceptions', marking: 'Marking', standing_tackle: 'Standing Tackle',
   sliding_tackle: 'Sliding Tackle', gk_positioning: 'GK Positioning', handling: 'Handling', reflexes: 'Reflexes',
@@ -6338,6 +6339,13 @@ app.whenReady().then(async () => {
   refreshCurrentSeasonFromCalendar();
   createWindow();
   setupAutoUpdater();
+
+  // Opt-in release screenshots (see scripts/capture_screenshots.js). Never set in normal use.
+  if (process.env.FA_SCREENSHOTS) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      require('./scripts/capture_screenshots').run(mainWindow, app).catch(err => { console.error('[screenshots]', err); app.quit(); });
+    });
+  }
 
   mainWindow.webContents.once('did-finish-load', () => {
     if (fs.existsSync(calendarExportPath)) {

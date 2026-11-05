@@ -225,6 +225,8 @@ function get_squad_data()
                 local ball_control = players_table:GetRecordFieldValue(current_record, "ballcontrol") or 70
                 local agility = players_table:GetRecordFieldValue(current_record, "agility") or 70
                 local balance = players_table:GetRecordFieldValue(current_record, "balance") or 70
+                local reactions = players_table:GetRecordFieldValue(current_record, "reactions") or 70
+                local composure = players_table:GetRecordFieldValue(current_record, "composure") or 70
 
                 local marking = players_table:GetRecordFieldValue(current_record, "defensiveawareness") or players_table:GetRecordFieldValue(current_record, "marking") or 70
                 local standing_tackle = players_table:GetRecordFieldValue(current_record, "standingtackle") or 70
@@ -297,6 +299,7 @@ function get_squad_data()
                     vision = vision, crossing = crossing, long_passing = long_passing,
                     curve = curve, fk_accuracy = free_kick_accuracy, dribbling = dribbling_attr,
                     ball_control = ball_control, agility = agility, balance = balance,
+                    reactions = reactions, composure = composure,
                     marking = marking, standing_tackle = standing_tackle, interceptions = interceptions,
                     heading_accuracy = heading_accuracy, sliding_tackle = sliding_tackle,
                     strength = strength, stamina = stamina, aggression = aggression, jumping = jumping,
@@ -418,10 +421,11 @@ local function serialize_to_json(tbl, save_uid, current_date)
 
         json = json .. ',"attributes":'
         json = json .. string.format(
-            '{"acceleration":%d,"sprint_speed":%d,"finishing":%d,"long_shots":%d,"shot_power":%d,"positioning":%d,"penalties":%d,"volleys":%d,"short_passing":%d,"vision":%d,"crossing":%d,"long_passing":%d,"curve":%d,"fk_accuracy":%d,"dribbling":%d,"ball_control":%d,"agility":%d,"balance":%d,"marking":%d,"standing_tackle":%d,"interceptions":%d,"heading_accuracy":%d,"sliding_tackle":%d,"strength":%d,"stamina":%d,"aggression":%d,"jumping":%d,"diving":%d,"handling":%d,"kicking":%d,"gk_positioning":%d,"reflexes":%d}}',
+            '{"acceleration":%d,"sprint_speed":%d,"finishing":%d,"long_shots":%d,"shot_power":%d,"positioning":%d,"penalties":%d,"volleys":%d,"short_passing":%d,"vision":%d,"crossing":%d,"long_passing":%d,"curve":%d,"fk_accuracy":%d,"dribbling":%d,"ball_control":%d,"agility":%d,"balance":%d,"reactions":%d,"composure":%d,"marking":%d,"standing_tackle":%d,"interceptions":%d,"heading_accuracy":%d,"sliding_tackle":%d,"strength":%d,"stamina":%d,"aggression":%d,"jumping":%d,"diving":%d,"handling":%d,"kicking":%d,"gk_positioning":%d,"reflexes":%d}}',
             attr.acceleration or 70, attr.sprint_speed or 70, attr.finishing or 70, attr.long_shots or 70, attr.shot_power or 70, attr.positioning or 70, attr.penalties or 70, attr.volleys or 70,
             attr.short_passing or 70, attr.vision or 70, attr.crossing or 70, attr.long_passing or 70, attr.curve or 70, attr.fk_accuracy or 70,
             attr.dribbling or 70, attr.ball_control or 70, attr.agility or 70, attr.balance or 70,
+            attr.reactions or 70, attr.composure or 70,
             attr.marking or 70, attr.standing_tackle or 70, attr.interceptions or 70, attr.heading_accuracy or 70, attr.sliding_tackle or 70,
             attr.strength or 70, attr.stamina or 70, attr.aggression or 70, attr.jumping or 70,
             attr.diving or 70, attr.handling or 70, attr.kicking or 70, attr.gk_positioning or 70, attr.reflexes or 70

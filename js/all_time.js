@@ -218,7 +218,7 @@
       const parts = [];
       if (rows.some(r => r.overall_now && !r.overall_is_live)) parts.push('* last known overall, not live (updates after a player has been followed for one F10 sync).');
       if (untracked) parts.push(`${untracked} ex-player${untracked === 1 ? ' is' : 's are'} not followed any more (cleared), so they show under All only.`);
-      if (root.isFc27Save && root.isFc27Save()) parts.push('FC 27 seasons add goals, assists and clean sheets once Live Editor exposes them; appearances and ratings there are approximate.');
+      if (root.isFc27Save && root.isFc27Save()) parts.push('FC 27 seasons synced before Live Editor v27.1.8 have no goals, assists or clean sheets, and their appearances and ratings are approximate.');
       note.innerHTML = parts.map(t => `<div>${t}</div>`).join('');
     }
 
